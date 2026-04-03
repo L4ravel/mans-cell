@@ -1,10 +1,10 @@
-// Layout admin ini dipakai untuk dashboard dan master data dengan sidebar responsive.
-// Revisi ini menambahkan tombol logout tetap di bagian paling bawah sidebar.
+// Layout admin untuk sidebar responsive dengan group menu aktif mengikuti halaman yang sedang dibuka.
+// Group Master Data dan Absensi Karyawan sekarang auto-open sesuai pathname aktif.
 
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { auth } from "@/lib/firebase"
@@ -24,6 +24,9 @@ import {
   Building2,
   KeyRound,
   LogOut,
+  Calendar,
+  ClipboardList,
+  UserX,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -45,8 +48,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [openGroup, setOpenGroup] = useState<string | null>("Master Data")
+  const [openGroup, setOpenGroup] = useState<string[]>([])
   const [loggingOut, setLoggingOut] = useState(false)
+
+  useEffect(() => {
+  const nextOpenGroup: string[] = []
+
+  if (
+    pathname.startsWith("/admin/tambah-toko") ||
+    pathname.startsWith("/admin/tambah-karyawan") ||
+    pathname.startsWith("/admin/tambah-barang") ||
+    pathname.startsWith("/admin/tambah-kategori") ||
+    pathname.startsWith("/admin/tambah-barang-tetap") ||
+    pathname.startsWith("/admin/buat-akun")
+  ) {
+    nextOpenGroup.push("Master Data")
+  }
+
+  if (
+    pathname.startsWith("/admin/dashboard-absensi") ||
+    pathname.startsWith("/admin/pengaturan-jam") ||
+    pathname.startsWith("/admin/tidak-wajib-absensi") ||
+    pathname.startsWith("/admin/laporan-absensi-bulanan")
+  ) {
+    nextOpenGroup.push("Absensi Karyawan")
+  }
+
+  setOpenGroup(nextOpenGroup)
+}, [pathname])
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") {
@@ -55,6 +84,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         pathname === "/admin/tambah-kategori"
       )
     }
+
+    if (href === "/admin/dashboard-absensi") {
+  return pathname === "/admin/dashboard-absensi"
+}
 
     return pathname === href
   }
@@ -86,6 +119,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/buat-akun", icon: KeyRound, label: "Buat Akun" },
       ],
     },
+    {
+  label: "Absensi Karyawan",
+  icon: Users,
+  items: [
+    { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },   
+    { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
+    { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
+     { href: "/admin/laporan-absensi-bulanan", icon: ClipboardList, label: "Laporan Absensi Bulanan" },
+  ],
+},
   ]
 
   return (
@@ -226,13 +269,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
             {menuGroups.map((group) => {
               const GroupIcon = group.icon
-              const isOpen = openGroup === group.label
+              const isOpen = openGroup.includes(group.label)
               const hasActiveChild = group.items.some((item) => isActive(item.href))
 
               return (
                 <div key={group.label} className="space-y-0.5">
                   <button
-                    onClick={() => setOpenGroup(isOpen ? null : group.label)}
+                   onClick={() =>
+  setOpenGroup((prev) =>
+    prev.includes(group.label)
+      ? prev.filter((label) => label !== group.label)
+      : [...prev, group.label]
+  )
+}
                     className={`
                       w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200
                       ${
@@ -309,7 +358,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                       strokeWidth={active ? 2.5 : 2}
                                       className="flex-shrink-0"
                                     />
-                                    <span className={`font-${active ? "bold" : "semibold"} truncate`}>
+                                    <span className={active ? "font-bold truncate" : "font-semibold truncate"}>
                                       {item.label}
                                     </span>
                                   </div>
@@ -332,11 +381,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               whileTap={{ scale: loggingOut ? 1 : 0.98 }}
               onClick={handleLogout}
               disabled={loggingOut}
-              className={`
+              className="
                 w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
                 bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-md shadow-rose-200/50
                 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed
-              `}
+              "
             >
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-white/20">
                 <LogOut size={15} strokeWidth={2.5} />

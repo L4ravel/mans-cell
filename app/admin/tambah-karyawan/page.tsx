@@ -1,5 +1,5 @@
 // Halaman admin tambah karyawan untuk CRUD data karyawan langsung ke Firestore dari client.
-// Menggunakan tema dan pola layout modern seperti referensi: header card, filter card, table, mobile card, modal form, dan modal hapus.
+// Sekaligus menjaga counter total karyawan aktif di dokumen total_karyawan/summary.
 
 "use client"
 
@@ -12,9 +12,9 @@ import {
   orderBy,
   doc,
   setDoc,
-  updateDoc,
   deleteDoc,
   getDoc,
+  runTransaction,
 } from "firebase/firestore"
 import {
   Users,
@@ -71,7 +71,7 @@ const ITEMS_OPTIONS = [
 const JABATAN_OPTIONS = [
   { value: "kasir", label: "Kasir" },
   { value: "it", label: "IT" },
-  { value: "manager", label: "Manager" }, 
+  { value: "manager", label: "Manager" },
 ]
 
 const EMPTY_FORM = {
@@ -84,6 +84,8 @@ const EMPTY_FORM = {
   tahunMasuk: "",
   aktif: true,
 }
+
+const TOTAL_KARYAWAN_DOC = doc(db, "total_karyawan", "summary")
 
 function FormInput({
   label,
@@ -417,25 +419,96 @@ export default function TambahKaryawanPage() {
         tokoNama: toko.nama,
         jabatan: form.jabatan as Karyawan["jabatan"],
         tahunMasuk: Number(form.tahunMasuk),
-        role: form.jabatan === "owner" ? "admin" : "karyawan",
+        role: "karyawan" as Karyawan["role"],
         aktif: form.aktif,
       }
 
       if (isEdit && editId) {
-        await updateDoc(doc(db, "karyawan", editId), {
-          ...payload,
-          updatedAt: Date.now(),
-          updatedBy: user.uid,
+        const karyawanRef = doc(db, "karyawan", editId)
+
+        await runTransaction(db, async (transaction) => {
+          const currentSnap = await transaction.get(karyawanRef)
+          const totalSnap = await transaction.get(TOTAL_KARYAWAN_DOC)
+
+          if (!currentSnap.exists()) {
+            throw new Error("DATA_KARYAWAN_TIDAK_DITEMUKAN")
+          }
+
+          const currentData = currentSnap.data() as any
+          const oldAktif = currentData?.aktif ?? true
+          const newAktif = payload.aktif
+          const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
+
+          transaction.update(karyawanRef, {
+            ...payload,
+            updatedAt: Date.now(),
+            updatedBy: user.uid,
+          })
+
+          if (oldAktif !== newAktif) {
+            const delta = newAktif ? 1 : -1
+            const nextTotal = Math.max(0, currentTotal + delta)
+
+            if (totalSnap.exists()) {
+              transaction.set(
+                TOTAL_KARYAWAN_DOC,
+                {
+                  totalAktif: nextTotal,
+                  updatedAt: Date.now(),
+                  updatedBy: user.uid,
+                },
+                { merge: true }
+              )
+            } else {
+              transaction.set(TOTAL_KARYAWAN_DOC, {
+                totalAktif: nextTotal,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                createdBy: user.uid,
+                updatedBy: user.uid,
+              })
+            }
+          }
         })
 
         setSuccessMsg("Data karyawan berhasil diperbarui")
       } else {
         const newRef = doc(collection(db, "karyawan"))
-        await setDoc(newRef, {
-          id: newRef.id,
-          ...payload,
-          createdAt: Date.now(),
-          createdBy: user.uid,
+
+        await runTransaction(db, async (transaction) => {
+          const totalSnap = await transaction.get(TOTAL_KARYAWAN_DOC)
+          const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
+
+          transaction.set(newRef, {
+            id: newRef.id,
+            ...payload,
+            createdAt: Date.now(),
+            createdBy: user.uid,
+          })
+
+          if (payload.aktif) {
+            const nextTotal = Math.max(0, currentTotal + 1)
+
+            if (totalSnap.exists()) {
+              transaction.set(
+                TOTAL_KARYAWAN_DOC,
+                {
+                  totalAktif: nextTotal,
+                  updatedAt: Date.now(),
+                  updatedBy: user.uid,
+                },
+                { merge: true }
+              )
+            } else {
+              transaction.set(TOTAL_KARYAWAN_DOC, {
+                totalAktif: nextTotal,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                createdBy: user.uid,
+                updatedBy: user.uid,
+              })
+            }
+          }
         })
 
         setSuccessMsg("Karyawan berhasil ditambahkan")
@@ -444,9 +517,13 @@ export default function TambahKaryawanPage() {
       setTimeout(() => setSuccessMsg(null), 3000)
       closeModal()
       fetchData()
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
-      setError("Gagal menyimpan data karyawan")
+      if (e?.message === "DATA_KARYAWAN_TIDAK_DITEMUKAN") {
+        setError("Data karyawan tidak ditemukan")
+      } else {
+        setError("Gagal menyimpan data karyawan")
+      }
     } finally {
       setSubmitLoading(false)
     }
@@ -455,11 +532,49 @@ export default function TambahKaryawanPage() {
   const handleDelete = async () => {
     if (!deleteId) return
 
+    const user = auth.currentUser
+    if (!user) return
+
     setDeleteLoading(true)
     try {
       const ref = doc(db, "karyawan", deleteId)
-      const snap = await getDoc(ref)
-      if (snap.exists()) await deleteDoc(ref)
+
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(ref)
+        const totalSnap = await transaction.get(TOTAL_KARYAWAN_DOC)
+
+        if (!snap.exists()) return
+
+        const data = snap.data() as any
+        const isAktif = data?.aktif ?? true
+        const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
+
+        transaction.delete(ref)
+
+        if (isAktif) {
+          const nextTotal = Math.max(0, currentTotal - 1)
+
+          if (totalSnap.exists()) {
+            transaction.set(
+              TOTAL_KARYAWAN_DOC,
+              {
+                totalAktif: nextTotal,
+                updatedAt: Date.now(),
+                updatedBy: user.uid,
+              },
+              { merge: true }
+            )
+          } else {
+            transaction.set(TOTAL_KARYAWAN_DOC, {
+              totalAktif: nextTotal,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              createdBy: user.uid,
+              updatedBy: user.uid,
+            })
+          }
+        }
+      })
 
       setDeleteId(null)
       setSuccessMsg("Data karyawan berhasil dihapus")
@@ -467,6 +582,7 @@ export default function TambahKaryawanPage() {
       fetchData()
     } catch (e) {
       console.error(e)
+      setError("Gagal menghapus data karyawan")
     } finally {
       setDeleteLoading(false)
     }
@@ -549,6 +665,24 @@ export default function TambahKaryawanPage() {
               <Check size={11} className="text-white" strokeWidth={3} />
             </div>
             <p className="text-[11px] font-bold text-emerald-700">{successMsg}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {error && !showModal && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200"
+          >
+            <AlertCircle
+              size={14}
+              className="text-red-500 flex-shrink-0"
+              strokeWidth={2.5}
+            />
+            <p className="text-[11px] font-bold text-red-600">{error}</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1064,7 +1198,7 @@ export default function TambahKaryawanPage() {
                           Role Otomatis
                         </p>
                         <p className="text-sm font-bold text-cyan-700 mt-1">
-                          {form.jabatan === "owner" ? "admin" : "karyawan"}
+                          karyawan
                         </p>
                       </div>
                     </div>

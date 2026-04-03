@@ -103,7 +103,7 @@ export default function Footer() {
 
         <div className="mt-4 text-center">
           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
-            SIDIP Versi Beta © 2026
+            Mans-Cell Versi Beta © 2026
           </p>
         </div>
       </div>
