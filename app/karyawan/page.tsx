@@ -1,9 +1,8 @@
-// app/karyawan/page.tsx
 "use client"
 
 /*
   Halaman ini menampilkan riwayat absensi karyawan beserta rekap bulanannya.
-  Menggunakan tema dan pola UI seperti halaman PTK, tetapi disesuaikan untuk role dan data karyawan.
+  Layout laporan harian dibuat satu card besar agar konsisten, hemat tempat, dan selaras dengan tampilan jadwal harian.
 */
 
 import { useEffect, useMemo, useState } from "react"
@@ -391,7 +390,8 @@ export default function KaryawanPage() {
       const dow = dateObj.getDay()
 
       const isLiburFinal = liburFinalMap[dateKey] === true
-      const isLiburJadwalHariIni = dateObj.getTime() === today.getTime() && jadwalLibur.includes(dow)
+      const isLiburJadwalHariIni =
+        dateObj.getTime() === today.getTime() && jadwalLibur.includes(dow)
 
       if (isLiburFinal || isLiburJadwalHariIni) continue
 
@@ -432,7 +432,7 @@ export default function KaryawanPage() {
             </div>
             <div className="flex-1">
               <h1 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">
-                Riwayat Absensi
+                Laporan Kehadiranku
               </h1>
               <p className="text-[10px] font-bold tracking-[0.2em] text-slate-400 mt-1">
                 ABSENSI KEHADIRAN {formatNamaKaryawan(namaKaryawan)}
@@ -569,140 +569,43 @@ export default function KaryawanPage() {
           </motion.div>
         )}
 
-        <div className="sm:hidden space-y-3">
-          {loading && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 flex flex-col items-center gap-3 shadow-sm">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="h-8 w-8 rounded-full border-2 border-cyan-400 border-t-transparent"
-              />
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                Memuat data...
-              </p>
-            </div>
-          )}
-
-          {!loading && visibleData.length === 0 && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 flex flex-col items-center gap-3 shadow-sm">
-              <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-                <Calendar size={28} className="text-slate-300" strokeWidth={2} />
-              </div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400 text-center">
-                Belum ada data absensi
-              </p>
-            </div>
-          )}
-
-          {visibleData.map((row, idx) => (
-            <motion.div
-              key={row.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: idx * 0.05 }}
-              className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
-                <span className="text-sm font-black text-slate-800 capitalize">
-                  {getHari(row.tanggal)}
-                </span>
-                <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
-                  {row.tanggal}
-                </span>
-              </div>
-
-              <div className="px-4 py-4 grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                    Masuk
-                  </p>
-                  <p className="text-base font-bold text-slate-800">
-                    {row.jamMasuk || <span className="text-slate-300 font-normal">—</span>}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                    Pulang
-                  </p>
-                  <p className="text-base font-bold text-slate-800">
-                    {row.jamPulang || <span className="text-slate-300 font-normal">—</span>}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                    Status
-                  </p>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-base font-bold text-slate-800 capitalize">
-                      {row.status}
-                    </span>
-                    {row.approvalStatus === "pending" && (
-                      <Clock size={14} className="text-orange-500" strokeWidth={2.5} />
-                    )}
-                    {row.approvalStatus === "approved" && (
-                      <CheckCircle2 size={14} className="text-emerald-600" strokeWidth={2.5} />
-                    )}
-                    {row.approvalStatus === "rejected" && (
-                      <XCircle size={14} className="text-red-600" strokeWidth={2.5} />
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {(row.keteranganMasuk || row.keteranganPulang || row.keteranganIzin) && (
-                <div className="px-4 pb-4">
-                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                      Keterangan
-                    </p>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      {row.keteranganMasuk || row.keteranganPulang || row.keteranganIzin}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          ))}
-
-          {hasMore && (
-            <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="w-full mt-1 px-4 py-3 text-sm font-semibold rounded-xl bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 active:bg-slate-100 transition disabled:opacity-50 shadow-sm"
-            >
-              {loadingMore ? "Memuat..." : "Muat Data Riwayat Absensi"}
-            </button>
-          )}
-        </div>
-
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="hidden sm:block overflow-hidden rounded-xl border border-white/50 bg-white/40 backdrop-blur-2xl shadow-[0_12px_28px_-8px_rgba(0,0,0,0.12)]"
+          transition={{ duration: 0.25 }}
+          className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
         >
-          <div className="overflow-x-auto">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2">
+            <p className="text-xs font-black text-slate-700 uppercase tracking-wide">
+              Laporan Kehadiran Harian
+            </p>
+            {!loading && visibleData.length > 0 && (
+              <p className="text-[10px] font-semibold text-slate-400">
+                {visibleData.length} data tampil
+              </p>
+            )}
+          </div>
+
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-white/50 border-b border-white/80">
+              <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr>
-                  <th className="px-4 sm:px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  <th className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
                     Hari
                   </th>
-                  <th className="px-4 sm:px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  <th className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
                     Tanggal
                   </th>
-                  <th className="px-4 sm:px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  <th className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
                     Status
                   </th>
-                  <th className="px-4 sm:px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                    Masuk
+                  <th className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Jam Masuk
                   </th>
-                  <th className="px-4 sm:px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                    Pulang
+                  <th className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Jam Pulang
                   </th>
-                  <th className="px-4 sm:px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  <th className="px-5 py-3 text-left text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
                     Keterangan
                   </th>
                 </tr>
@@ -744,16 +647,14 @@ export default function KaryawanPage() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: idx * 0.05 }}
-                    className="border-t border-white/50 hover:bg-white/50 transition-colors"
+                    className="border-t border-slate-100 hover:bg-slate-50/50 transition-colors"
                   >
-                    <td className="px-4 sm:px-5 py-2.5 font-semibold text-slate-700 capitalize text-sm">
+                    <td className="px-5 py-3 font-black text-slate-800 capitalize">
                       {getHari(row.tanggal)}
                     </td>
-                    <td className="px-4 sm:px-6 py-4 font-semibold text-slate-600">
-                      {row.tanggal}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4">
-                      <div className="flex items-center gap-2">
+                    <td className="px-5 py-3 font-semibold text-slate-700">{row.tanggal}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-slate-800 capitalize">{row.status}</span>
                         {row.approvalStatus === "pending" && (
                           <div className="flex h-5 w-5 items-center justify-center rounded-md bg-orange-100">
@@ -772,15 +673,15 @@ export default function KaryawanPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 sm:px-6 py-4 font-semibold text-slate-700">
-                      {row.jamMasuk || <span className="text-slate-300 font-normal">-</span>}
+                    <td className="px-5 py-3 font-semibold text-slate-700">
+                      {row.jamMasuk || <span className="text-slate-300 font-normal">—</span>}
                     </td>
-                    <td className="px-4 sm:px-6 py-4 font-semibold text-slate-700">
-                      {row.jamPulang || <span className="text-slate-300 font-normal">-</span>}
+                    <td className="px-5 py-3 font-semibold text-slate-700">
+                      {row.jamPulang || <span className="text-slate-300 font-normal">—</span>}
                     </td>
-                    <td className="px-4 sm:px-6 py-4 text-slate-500 text-xs">
+                    <td className="px-5 py-3 text-xs text-slate-500">
                       {row.keteranganMasuk || row.keteranganPulang || row.keteranganIzin || (
-                        <span className="text-slate-300">-</span>
+                        <span className="text-slate-300">—</span>
                       )}
                     </td>
                   </motion.tr>
@@ -788,11 +689,11 @@ export default function KaryawanPage() {
 
                 {hasMore && (
                   <tr>
-                    <td colSpan={6} className="py-4 text-center">
+                    <td colSpan={6} className="py-4 text-center border-t border-slate-100">
                       <button
                         onClick={loadMore}
                         disabled={loadingMore}
-                        className="px-4 py-1.5 text-xs rounded bg-white/5 text-slate-700 border border-slate-200 hover:bg-white/10 transition disabled:opacity-50"
+                        className="px-4 py-2 text-xs font-semibold rounded-xl bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition disabled:opacity-50"
                       >
                         {loadingMore ? "Memuat..." : "Muat Data Lagi"}
                       </button>
@@ -801,6 +702,112 @@ export default function KaryawanPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="sm:hidden divide-y divide-slate-100">
+            {loading && (
+              <div className="p-6 flex flex-col items-center gap-3">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  className="h-8 w-8 rounded-full border-2 border-cyan-400 border-t-transparent"
+                />
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Memuat data...
+                </p>
+              </div>
+            )}
+
+            {!loading && visibleData.length === 0 && (
+              <div className="p-8 flex flex-col items-center gap-3">
+                <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                  <Calendar size={28} className="text-slate-300" strokeWidth={2} />
+                </div>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400 text-center">
+                  Belum ada data absensi
+                </p>
+              </div>
+            )}
+
+            {!loading &&
+              visibleData.map((row, idx) => (
+                <motion.div
+                  key={row.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: idx * 0.05 }}
+                  className="px-4 py-3.5"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-800 capitalize">
+                        {getHari(row.tanggal)}
+                      </p>
+                      <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                        {row.tanggal}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      <span className="text-xs font-black text-slate-800 capitalize">
+                        {row.status}
+                      </span>
+                      {row.approvalStatus === "pending" && (
+                        <Clock size={14} className="text-orange-500" strokeWidth={2.5} />
+                      )}
+                      {row.approvalStatus === "approved" && (
+                        <CheckCircle2 size={14} className="text-emerald-600" strokeWidth={2.5} />
+                      )}
+                      {row.approvalStatus === "rejected" && (
+                        <XCircle size={14} className="text-red-600" strokeWidth={2.5} />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                        Jam Masuk
+                      </p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {row.jamMasuk || <span className="text-slate-300 font-normal">—</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                        Jam Pulang
+                      </p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {row.jamPulang || <span className="text-slate-300 font-normal">—</span>}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(row.keteranganMasuk || row.keteranganPulang || row.keteranganIzin) && (
+                    <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                        Keterangan
+                      </p>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {row.keteranganMasuk || row.keteranganPulang || row.keteranganIzin}
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+
+            {hasMore && !loading && visibleData.length > 0 && (
+              <div className="p-4 border-t border-slate-100">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="w-full px-4 py-3 text-sm font-semibold rounded-xl bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition disabled:opacity-50"
+                >
+                  {loadingMore ? "Memuat..." : "Muat Data Lagi"}
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
       </main>
