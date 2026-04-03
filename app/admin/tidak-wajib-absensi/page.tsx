@@ -2,7 +2,7 @@
 
 /*
   Halaman ini untuk mengatur daftar karyawan yang tidak wajib absen.
-  Jika dicentang, data masuk ke koleksi karyawan_tidak_wajib_absen. Jika dilepas, data dihapus dari koleksi.
+  Revisi tampilan: layout dibuat lebih konsisten, dan identitas karyawan cukup menampilkan nama tanpa ID.
 */
 
 import React, { useEffect, useMemo, useState } from "react"
@@ -175,7 +175,7 @@ export default function KaryawanTidakWajibAbsenPage() {
     if (!q) return karyawanList
 
     return karyawanList.filter((k) =>
-      `${k.nama} ${k.email} ${k.id}`.toLowerCase().includes(q)
+      `${k.nama} ${k.email}`.toLowerCase().includes(q)
     )
   }, [karyawanList, search])
 
@@ -200,25 +200,8 @@ export default function KaryawanTidakWajibAbsenPage() {
                 Karyawan Tidak Wajib Absen
               </h1>
               <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">
-                Checklist sederhana ke koleksi karyawan_tidak_wajib_absen
-              </p>
-
-              <div className="mt-2 flex flex-wrap gap-3 text-[10px] font-bold">
-                <span className="text-slate-500">
-                  Total karyawan:{" "}
-                  <span className="text-slate-800 font-black">{karyawanList.length}</span>
-                </span>
-                <span className="text-slate-400">·</span>
-                <span className="text-slate-500">
-                  Tidak wajib absen:{" "}
-                  <span className="text-red-600 font-black">{totalTidakWajib}</span>
-                </span>
-                <span className="text-slate-400">·</span>
-                <span className="text-slate-500">
-                  Masih wajib absen:{" "}
-                  <span className="text-emerald-600 font-black">{totalWajib}</span>
-                </span>
-              </div>
+                Daftar karyawan yang tidak wajib melakukan absensi harian.
+              </p>            
             </div>
           </div>
 
@@ -293,7 +276,7 @@ export default function KaryawanTidakWajibAbsenPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Nama / Email / ID..."
+            placeholder="Nama / Email..."
             className="w-full rounded-xl border-2 border-slate-200 bg-white pl-8 pr-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 placeholder:font-normal transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
           />
         </div>
@@ -339,11 +322,11 @@ export default function KaryawanTidakWajibAbsenPage() {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {["No", "Nama", "Email", "Tidak Wajib Absen"].map((h) => (
+                  {["No", "Nama", "Email", "Status Absensi"].map((h) => (
                     <th
                       key={h}
-                      className={`px-3 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 whitespace-nowrap ${
-                        h === "No" || h === "Tidak Wajib Absen" ? "text-center" : "text-left"
+                      className={`px-4 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 whitespace-nowrap ${
+                        h === "No" || h === "Status Absensi" ? "text-center" : "text-left"
                       }`}
                     >
                       {h}
@@ -365,36 +348,45 @@ export default function KaryawanTidakWajibAbsenPage() {
                       transition={{ delay: i * 0.02 }}
                       className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors"
                     >
-                      <td className="px-3 py-3 text-center font-bold text-slate-400">{i + 1}</td>
+                      <td className="px-4 py-3 text-center font-bold text-slate-400">{i + 1}</td>
 
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">
-                            <span className="text-[10px] font-black text-slate-500">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">
+                            <span className="text-[11px] font-black text-slate-500">
                               {k.nama.charAt(0).toUpperCase()}
                             </span>
                           </div>
-                          <div>
-                            <p className="font-black text-slate-800 text-[11px]">{k.nama}</p>
-                            <p className="text-[10px] font-bold text-slate-400">{k.id}</p>
-                          </div>
+                          <p className="font-black text-slate-800 text-[12px]">{k.nama}</p>
                         </div>
                       </td>
 
-                      <td className="px-3 py-3 font-semibold text-slate-500 text-[11px]">
+                      <td className="px-4 py-3 font-semibold text-slate-500 text-[11px]">
                         {k.email || "-"}
                       </td>
 
-                      <td className="px-3 py-3 text-center">
-                        <label className="inline-flex items-center justify-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={saving}
-                            onChange={(e) => handleToggle(k, e.target.checked)}
-                            className="h-5 w-5 rounded border-slate-300 text-rose-500 focus:ring-rose-500 disabled:opacity-50"
-                          />
-                        </label>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-3">
+                          <span
+                            className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                              checked
+                                ? "bg-rose-50 border-rose-200 text-rose-600"
+                                : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                            }`}
+                          >
+                            {checked ? "TIDAK WAJIB" : "WAJIB"}
+                          </span>
+
+                          <label className="inline-flex items-center justify-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={saving}
+                              onChange={(e) => handleToggle(k, e.target.checked)}
+                              className="h-5 w-5 rounded border-slate-300 text-rose-500 focus:ring-rose-500 disabled:opacity-50"
+                            />
+                          </label>
+                        </div>
                       </td>
                     </motion.tr>
                   )
@@ -417,15 +409,15 @@ export default function KaryawanTidakWajibAbsenPage() {
                   className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">
                         <span className="text-sm font-black text-slate-500">
                           {k.nama.charAt(0).toUpperCase()}
                         </span>
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-black text-slate-800 truncate">{k.nama}</p>
-                        <p className="text-[10px] font-bold text-slate-400 truncate">
+                        <p className="text-sm font-black text-slate-800 truncate">{k.nama}</p>
+                        <p className="text-[10px] font-semibold text-slate-400 truncate">
                           {k.email || "-"}
                         </p>
                       </div>
@@ -440,11 +432,11 @@ export default function KaryawanTidakWajibAbsenPage() {
                     />
                   </div>
 
-                  <div className="mt-2">
+                  <div className="mt-3 pt-3 border-t border-slate-100">
                     <span
-                      className={`inline-flex px-2 py-1 rounded-lg text-[10px] font-black border ${
+                      className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black border ${
                         checked
-                          ? "bg-red-50 border-red-200 text-red-600"
+                          ? "bg-rose-50 border-rose-200 text-rose-600"
                           : "bg-emerald-50 border-emerald-200 text-emerald-700"
                       }`}
                     >

@@ -69,7 +69,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     pathname.startsWith("/admin/dashboard-absensi") ||
     pathname.startsWith("/admin/pengaturan-jam") ||
     pathname.startsWith("/admin/tidak-wajib-absensi") ||
-    pathname.startsWith("/admin/laporan-absensi-bulanan")
+    pathname.startsWith("/admin/laporan-absensi-bulanan") ||
+    pathname.startsWith("/admin/laporan-absensi-karyawan")
   ) {
     nextOpenGroup.push("Absensi Karyawan")
   }
@@ -123,7 +124,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   label: "Absensi Karyawan",
   icon: Users,
   items: [
-    { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },   
+    { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },
+    { href: "/admin/laporan-absensi-karyawan", icon: ClipboardList, label: "Laporan Absensi Karyawan" },   
     { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
     { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
      { href: "/admin/laporan-absensi-bulanan", icon: ClipboardList, label: "Laporan Absensi Bulanan" },

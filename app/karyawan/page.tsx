@@ -619,7 +619,7 @@ export default function KaryawanPage() {
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                         className="inline-block h-8 w-8 rounded-full border-2 border-cyan-400 border-t-transparent"
                       />
-                      <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                         Memuat data...
                       </p>
                     </td>
@@ -736,7 +736,7 @@ export default function KaryawanPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: idx * 0.05 }}
-                  className="px-4 py-3.5"
+                  className="px-4 py-1.5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -764,7 +764,7 @@ export default function KaryawanPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="grid grid-cols-2 gap-3 mt-2">
                     <div>
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
                         Jam Masuk
@@ -785,7 +785,7 @@ export default function KaryawanPage() {
                   </div>
 
                   {(row.keteranganMasuk || row.keteranganPulang || row.keteranganIzin) && (
-                    <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                    <div className="mt-1 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
                         Keterangan
                       </p>
