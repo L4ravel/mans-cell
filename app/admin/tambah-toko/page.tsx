@@ -1,5 +1,5 @@
-// Halaman admin tambah toko untuk CRUD data toko dengan UI modern seperti referensi input mapel.
-// Menggunakan Firebase Firestore, responsive mobile/desktop, search, edit, hapus, dan modal konfirmasi.
+// Halaman admin tambah toko untuk CRUD data toko, sekarang termasuk koordinat GPS toko.
+// Dipakai supaya sistem absensi bisa mengambil latitude dan longitude langsung dari data toko.
 
 "use client"
 
@@ -40,6 +40,8 @@ type Toko = {
   noHp: string
   alamat: string
   kota: string
+  latitude: number | null
+  longitude: number | null
   aktif: boolean
 }
 
@@ -57,11 +59,20 @@ export default function TambahTokoPage() {
   const [noHp, setNoHp] = useState("")
   const [alamat, setAlamat] = useState("")
   const [kota, setKota] = useState("")
+  const [latitude, setLatitude] = useState("")
+  const [longitude, setLongitude] = useState("")
   const [aktif, setAktif] = useState(true)
 
   const [editTarget, setEditTarget] = useState<Toko | null>(null)
   const [search, setSearch] = useState("")
   const [openDelete, setOpenDelete] = useState<Toko | null>(null)
+
+  const parseCoordinate = (value: string) => {
+    const cleaned = value.trim().replace(",", ".")
+    if (!cleaned) return null
+    const parsed = Number(cleaned)
+    return Number.isFinite(parsed) ? parsed : null
+  }
 
   const fetchToko = async () => {
     const user = auth.currentUser
@@ -82,6 +93,14 @@ export default function TambahTokoPage() {
           noHp: d?.noHp || "",
           alamat: d?.alamat || "",
           kota: d?.kota || "",
+          latitude:
+            typeof d?.latitude === "number" && Number.isFinite(d.latitude)
+              ? d.latitude
+              : null,
+          longitude:
+            typeof d?.longitude === "number" && Number.isFinite(d.longitude)
+              ? d.longitude
+              : null,
           aktif: d?.aktif ?? true,
         }
       })
@@ -118,7 +137,9 @@ export default function TambahTokoPage() {
         (d.pemilik || "").toLowerCase().includes(s) ||
         (d.noHp || "").toLowerCase().includes(s) ||
         (d.alamat || "").toLowerCase().includes(s) ||
-        (d.kota || "").toLowerCase().includes(s)
+        (d.kota || "").toLowerCase().includes(s) ||
+        String(d.latitude ?? "").toLowerCase().includes(s) ||
+        String(d.longitude ?? "").toLowerCase().includes(s)
       )
     })
   }, [data, search])
@@ -130,6 +151,8 @@ export default function TambahTokoPage() {
     setNoHp("")
     setAlamat("")
     setKota("")
+    setLatitude("")
+    setLongitude("")
     setAktif(true)
     setEditTarget(null)
   }
@@ -142,6 +165,8 @@ export default function TambahTokoPage() {
     setNoHp(item.noHp || "")
     setAlamat(item.alamat || "")
     setKota(item.kota || "")
+    setLatitude(item.latitude !== null ? String(item.latitude) : "")
+    setLongitude(item.longitude !== null ? String(item.longitude) : "")
     setAktif(item.aktif ?? true)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -157,8 +182,11 @@ export default function TambahTokoPage() {
     const noHpVal = noHp.trim()
     const alamatVal = alamat.trim()
     const kotaVal = kota.trim()
+    const latitudeVal = parseCoordinate(latitude)
+    const longitudeVal = parseCoordinate(longitude)
 
     if (!kodeVal || !namaVal || !pemilikVal || !noHpVal || !alamatVal || !kotaVal) return
+    if (latitudeVal === null || longitudeVal === null) return
 
     setLoadingSave(true)
     try {
@@ -171,6 +199,8 @@ export default function TambahTokoPage() {
         noHp: noHpVal,
         alamat: alamatVal,
         kota: kotaVal,
+        latitude: latitudeVal,
+        longitude: longitudeVal,
         aktif,
         createdAt: Date.now(),
         createdBy: user.uid,
@@ -186,6 +216,8 @@ export default function TambahTokoPage() {
             noHp: noHpVal,
             alamat: alamatVal,
             kota: kotaVal,
+            latitude: latitudeVal,
+            longitude: longitudeVal,
             aktif,
           },
           ...prev,
@@ -212,8 +244,11 @@ export default function TambahTokoPage() {
     const noHpVal = noHp.trim()
     const alamatVal = alamat.trim()
     const kotaVal = kota.trim()
+    const latitudeVal = parseCoordinate(latitude)
+    const longitudeVal = parseCoordinate(longitude)
 
     if (!kodeVal || !namaVal || !pemilikVal || !noHpVal || !alamatVal || !kotaVal) return
+    if (latitudeVal === null || longitudeVal === null) return
 
     setLoadingUpdate(true)
     try {
@@ -225,6 +260,8 @@ export default function TambahTokoPage() {
         noHp: noHpVal,
         alamat: alamatVal,
         kota: kotaVal,
+        latitude: latitudeVal,
+        longitude: longitudeVal,
         aktif,
         updatedAt: Date.now(),
         updatedBy: user.uid,
@@ -242,6 +279,8 @@ export default function TambahTokoPage() {
                   noHp: noHpVal,
                   alamat: alamatVal,
                   kota: kotaVal,
+                  latitude: latitudeVal,
+                  longitude: longitudeVal,
                   aktif,
                 }
               : x
@@ -285,10 +324,12 @@ export default function TambahTokoPage() {
       !!noHp.trim() &&
       !!alamat.trim() &&
       !!kota.trim() &&
+      parseCoordinate(latitude) !== null &&
+      parseCoordinate(longitude) !== null &&
       !loadingSave &&
       !loadingUpdate
     )
-  }, [kode, nama, pemilik, noHp, alamat, kota, loadingSave, loadingUpdate])
+  }, [kode, nama, pemilik, noHp, alamat, kota, latitude, longitude, loadingSave, loadingUpdate])
 
   return (
     <div className="space-y-4 sm:space-y-5 text-slate-900 overflow-x-hidden">
@@ -308,7 +349,7 @@ export default function TambahTokoPage() {
                 Tambah Toko
               </h1>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">
-                Kode toko · nama toko · pemilik · kota
+                Kode toko · nama toko · pemilik · kota · GPS toko
               </p>
             </div>
           </div>
@@ -402,6 +443,45 @@ export default function TambahTokoPage() {
               </select>
             </div>
 
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                Latitude
+              </p>
+              <input
+                type="number"
+                step="any"
+                value={latitude}
+                onChange={(e) => setLatitude(e.target.value)}
+                placeholder="-8.574638"
+                className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-all"
+              />
+            </div>
+
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                Longitude
+              </p>
+              <input
+                type="number"
+                step="any"
+                value={longitude}
+                onChange={(e) => setLongitude(e.target.value)}
+                placeholder="116.539525"
+                className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-all"
+              />
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                Preview Koordinat
+              </p>
+              <div className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 min-h-[46px] flex items-center">
+                {parseCoordinate(latitude) !== null && parseCoordinate(longitude) !== null
+                  ? `${parseCoordinate(latitude)}, ${parseCoordinate(longitude)}`
+                  : "Belum diisi"}
+              </div>
+            </div>
+
             <div className="sm:col-span-2 lg:col-span-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
                 Alamat
@@ -469,7 +549,7 @@ export default function TambahTokoPage() {
             strokeWidth={2.5}
           />
           <input
-            placeholder="Cari kode/nama toko/pemilik/kota..."
+            placeholder="Cari kode/nama toko/pemilik/kota/koordinat..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-8 pr-4 py-2.5 rounded-xl border-2 border-slate-200 bg-white text-sm font-semibold text-slate-700 placeholder:text-slate-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-all"
@@ -526,6 +606,9 @@ export default function TambahTokoPage() {
                     <p className="text-xs font-semibold text-slate-600 flex items-center gap-1">
                       <MapPin size={12} /> {d.alamat || "-"}
                     </p>
+                    <p className="text-xs font-semibold text-slate-600 break-all">
+                      GPS: {d.latitude ?? "-"}, {d.longitude ?? "-"}
+                    </p>
                   </div>
                 </div>
 
@@ -567,12 +650,12 @@ export default function TambahTokoPage() {
             <table className="w-full text-sm">
               <thead className="bg-white/70 border-b border-slate-200">
                 <tr>
-                  {["No", "Kode", "Nama Toko", "Pemilik", "No HP", "Kota", "Status", "Aksi"].map(
+                  {["No", "Kode", "Nama Toko", "Pemilik", "No HP", "Kota", "GPS", "Status", "Aksi"].map(
                     (h, i) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 ${
-                          i === 0 || i === 7 ? "text-center" : "text-left"
+                          i === 0 || i === 8 ? "text-center" : "text-left"
                         }`}
                       >
                         {h}
@@ -584,7 +667,7 @@ export default function TambahTokoPage() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center">
+                    <td colSpan={9} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                           <Building2 size={24} className="text-slate-300" strokeWidth={2} />
@@ -612,6 +695,9 @@ export default function TambahTokoPage() {
                       <td className="px-4 py-3 text-slate-600 text-xs font-semibold">{d.pemilik}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs font-semibold">{d.noHp}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs font-semibold">{d.kota}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs font-semibold whitespace-nowrap">
+                        {d.latitude ?? "-"}, {d.longitude ?? "-"}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${

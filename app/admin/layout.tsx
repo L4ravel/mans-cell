@@ -1,11 +1,13 @@
-// Layout admin untuk dashboard dan master data dengan sidebar modern responsive.
-// Sidebar hanya berisi Dashboard dan submenu Master Data > Tambah Toko.
+// Layout admin ini dipakai untuk dashboard dan master data dengan sidebar responsive.
+// Revisi ini menambahkan tombol logout tetap di bagian paling bawah sidebar.
 
 "use client"
 
 import Link from "next/link"
 import { useState } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { signOut } from "firebase/auth"
+import { auth } from "@/lib/firebase"
 import {
   Home,
   Menu,
@@ -18,10 +20,10 @@ import {
   Store,
   User,
   Users,
-  Tags,
   Package,
   Building2,
   KeyRound,
+  LogOut,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -39,35 +41,52 @@ type MenuGroup = {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>("Master Data")
+  const [loggingOut, setLoggingOut] = useState(false)
 
   const isActive = (href: string) => {
-  if (href === "/admin/tambah-barang") {
-    return (
-      pathname === "/admin/tambah-barang" ||
-      pathname === "/admin/tambah-kategori"
-    )
+    if (href === "/admin/tambah-barang") {
+      return (
+        pathname === "/admin/tambah-barang" ||
+        pathname === "/admin/tambah-kategori"
+      )
+    }
+
+    return pathname === href
   }
 
-  return pathname === href
-}
-  
+  const handleLogout = async () => {
+    if (loggingOut) return
 
- const menuGroups: MenuGroup[] = [
-  {
-    label: "Master Data",
-    icon: Database,
-    items: [
-      { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
-      { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
-      { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
-      { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
-      { href: "/admin/buat-akun", icon: KeyRound, label: "Buat Akun" },
-    ],
-  },
-]
+    try {
+      setLoggingOut(true)
+      await signOut(auth)
+      localStorage.removeItem("mans_cell_session")
+      router.replace("/login")
+    } catch (error) {
+      console.error("Logout gagal:", error)
+    } finally {
+      setLoggingOut(false)
+    }
+  }
+
+  const menuGroups: MenuGroup[] = [
+    {
+      label: "Master Data",
+      icon: Database,
+      items: [
+        { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
+        { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
+        { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
+        { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
+        { href: "/admin/buat-akun", icon: KeyRound, label: "Buat Akun" },
+      ],
+    },
+  ]
 
   return (
     <div className="min-h-screen bg-slate-100 flex relative p-4 gap-4">
@@ -306,6 +325,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               )
             })}
           </nav>
+
+          <div className="px-3 pb-3 pt-2 border-t border-slate-200">
+            <motion.button
+              whileHover={{ scale: loggingOut ? 1 : 1.02 }}
+              whileTap={{ scale: loggingOut ? 1 : 0.98 }}
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className={`
+                w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
+                bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-md shadow-rose-200/50
+                hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed
+              `}
+            >
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-white/20">
+                <LogOut size={15} strokeWidth={2.5} />
+              </div>
+              {!sidebarCollapsed && (
+                <span className="text-sm font-bold">
+                  {loggingOut ? "Logging out..." : "Logout"}
+                </span>
+              )}
+            </motion.button>
+          </div>
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0 bg-white rounded-3xl lg:rounded-l-none lg:rounded-r-3xl border border-slate-200 lg:border-l-0 shadow-2xl shadow-slate-300/40 overflow-hidden">

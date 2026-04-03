@@ -1,5 +1,5 @@
-// Halaman login admin Mans-Cell dengan layout modern split screen.
-// Login hanya mengizinkan role admin dari collection users di Firestore.
+// Halaman login Mans-Cell dengan redirect berbasis roles.
+// Jika roles mengandung "admin" masuk ke /admin, jika mengandung "karyawan" masuk ke /karyawan.
 
 "use client"
 
@@ -11,6 +11,40 @@ import { doc, getDoc } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 import { Lock, Mail, Loader2, ArrowRight, EyeOff, Eye, ShieldCheck } from "lucide-react"
 import { motion } from "framer-motion"
+
+type UserRole = "admin" | "karyawan"
+
+function extractRoles(raw: any): string[] {
+  if (Array.isArray(raw?.roles)) {
+    return raw.roles
+      .map((r: unknown) => (typeof r === "string" ? r.toLowerCase().trim() : ""))
+      .filter(Boolean)
+  }
+
+  if (Array.isArray(raw?.role)) {
+    return raw.role
+      .map((r: unknown) => (typeof r === "string" ? r.toLowerCase().trim() : ""))
+      .filter(Boolean)
+  }
+
+  if (typeof raw?.role === "string") {
+    return [raw.role.toLowerCase().trim()]
+  }
+
+  return []
+}
+
+function getRedirectByRoles(roles: string[]): { role: UserRole; redirectTo: string } | null {
+  if (roles.includes("admin")) {
+    return { role: "admin", redirectTo: "/admin" }
+  }
+
+  if (roles.includes("karyawan")) {
+    return { role: "karyawan", redirectTo: "/karyawan" }
+  }
+
+  return null
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -39,10 +73,11 @@ export default function LoginPage() {
         }
 
         const raw = snap.data()
-        const role = typeof raw?.role === "string" ? raw.role.toLowerCase().trim() : ""
+        const roles = extractRoles(raw)
+        const target = getRedirectByRoles(roles)
 
-        if (role === "admin") {
-          router.replace("/admin")
+        if (target) {
+          router.replace(target.redirectTo)
           return
         }
 
@@ -69,28 +104,29 @@ export default function LoginPage() {
       const snap = await getDoc(doc(db, "users", uid))
       if (!snap.exists()) {
         await signOut(auth)
-        setError("Akun tidak terdaftar sebagai admin.")
+        setError("Akun tidak terdaftar.")
         return
       }
 
       const raw = snap.data()
-      const role = typeof raw?.role === "string" ? raw.role.toLowerCase().trim() : ""
+      const roles = extractRoles(raw)
+      const target = getRedirectByRoles(roles)
 
-      if (role !== "admin") {
+      if (!target) {
         await signOut(auth)
-        setError("Akun ini tidak punya akses admin.")
+        setError("Akun ini tidak punya akses ke panel.")
         return
       }
 
       localStorage.setItem(
         "mans_cell_session",
         JSON.stringify({
-          role: "admin",
-          redirectTo: "/admin",
+          role: target.role,
+          redirectTo: target.redirectTo,
         })
       )
 
-      router.replace("/admin")
+      router.replace(target.redirectTo)
     } catch (err) {
       console.error(err)
       setError("Email atau password salah. Silakan coba lagi.")
@@ -104,7 +140,7 @@ export default function LoginPage() {
       <main className="min-h-screen flex items-center justify-center bg-white">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-sm font-semibold text-slate-500">Memeriksa sesi admin...</p>
+          <p className="text-sm font-semibold text-slate-500">Memeriksa sesi akun...</p>
         </div>
       </main>
     )
@@ -172,10 +208,10 @@ export default function LoginPage() {
 
             <div className="mb-4">
               <h1 className="text-2xl sm:text-4xl font-black text-slate-800 mb-1 leading-tight tracking-tight">
-                Login Admin
+                Login Mans-Cell
               </h1>
               <p className="text-slate-500 text-xs sm:text-sm font-medium leading-snug">
-                Silakan login menggunakan akun admin Mans-Cell
+                Silakan login menggunakan akun yang terdaftar
               </p>
             </div>
 
@@ -191,7 +227,7 @@ export default function LoginPage() {
                     required
                     autoComplete="email"
                     className="w-full pl-11 pr-4 py-2.5 sm:py-3.5 rounded-xl border-2 border-slate-200 bg-slate-50/50 text-slate-800 font-medium placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
-                    placeholder="Masukkan email admin"
+                    placeholder="Masukkan email"
                   />
                 </div>
               </div>
@@ -244,7 +280,7 @@ export default function LoginPage() {
                   </>
                 ) : (
                   <>
-                    <span>LOGIN ADMIN</span>
+                    <span>LOGIN</span>
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}
@@ -345,7 +381,7 @@ export default function LoginPage() {
                 transition={{ delay: 0.8 }}
                 className="text-lg text-blue-50 font-medium mb-8 max-w-sm mx-auto leading-relaxed"
               >
-                Panel admin untuk mengelola data toko, master data, dan operasional Mans-Cell secara digital.
+                Panel untuk mengelola data toko, master data, dan operasional Mans-Cell secara digital.
               </motion.p>
 
               <motion.div
@@ -355,7 +391,7 @@ export default function LoginPage() {
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 backdrop-blur-sm rounded-full border border-cyan-300/20 text-sm font-semibold shadow-lg shadow-slate-900/10"
               >
                 <ShieldCheck className="w-4 h-4 text-cyan-300" />
-                <span>Akses Khusus Admin</span>
+                <span>Akses Sesuai Role</span>
               </motion.div>
             </motion.div>
 
@@ -381,7 +417,7 @@ export default function LoginPage() {
       >
         <p className="text-xs text-slate-500 font-medium leading-snug text-center">
           <span className="block sm:inline">&copy; 2026 Mans-Cell </span>
-          <span className="block sm:inline">Admin Panel. All rights reserved.</span>
+          <span className="block sm:inline">Panel. All rights reserved.</span>
         </p>
       </motion.div>
     </main>
