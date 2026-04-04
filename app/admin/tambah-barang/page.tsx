@@ -1,5 +1,5 @@
-// Halaman admin barang untuk CRUD data barang ke Firestore.
-// Revisi ini menambahkan relasi toko pada barang: fetch toko, pilih toko, filter toko, dan tampilkan toko di list.
+// Halaman admin barang untuk CRUD data barang per toko di Firestore.
+// Revisi ini menambahkan kode barang, supplier, satuan, stok minimum, pencarian lebih lengkap, dan indikator stok menipis.
 
 "use client"
 
@@ -36,6 +36,10 @@ import {
   Archive,
   Layers3,
   Store,
+  Barcode,
+  Truck,
+  Ruler,
+  TriangleAlert,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -54,15 +58,19 @@ type Toko = {
 
 type Barang = {
   id: string
+  kodeBarang: string
   nama: string
   kategoriId: string
   kategoriNama: string
   tokoId: string
   tokoNama: string
   merk: string
+  supplier: string
+  satuan: string
   hargaModal: number
   hargaJual: number
   stok: number
+  stokMinimum: number
   createdAt: number
   updatedAt?: number
 }
@@ -74,14 +82,20 @@ const ITEMS_OPTIONS = [
   { value: 0, label: "Semua" },
 ]
 
+const SATUAN_OPTIONS = ["Pcs", "Unit", "Box", "Pack", "Lusin", "Set"]
+
 const EMPTY_FORM = {
+  kodeBarang: "",
   nama: "",
   kategoriId: "",
   tokoId: "",
   merk: "",
+  supplier: "",
+  satuan: "Pcs",
   hargaModal: "",
   hargaJual: "",
   stok: "",
+  stokMinimum: "",
 }
 
 function FormInput({
@@ -273,15 +287,19 @@ export default function TambahBarangPage() {
         const x = d.data() as any
         return {
           id: d.id,
+          kodeBarang: x?.kodeBarang || "",
           nama: x?.nama || "",
           kategoriId: x?.kategoriId || "",
           kategoriNama: x?.kategoriNama || "",
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || "",
           merk: x?.merk || "",
+          supplier: x?.supplier || "",
+          satuan: x?.satuan || "Pcs",
           hargaModal: Number(x?.hargaModal || 0),
           hargaJual: Number(x?.hargaJual || 0),
           stok: Number(x?.stok || 0),
+          stokMinimum: Number(x?.stokMinimum || 0),
           createdAt: Number(x?.createdAt || Date.now()),
           updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
         }
@@ -312,9 +330,12 @@ export default function TambahBarangPage() {
       const matchSearch =
         !q ||
         d.nama.toLowerCase().includes(q) ||
+        d.kodeBarang.toLowerCase().includes(q) ||
         d.merk.toLowerCase().includes(q) ||
+        d.supplier.toLowerCase().includes(q) ||
         d.kategoriNama.toLowerCase().includes(q) ||
-        d.tokoNama.toLowerCase().includes(q)
+        d.tokoNama.toLowerCase().includes(q) ||
+        d.satuan.toLowerCase().includes(q)
 
       const matchKategori = !filterKategori || d.kategoriId === filterKategori
       const matchToko = !filterToko || d.tokoId === filterToko
@@ -349,13 +370,17 @@ export default function TambahBarangPage() {
 
   const openEdit = (d: Barang) => {
     setForm({
+      kodeBarang: d.kodeBarang || "",
       nama: d.nama,
       kategoriId: d.kategoriId,
       tokoId: d.tokoId || "",
       merk: d.merk,
+      supplier: d.supplier || "",
+      satuan: d.satuan || "Pcs",
       hargaModal: String(d.hargaModal || ""),
       hargaJual: String(d.hargaJual || ""),
       stok: String(d.stok || ""),
+      stokMinimum: String(d.stokMinimum || ""),
     })
     setEditId(d.id)
     setError(null)
@@ -367,26 +392,51 @@ export default function TambahBarangPage() {
     (val: any) =>
       setForm((f) => ({ ...f, [key]: val }))
 
-  const validateForm = () => {
-    if (!form.nama.trim()) return "Nama barang wajib diisi"
-    if (!form.kategoriId) return "Kategori wajib dipilih"
-    if (!form.tokoId) return "Toko wajib dipilih"
-    if (!form.merk.trim()) return "Merk wajib diisi"
-    if (!form.hargaModal.trim()) return "Harga modal wajib diisi"
-    if (!form.hargaJual.trim()) return "Harga jual wajib diisi"
-    if (!form.stok.trim()) return "Stok wajib diisi"
+ const validateForm = () => {
+  if (!isEdit && !form.tokoId) return "Toko wajib dipilih"
+  if (isEdit && !form.kodeBarang.trim()) return "Kode barang wajib diisi"
+  if (!form.nama.trim()) return "Nama barang wajib diisi"
+  if (!form.kategoriId) return "Kategori wajib dipilih"
+  if (!form.tokoId) return "Toko wajib dipilih"
+  if (!form.merk.trim()) return "Merk wajib diisi"
+  if (!form.supplier.trim()) return "Supplier wajib diisi"
+  if (!form.satuan.trim()) return "Satuan wajib diisi"
+  if (!form.hargaModal.trim()) return "Harga modal wajib diisi"
+  if (!form.hargaJual.trim()) return "Harga jual wajib diisi"
+  if (!form.stok.trim()) return "Stok wajib diisi"
+  if (!form.stokMinimum.trim()) return "Stok minimum wajib diisi"
 
-    const hargaModal = Number(form.hargaModal)
-    const hargaJual = Number(form.hargaJual)
-    const stok = Number(form.stok)
+  const hargaModal = Number(form.hargaModal)
+  const hargaJual = Number(form.hargaJual)
+  const stok = Number(form.stok)
+  const stokMinimum = Number(form.stokMinimum)
 
-    if (Number.isNaN(hargaModal) || hargaModal < 0) return "Harga modal tidak valid"
-    if (Number.isNaN(hargaJual) || hargaJual < 0) return "Harga jual tidak valid"
-    if (Number.isNaN(stok) || stok < 0) return "Stok tidak valid"
-    if (hargaJual < hargaModal) return "Harga jual tidak boleh lebih kecil dari harga modal"
+  if (Number.isNaN(hargaModal) || hargaModal < 0) return "Harga modal tidak valid"
+  if (Number.isNaN(hargaJual) || hargaJual < 0) return "Harga jual tidak valid"
+  if (Number.isNaN(stok) || stok < 0) return "Stok tidak valid"
+  if (Number.isNaN(stokMinimum) || stokMinimum < 0) return "Stok minimum tidak valid"
+  if (hargaJual < hargaModal) return "Harga jual tidak boleh lebih kecil dari harga modal"
 
-    return null
-  }
+  const kodeBarangFinal = isEdit
+    ? form.kodeBarang.trim().toLowerCase()
+    : generateKodeBarang(form.tokoId).trim().toLowerCase()
+
+  const duplicate = data.find((item) => {
+    const sameCode = item.kodeBarang.trim().toLowerCase() === kodeBarangFinal
+    const sameStore = item.tokoId === form.tokoId
+    const notSelf = !editId || item.id !== editId
+    return sameCode && sameStore && notSelf
+  })
+
+  if (duplicate) return "Kode barang sudah dipakai di toko ini"
+
+  return null
+}
+
+  const generateKodeBarang = (tokoId: string) => {
+  const time = Date.now().toString().slice(-6) 
+  return `${tokoId.toUpperCase()}-${time}`
+}
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -416,24 +466,34 @@ export default function TambahBarangPage() {
         return
       }
 
+      const kodeBarang = isEdit
+  ? form.kodeBarang.trim().toUpperCase()
+  : generateKodeBarang(form.tokoId)
       const nama = form.nama.trim()
       const merk = form.merk.trim()
+      const supplier = form.supplier.trim()
+      const satuan = form.satuan.trim()
       const hargaModal = Number(form.hargaModal)
       const hargaJual = Number(form.hargaJual)
       const stok = Number(form.stok)
+      const stokMinimum = Number(form.stokMinimum)
       const now = Date.now()
 
       if (isEdit && editId) {
         const updatedItem: Partial<Barang> = {
+          kodeBarang,
           nama,
           kategoriId: kategori.id,
           kategoriNama: kategori.nama,
           tokoId: toko.id,
           tokoNama: toko.nama,
           merk,
+          supplier,
+          satuan,
           hargaModal,
           hargaJual,
           stok,
+          stokMinimum,
           updatedAt: now,
         }
 
@@ -448,15 +508,19 @@ export default function TambahBarangPage() {
               item.id === editId
                 ? {
                     ...item,
+                    kodeBarang,
                     nama,
                     kategoriId: kategori.id,
                     kategoriNama: kategori.nama,
                     tokoId: toko.id,
                     tokoNama: toko.nama,
                     merk,
+                    supplier,
+                    satuan,
                     hargaModal,
                     hargaJual,
                     stok,
+                    stokMinimum,
                     updatedAt: now,
                   }
                 : item
@@ -469,15 +533,19 @@ export default function TambahBarangPage() {
         const newRef = doc(collection(db, "barang"))
         const newItem: Barang = {
           id: newRef.id,
+          kodeBarang,
           nama,
           kategoriId: kategori.id,
           kategoriNama: kategori.nama,
           tokoId: toko.id,
           tokoNama: toko.nama,
           merk,
+          supplier,
+          satuan,
           hargaModal,
           hargaJual,
           stok,
+          stokMinimum,
           createdAt: now,
         }
 
@@ -539,7 +607,7 @@ export default function TambahBarangPage() {
                 Data Barang
               </h1>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">
-                Barang elektronik · kategori · toko · stok
+                Barang · toko · supplier · stok minimum
               </p>
             </div>
           </div>
@@ -634,7 +702,7 @@ export default function TambahBarangPage() {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Nama, merk, kategori, toko..."
+                placeholder="Kode, nama, merk, supplier, toko..."
                 className="w-full rounded-xl border-2 border-slate-200 bg-white pl-8 pr-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 placeholder:font-normal transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </div>
@@ -728,87 +796,107 @@ export default function TambahBarangPage() {
 
       {!loading && paged.length > 0 && (
         <div className="sm:hidden space-y-2">
-          {paged.map((d, idx) => (
-            <motion.div
-              key={d.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.03 }}
-              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-black text-slate-800">{d.nama}</p>
-                  <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mt-0.5">
-                    {d.kategoriNama}
-                  </p>
+          {paged.map((d, idx) => {
+            const isLowStock = d.stok <= d.stokMinimum
+            return (
+              <motion.div
+                key={d.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-black text-slate-800">{d.nama}</p>
+                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mt-0.5">
+                      {d.kodeBarang || "-"} · {d.kategoriNama}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => openEdit(d)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-100 transition-colors"
+                    >
+                      <Pencil size={12} strokeWidth={2.5} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteId(d.id)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 border border-red-200 text-red-500 hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 size={12} strokeWidth={2.5} />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => openEdit(d)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-100 transition-colors"
-                  >
-                    <Pencil size={12} strokeWidth={2.5} />
-                  </button>
-                  <button
-                    onClick={() => setDeleteId(d.id)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 border border-red-200 text-red-500 hover:bg-red-100 transition-colors"
-                  >
-                    <Trash2 size={12} strokeWidth={2.5} />
-                  </button>
-                </div>
-              </div>
 
-              <div className="mt-2 flex flex-wrap gap-1">
-                <span className="px-2 py-0.5 rounded-lg bg-violet-100 text-violet-700 text-[10px] font-bold">
-                  {d.tokoNama || "-"}
-                </span>
-                <span className="px-2 py-0.5 rounded-lg bg-cyan-100 text-cyan-700 text-[10px] font-bold">
-                  {d.merk || "-"}
-                </span>
-                <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                  Stok: {d.stok}
-                </span>
-              </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <span className="px-2 py-0.5 rounded-lg bg-violet-100 text-violet-700 text-[10px] font-bold">
+                    {d.tokoNama || "-"}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-cyan-100 text-cyan-700 text-[10px] font-bold">
+                    {d.merk || "-"}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
+                    {d.satuan || "-"}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                      isLowStock
+                        ? "bg-red-100 text-red-700"
+                        : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    Stok: {d.stok}
+                  </span>
+                </div>
 
-              <div className="mt-2 grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    Toko
-                  </p>
-                  <p className="text-xs font-bold text-slate-700">{d.tokoNama || "—"}</p>
+                <div className="mt-2 grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Supplier
+                    </p>
+                    <p className="text-xs font-bold text-slate-700">{d.supplier || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Satuan
+                    </p>
+                    <p className="text-xs font-bold text-slate-700">{d.satuan || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Harga Modal
+                    </p>
+                    <p className="text-xs font-bold text-slate-700">
+                      Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Harga Jual
+                    </p>
+                    <p className="text-xs font-bold text-slate-700">
+                      Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Stok Minimum
+                    </p>
+                    <p className="text-xs font-bold text-slate-700">{d.stokMinimum}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Status
+                    </p>
+                    <p className={`text-xs font-bold ${isLowStock ? "text-red-600" : "text-emerald-600"}`}>
+                      {isLowStock ? "Stok Menipis" : "Aman"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    Merk
-                  </p>
-                  <p className="text-xs font-bold text-slate-700">{d.merk || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    Harga Modal
-                  </p>
-                  <p className="text-xs font-bold text-slate-700">
-                    Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    Harga Jual
-                  </p>
-                  <p className="text-xs font-bold text-slate-700">
-                    Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    Stok
-                  </p>
-                  <p className="text-xs font-bold text-slate-700">{d.stok}</p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            )
+          })}
         </div>
       )}
 
@@ -823,7 +911,7 @@ export default function TambahBarangPage() {
             <table className="w-full text-xs">
               <thead className="bg-white/80 border-b border-slate-200">
                 <tr>
-                  {["No", "Nama", "Toko", "Kategori", "Merk", "Harga Modal", "Harga Jual", "Stok", "Aksi"].map((h) => (
+                  {["No", "Kode", "Nama", "Toko", "Supplier", "Satuan", "Harga Modal", "Harga Jual", "Stok", "Min", "Aksi"].map((h) => (
                     <th
                       key={h}
                       className={`px-3 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 whitespace-nowrap ${
@@ -836,62 +924,82 @@ export default function TambahBarangPage() {
                 </tr>
               </thead>
               <tbody>
-                {paged.map((d, i) => (
-                  <motion.tr
-                    key={d.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.015 }}
-                    className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors"
-                  >
-                    <td className="px-3 py-2.5 text-center font-bold text-slate-400">
-                      {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
-                    </td>
-                    <td className="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">
-                      {d.nama}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
-                      {d.tokoNama || "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
-                      {d.kategoriNama || "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
-                      {d.merk || "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
-                      Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
-                      Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-bold whitespace-nowrap">
-                        {d.stok}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <div className="flex gap-1.5 justify-center">
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => openEdit(d)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-100 transition-colors"
+                {paged.map((d, i) => {
+                  const isLowStock = d.stok <= d.stokMinimum
+                  return (
+                    <motion.tr
+                      key={d.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.015 }}
+                      className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors"
+                    >
+                      <td className="px-3 py-2.5 text-center font-bold text-slate-400">
+                        {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
+                      </td>
+                      <td className="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">
+                        {d.kodeBarang || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800">{d.nama}</span>
+                          <span className="text-[10px] font-semibold text-slate-400">
+                            {d.kategoriNama || "—"} · {d.merk || "—"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
+                        {d.tokoNama || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
+                        {d.supplier || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
+                        {d.satuan || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
+                        Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
+                        Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap ${
+                            isLowStock
+                              ? "bg-red-100 text-red-700"
+                              : "bg-emerald-100 text-emerald-700"
+                          }`}
                         >
-                          <Pencil size={12} strokeWidth={2.5} />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => setDeleteId(d.id)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 border border-red-200 text-red-500 hover:bg-red-100 transition-colors"
-                        >
-                          <Trash2 size={12} strokeWidth={2.5} />
-                        </motion.button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                ))}
+                          {d.stok}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 font-semibold whitespace-nowrap">
+                        {d.stokMinimum}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex gap-1.5 justify-center">
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => openEdit(d)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-100 transition-colors"
+                          >
+                            <Pencil size={12} strokeWidth={2.5} />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => setDeleteId(d.id)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 border border-red-200 text-red-500 hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 size={12} strokeWidth={2.5} />
+                          </motion.button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -962,21 +1070,18 @@ export default function TambahBarangPage() {
       <AnimatePresence>
         {showModal && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) closeModal()
-            }}
-          >
+  initial={{ opacity: 0 }}
+  animate={{ opacity: 1 }}
+  exit={{ opacity: 0 }}
+  className="fixed inset-0 z-50 flex items-center justify-center p-4"
+>
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="relative z-10 w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+              className="relative z-10 w-full max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
             >
               <div className="relative flex items-center justify-between px-6 py-4 bg-gradient-to-r from-emerald-500 to-cyan-500 flex-shrink-0">
                 <div className="flex items-center gap-3">
@@ -992,7 +1097,7 @@ export default function TambahBarangPage() {
                       {isEdit ? "Edit Data Barang" : "Tambah Barang Baru"}
                     </h2>
                     <p className="text-[10px] text-white/70 font-semibold mt-0.5">
-                      {isEdit ? "Perbarui informasi barang" : "Isi field wajib (*)"}
+                      Master barang untuk pembelian per toko
                     </p>
                   </div>
                 </div>
@@ -1027,6 +1132,15 @@ export default function TambahBarangPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <FormInput
+  label="Kode Barang"
+  required={isEdit}
+  icon={Barcode}
+  value={isEdit ? form.kodeBarang : generateKodeBarang(form.tokoId || "BRG")}
+  onChange={(e: any) => setField("kodeBarang")(e.target.value.toUpperCase())}
+  placeholder="Contoh: BRG-IPH13"
+  disabled={!isEdit}
+/>
+                    <FormInput
                       label="Nama Barang"
                       required
                       icon={Package}
@@ -1034,6 +1148,9 @@ export default function TambahBarangPage() {
                       onChange={(e: any) => setField("nama")(e.target.value)}
                       placeholder="Contoh: iPhone 13"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <FormInput
                       label="Merk"
                       required
@@ -1042,9 +1159,17 @@ export default function TambahBarangPage() {
                       onChange={(e: any) => setField("merk")(e.target.value)}
                       placeholder="Contoh: Apple"
                     />
+                    <FormInput
+                      label="Supplier"
+                      required
+                      icon={Truck}
+                      value={form.supplier}
+                      onChange={(e: any) => setField("supplier")(e.target.value)}
+                      placeholder="Contoh: PT Sumber Gadget"
+                    />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <FormSelect
                       label="Kategori"
                       required
@@ -1072,6 +1197,20 @@ export default function TambahBarangPage() {
                         <option key={t.id} value={t.id}>
                           {t.nama}
                           {t.kode ? ` (${t.kode})` : ""}
+                        </option>
+                      ))}
+                    </FormSelect>
+
+                    <FormSelect
+                      label="Satuan"
+                      required
+                      icon={Ruler}
+                      value={form.satuan}
+                      onChange={(e: any) => setField("satuan")(e.target.value)}
+                    >
+                      {SATUAN_OPTIONS.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
                         </option>
                       ))}
                     </FormSelect>
@@ -1113,6 +1252,19 @@ export default function TambahBarangPage() {
                       placeholder="10"
                     />
 
+                    <FormInput
+                      label="Stok Minimum"
+                      required
+                      icon={TriangleAlert}
+                      type="number"
+                      min="0"
+                      value={form.stokMinimum}
+                      onChange={(e: any) => setField("stokMinimum")(e.target.value)}
+                      placeholder="3"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2.5">
                       <p className="text-[9px] font-black uppercase tracking-widest text-violet-500">
                         Preview Toko
@@ -1121,9 +1273,7 @@ export default function TambahBarangPage() {
                         {tokoList.find((t) => t.id === form.tokoId)?.nama || "Belum dipilih"}
                       </p>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 px-3 py-2.5">
                       <p className="text-[9px] font-black uppercase tracking-widest text-cyan-500">
                         Preview Harga Modal
@@ -1141,6 +1291,15 @@ export default function TambahBarangPage() {
                         Rp {Math.max(0, Number(form.hargaJual || 0) - Number(form.hargaModal || 0)).toLocaleString("id-ID")}
                       </p>
                     </div>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">
+                      Info
+                    </p>
+                    <p className="text-xs font-semibold text-amber-700 mt-1">
+                      Kode barang dibuat unik per toko. Field supplier, satuan, dan stok minimum ini nanti langsung kepakai saat bikin transaksi pembelian dan monitoring restock.
+                    </p>
                   </div>
                 </div>
 

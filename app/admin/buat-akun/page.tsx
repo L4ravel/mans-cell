@@ -1,5 +1,5 @@
-// Halaman admin untuk generate akun karyawan langsung dari client ke Firebase.
-// Membuat Firebase Auth lewat secondary app, lalu simpan mapping user ke koleksi users.
+// Halaman admin untuk generate, reset password, dan hapus akun karyawan.
+// Aksi sensitif Firebase Auth diproses lewat API server agar aman dan bisa mengubah user lain.
 
 "use client"
 
@@ -15,7 +15,7 @@ import {
   setDoc,
   where,
 } from "firebase/firestore"
-import { initializeApp, getApp, getApps } from "firebase/app"
+import { initializeApp, getApps } from "firebase/app"
 import {
   createUserWithEmailAndPassword,
   getAuth,
@@ -30,14 +30,14 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  Building2,
   Mail,
   AlertCircle,
   Check,
   Users,
   Zap,
-  KeyRound,
   Store,
+  RotateCcw,
+  Trash2,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -119,6 +119,7 @@ function FilterSelect({
 function getSecondaryAuth(): Auth {
   const appName = "secondary-karyawan-auth"
   const existing = getApps().find((app) => app.name === appName)
+
   const secondaryApp =
     existing ??
     initializeApp(
@@ -175,6 +176,18 @@ export default function BuatAkunKaryawanPage() {
   const [limit, setLimit] = useState(10)
   const [page, setPage] = useState(1)
 
+  const defaultPassword = "12345678"
+
+  const showSuccess = (message: string) => {
+    setSuccessMsg(message)
+    setTimeout(() => setSuccessMsg(null), 3000)
+  }
+
+  const showError = (message: string) => {
+    setErrorMsg(message)
+    setTimeout(() => setErrorMsg(null), 4000)
+  }
+
   const fetchKaryawan = async () => {
     setLoading(true)
     try {
@@ -211,6 +224,7 @@ export default function BuatAkunKaryawanPage() {
       console.error(e)
       setData([])
       setUsers({})
+      showError("Gagal memuat data karyawan")
     } finally {
       setLoading(false)
     }
@@ -253,6 +267,7 @@ export default function BuatAkunKaryawanPage() {
     } catch (e) {
       console.error(e)
       setUsers({})
+      showError("Gagal memuat mapping user")
     }
   }
 
@@ -283,24 +298,20 @@ export default function BuatAkunKaryawanPage() {
     })
   }, [data, search, selectedToko, statusFilter, users])
 
-  const totalPages =
-    limit === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / limit))
-
-  const paged =
-    limit === 0 ? filtered : filtered.slice((page - 1) * limit, page * limit)
+  const totalPages = limit === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / limit))
+  const paged = limit === 0 ? filtered : filtered.slice((page - 1) * limit, page * limit)
 
   const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
 
   const handleGenerate = async (karyawan: Karyawan) => {
-    setLoadingId(karyawan.id)
+    setLoadingId(`${karyawan.id}:generate`)
     setErrorMsg(null)
 
     const secondaryAuth = getSecondaryAuth()
-    const defaultPassword = "12345678"
     const emailCandidates = generateEmailCandidates(karyawan)
 
     if (!emailCandidates.length) {
-      setErrorMsg(`Email untuk ${karyawan.nama} tidak valid`)
+      showError(`Email untuk ${karyawan.nama} tidak valid`)
       setLoadingId(null)
       return
     }
@@ -333,48 +344,132 @@ export default function BuatAkunKaryawanPage() {
         throw new Error(lastErrorMessage || "Semua kandidat email gagal dibuat")
       }
 
-      try {
-  await setDoc(doc(db, "users", createdUser.uid), {
-    uid: createdUser.uid,
-    email: createdUser.email,
-    nama: karyawan.nama,
-    karyawanId: karyawan.id,
-    role: "karyawan",
-    roles: ["karyawan"],
-    tokoId: karyawan.tokoId || "",
-    tokoNama: karyawan.tokoNama || "",
-    createdAt: serverTimestamp(),
-    createdBy: auth.currentUser?.uid || "",
-  })
-  console.log("USER FIRESTORE BERHASIL DISIMPAN")
-} catch (err) {
-  console.error("GAGAL SIMPAN USER KE FIRESTORE:", err)
-  alert("Gagal simpan ke users, cek console")
-}
+      await setDoc(doc(db, "users", createdUser.uid), {
+        uid: createdUser.uid,
+        email: createdUser.email,
+        nama: karyawan.nama,
+        karyawanId: karyawan.id,
+        role: "karyawan",
+        roles: ["karyawan"],
+        tokoId: karyawan.tokoId || "",
+        tokoNama: karyawan.tokoNama || "",
+        createdAt: serverTimestamp(),
+        createdBy: auth.currentUser?.uid || "",
+      })
 
       setUsers((prev) => ({
         ...prev,
         [karyawan.id]: {
-          uid: createdUser!.uid,
-          email: createdUser!.email,
+          uid: createdUser.uid,
+          email: createdUser.email,
           roles: ["karyawan"],
         },
       }))
 
-      setSuccessMsg(`Akun ${karyawan.nama} berhasil dibuat`)
-      setTimeout(() => setSuccessMsg(null), 3000)
+      showSuccess(`Akun ${karyawan.nama} berhasil dibuat`)
     } catch (e: any) {
       console.error(e)
-      setErrorMsg(e?.message || `Gagal membuat akun ${karyawan.nama}`)
+      showError(e?.message || `Gagal membuat akun ${karyawan.nama}`)
     } finally {
       setLoadingId(null)
     }
   }
 
+    async function postAdminApi(url: string, body: Record<string, any>) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+
+    const text = await res.text()
+
+    let data: any = null
+    try {
+      data = text ? JSON.parse(text) : null
+    } catch {
+      throw new Error(`Endpoint ${url} tidak mengembalikan JSON. Status ${res.status}`)
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.message || `Request gagal. Status ${res.status}`)
+    }
+
+    return data
+  }
+
+  const handleResetPassword = async (karyawan: Karyawan) => {
+    const user = users[karyawan.id]
+    if (!user) {
+      showError(`Akun ${karyawan.nama} belum dibuat`)
+      return
+    }
+
+    if (!confirm(`Reset password ${karyawan.nama} ke default 12345678?`)) return
+
+    setLoadingId(`${karyawan.id}:reset`)
+    setErrorMsg(null)
+
+    try {
+      await postAdminApi("/api/reset-password", {
+        uid: user.uid,
+        password: "12345678",
+      })
+
+      showSuccess(`Password ${karyawan.nama} berhasil direset`)
+    } catch (e: any) {
+      console.error(e)
+      showError(e?.message || `Gagal reset password ${karyawan.nama}`)
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
+  const handleDeleteAccount = async (karyawan: Karyawan) => {
+    const user = users[karyawan.id]
+    if (!user) {
+      showError(`Akun ${karyawan.nama} belum ada`)
+      return
+    }
+
+    if (
+      !confirm(
+        `Hapus akun ${karyawan.nama}?\n\nAuth Firebase dan mapping users akan dihapus permanen.`
+      )
+    ) {
+      return
+    }
+
+    setLoadingId(`${karyawan.id}:delete`)
+    setErrorMsg(null)
+
+    try {
+      await postAdminApi("/api/delete-user", {
+        uid: user.uid,
+      })
+
+      setUsers((prev) => {
+        const next = { ...prev }
+        delete next[karyawan.id]
+        return next
+      })
+
+      showSuccess(`Akun ${karyawan.nama} berhasil dihapus`)
+    } catch (e: any) {
+      console.error(e)
+      showError(e?.message || `Gagal hapus akun ${karyawan.nama}`)
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
+  
+
   const handleGenerateAll = async () => {
     const notGenerated = filtered.filter((item) => !users[item.id])
+
     if (!notGenerated.length) {
-      setErrorMsg("Semua karyawan pada filter ini sudah punya akun")
+      showError("Semua karyawan pada filter ini sudah punya akun")
       return
     }
 
@@ -384,8 +479,7 @@ export default function BuatAkunKaryawanPage() {
       await handleGenerate(item)
     }
 
-    setSuccessMsg("Generate massal selesai")
-    setTimeout(() => setSuccessMsg(null), 3000)
+    showSuccess("Generate massal selesai")
   }
 
   return (
@@ -533,7 +627,7 @@ export default function BuatAkunKaryawanPage() {
             label="Status"
             value={statusFilter}
             onChange={(v) => {
-              setStatusFilter(v as any)
+              setStatusFilter(v as "all" | "generated" | "not_generated")
               setPage(1)
             }}
           >
@@ -557,7 +651,7 @@ export default function BuatAkunKaryawanPage() {
             ))}
           </FilterSelect>
         </div>
-      </motion.div>     
+      </motion.div>
 
       {loading && (
         <div className="flex justify-center py-16">
@@ -593,6 +687,9 @@ export default function BuatAkunKaryawanPage() {
         <div className="sm:hidden space-y-2">
           {paged.map((d, idx) => {
             const user = users[d.id]
+            const isGenerating = loadingId === `${d.id}:generate`
+            const isResetting = loadingId === `${d.id}:reset`
+            const isDeleting = loadingId === `${d.id}:delete`
 
             return (
               <motion.div
@@ -628,18 +725,13 @@ export default function BuatAkunKaryawanPage() {
                 </div>
 
                 <div className="flex gap-1.5 flex-wrap pt-2 border-t border-slate-100">
-                  {user ? (
-                    <div className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black">
-                      <Check size={11} strokeWidth={2.5} />
-                      Akun Sudah Dibuat
-                    </div>
-                  ) : (
+                  {!user ? (
                     <button
                       onClick={() => handleGenerate(d)}
-                      disabled={loadingId === d.id}
+                      disabled={!!loadingId}
                       className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-violet-400 to-purple-500 text-white text-[10px] font-black shadow-sm disabled:opacity-60"
                     >
-                      {loadingId === d.id ? (
+                      {isGenerating ? (
                         <>
                           <motion.span
                             animate={{ rotate: 360 }}
@@ -656,6 +748,54 @@ export default function BuatAkunKaryawanPage() {
                         </>
                       )}
                     </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleResetPassword(d)}
+                        disabled={!!loadingId}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-black disabled:opacity-60"
+                      >
+                        {isResetting ? (
+                          <>
+                            <motion.span
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                            >
+                              <RefreshCw size={11} strokeWidth={2.5} />
+                            </motion.span>
+                            Proses...
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw size={11} strokeWidth={2.5} />
+                            Reset Password
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteAccount(d)}
+                        disabled={!!loadingId}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[10px] font-black disabled:opacity-60"
+                      >
+                        {isDeleting ? (
+                          <>
+                            <motion.span
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                            >
+                              <RefreshCw size={11} strokeWidth={2.5} />
+                            </motion.span>
+                            Proses...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 size={11} strokeWidth={2.5} />
+                            Hapus Akun
+                          </>
+                        )}
+                      </button>
+                    </>
                   )}
                 </div>
               </motion.div>
@@ -690,6 +830,9 @@ export default function BuatAkunKaryawanPage() {
               <tbody>
                 {paged.map((d, i) => {
                   const user = users[d.id]
+                  const isGenerating = loadingId === `${d.id}:generate`
+                  const isResetting = loadingId === `${d.id}:reset`
+                  const isDeleting = loadingId === `${d.id}:delete`
 
                   return (
                     <motion.tr
@@ -728,20 +871,15 @@ export default function BuatAkunKaryawanPage() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1.5 justify-center">
-                          {user ? (
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black">
-                              <Check size={11} strokeWidth={2.5} />
-                              Sudah Dibuat
-                            </div>
-                          ) : (
+                          {!user ? (
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => handleGenerate(d)}
-                              disabled={loadingId === d.id}
+                              disabled={!!loadingId}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-400 to-purple-500 text-white text-[10px] font-black shadow-sm disabled:opacity-60"
                             >
-                              {loadingId === d.id ? (
+                              {isGenerating ? (
                                 <>
                                   <motion.span
                                     animate={{ rotate: 360 }}
@@ -758,6 +896,58 @@ export default function BuatAkunKaryawanPage() {
                                 </>
                               )}
                             </motion.button>
+                          ) : (
+                            <>
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleResetPassword(d)}
+                                disabled={!!loadingId}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-black shadow-sm disabled:opacity-60"
+                              >
+                                {isResetting ? (
+                                  <>
+                                    <motion.span
+                                      animate={{ rotate: 360 }}
+                                      transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                    >
+                                      <RefreshCw size={11} strokeWidth={2.5} />
+                                    </motion.span>
+                                    Proses...
+                                  </>
+                                ) : (
+                                  <>
+                                    <RotateCcw size={11} strokeWidth={2.5} />
+                                    Reset
+                                  </>
+                                )}
+                              </motion.button>
+
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleDeleteAccount(d)}
+                                disabled={!!loadingId}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[10px] font-black shadow-sm disabled:opacity-60"
+                              >
+                                {isDeleting ? (
+                                  <>
+                                    <motion.span
+                                      animate={{ rotate: 360 }}
+                                      transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                    >
+                                      <RefreshCw size={11} strokeWidth={2.5} />
+                                    </motion.span>
+                                    Proses...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Trash2 size={11} strokeWidth={2.5} />
+                                    Hapus
+                                  </>
+                                )}
+                              </motion.button>
+                            </>
                           )}
                         </div>
                       </td>
