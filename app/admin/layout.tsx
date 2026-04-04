@@ -383,11 +383,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               whileTap={{ scale: loggingOut ? 1 : 0.98 }}
               onClick={handleLogout}
               disabled={loggingOut}
-              className="
-                w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
-                bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-md shadow-rose-200/50
-                hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed
-              "
+              className={`
+                w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl
+                bg-red-50 border border-red-100 text-red-600
+                hover:bg-red-100 hover:border-red-200
+                transition-all duration-200 font-bold text-sm
+              `}
             >
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-white/20">
                 <LogOut size={15} strokeWidth={2.5} />
