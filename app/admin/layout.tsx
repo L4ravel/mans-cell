@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { auth, db } from "@/lib/firebase"
-import { collection, query, where, getDocs } from "firebase/firestore"
+import { doc, getDoc } from "firebase/firestore"
 import {
   Home,
   Menu,
@@ -48,9 +48,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openGroup, setOpenGroup] = useState<string[]>([])
   const [loggingOut, setLoggingOut] = useState(false)
-  const [userRoles, setUserRoles] = useState<string[]>([])
+  const [userRole, setUserRole] = useState<string>("")
 
-  // ✅ PROTEKSI ADMIN ONLY
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
       if (!user) {
@@ -58,31 +57,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return
       }
 
-      const q = query(
-        collection(db, "users"),
-        where("uid", "==", user.uid)
-      )
+      const snap = await getDoc(doc(db, "users", user.uid))
 
-      const snap = await getDocs(q)
-
-      let data: any = null
-
-      if (!snap.empty) {
-        data = snap.docs[0].data()
+      if (!snap.exists()) {
+        router.replace("/unauthorized")
+        return
       }
 
-      const roles: string[] = Array.isArray(data?.roles)
-        ? data.roles
-        : Array.isArray(data?.role)
-        ? data.role
-        : typeof data?.role === "string"
-        ? [data.role]
-        : []
+      const data = snap.data()
 
-      setUserRoles(roles)
+      const role: string = data?.role || ""
+      setUserRole(role)
 
-      const allowedRoles = ["admin"]
-      const hasAccess = roles.some((r) => allowedRoles.includes(r))
+      const hasAccess = role === "admin"
 
       if (!hasAccess) {
         router.replace("/unauthorized")
@@ -173,6 +160,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       ],
     },
   ]
+
 
  return (
     <div className="min-h-screen bg-slate-100 flex relative p-4 gap-4">
