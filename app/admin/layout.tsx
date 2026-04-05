@@ -1,13 +1,11 @@
-// Layout admin untuk sidebar responsive dengan group menu aktif mengikuti halaman yang sedang dibuka.
-// Group Master Data dan Absensi Karyawan sekarang auto-open sesuai pathname aktif.
-
 "use client"
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
-import { auth } from "@/lib/firebase"
+import { auth, db } from "@/lib/firebase"
+import { collection, query, where, getDocs } from "firebase/firestore"
 import {
   Home,
   Menu,
@@ -50,33 +48,76 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openGroup, setOpenGroup] = useState<string[]>([])
   const [loggingOut, setLoggingOut] = useState(false)
+  const [userRoles, setUserRoles] = useState<string[]>([])
+
+  // ✅ PROTEKSI ADMIN ONLY
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        router.replace("/login")
+        return
+      }
+
+      const q = query(
+        collection(db, "users"),
+        where("uid", "==", user.uid)
+      )
+
+      const snap = await getDocs(q)
+
+      let data: any = null
+
+      if (!snap.empty) {
+        data = snap.docs[0].data()
+      }
+
+      const roles: string[] = Array.isArray(data?.roles)
+        ? data.roles
+        : Array.isArray(data?.role)
+        ? data.role
+        : typeof data?.role === "string"
+        ? [data.role]
+        : []
+
+      setUserRoles(roles)
+
+      const allowedRoles = ["admin"]
+      const hasAccess = roles.some((r) => allowedRoles.includes(r))
+
+      if (!hasAccess) {
+        router.replace("/unauthorized")
+      }
+    })
+
+    return () => unsub()
+  }, [router])
 
   useEffect(() => {
-  const nextOpenGroup: string[] = []
+    const nextOpenGroup: string[] = []
 
-  if (
-    pathname.startsWith("/admin/tambah-toko") ||
-    pathname.startsWith("/admin/tambah-karyawan") ||
-    pathname.startsWith("/admin/tambah-barang") ||
-    pathname.startsWith("/admin/tambah-kategori") ||
-    pathname.startsWith("/admin/tambah-barang-tetap") ||
-    pathname.startsWith("/admin/buat-akun")
-  ) {
-    nextOpenGroup.push("Master Data")
-  }
+    if (
+      pathname.startsWith("/admin/tambah-toko") ||
+      pathname.startsWith("/admin/tambah-karyawan") ||
+      pathname.startsWith("/admin/tambah-barang") ||
+      pathname.startsWith("/admin/tambah-kategori") ||
+      pathname.startsWith("/admin/tambah-barang-tetap") ||
+      pathname.startsWith("/admin/buat-akun")
+    ) {
+      nextOpenGroup.push("Master Data")
+    }
 
-  if (
-    pathname.startsWith("/admin/dashboard-absensi") ||
-    pathname.startsWith("/admin/pengaturan-jam") ||
-    pathname.startsWith("/admin/tidak-wajib-absensi") ||
-    pathname.startsWith("/admin/laporan-absensi-bulanan") ||
-    pathname.startsWith("/admin/laporan-absensi-karyawan")
-  ) {
-    nextOpenGroup.push("Absensi Karyawan")
-  }
+    if (
+      pathname.startsWith("/admin/dashboard-absensi") ||
+      pathname.startsWith("/admin/pengaturan-jam") ||
+      pathname.startsWith("/admin/tidak-wajib-absensi") ||
+      pathname.startsWith("/admin/laporan-absensi-bulanan") ||
+      pathname.startsWith("/admin/laporan-absensi-karyawan")
+    ) {
+      nextOpenGroup.push("Absensi Karyawan")
+    }
 
-  setOpenGroup(nextOpenGroup)
-}, [pathname])
+    setOpenGroup(nextOpenGroup)
+  }, [pathname])
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") {
@@ -87,8 +128,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     if (href === "/admin/dashboard-absensi") {
-  return pathname === "/admin/dashboard-absensi"
-}
+      return pathname === "/admin/dashboard-absensi"
+    }
 
     return pathname === href
   }
@@ -121,19 +162,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       ],
     },
     {
-  label: "Absensi Karyawan",
-  icon: Users,
-  items: [
-    { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },
-    { href: "/admin/laporan-absensi-karyawan", icon: ClipboardList, label: "Laporan Absensi Karyawan" },   
-    { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
-    { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
-     { href: "/admin/laporan-absensi-bulanan", icon: ClipboardList, label: "Laporan Absensi Bulanan" },
-  ],
-},
+      label: "Absensi Karyawan",
+      icon: Users,
+      items: [
+        { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },
+        { href: "/admin/laporan-absensi-karyawan", icon: ClipboardList, label: "Laporan Absensi Karyawan" },
+        { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
+        { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
+        { href: "/admin/laporan-absensi-bulanan", icon: ClipboardList, label: "Laporan Absensi Bulanan" },
+      ],
+    },
   ]
 
-  return (
+ return (
     <div className="min-h-screen bg-slate-100 flex relative p-4 gap-4">
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute left-0 top-1/4 h-96 w-96 rounded-full bg-cyan-200/30 blur-[120px]" />
