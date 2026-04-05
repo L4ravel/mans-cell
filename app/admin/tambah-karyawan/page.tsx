@@ -95,11 +95,16 @@ const ITEMS_OPTIONS = [
 
 const JABATAN_OPTIONS = [
   { value: "kasir", label: "Kasir" },
+  { value: "karyawan_biasa", label: "Karyawan Biasa" },
   { value: "it", label: "IT" },
-  { value: "manager", label: "Manager" },
+  { value: "manager_1", label: "Manager 1" },
+  { value: "manager_2", label: "Manager 2" },
+  { value: "kepala_toko", label: "Kepala Toko" },
+  { value: "service_tech", label: "Service Tech" },
+
 ]
 
-const JABATAN_VALID = ["kasir", "it", "manager"]
+const JABATAN_VALID = ["kasir", "it", "manager_1", "manager_2", "service_tech"]
 
 const EMPTY_FORM = {
   nama: "",
