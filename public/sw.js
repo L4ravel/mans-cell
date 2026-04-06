@@ -1,13 +1,16 @@
 /*
   Service Worker PWA Mans Cell.
-  File ini menangani cache asset dasar agar aplikasi punya fondasi PWA yang valid,
-  lebih cepat dimuat ulang, dan tetap lebih stabil saat koneksi tidak ideal.
+  File ini menangani cache asset dasar dengan cara yang lebih aman.
+  Jika ada file optional yang gagal di-cache, service worker tidak langsung gagal total.
 */
 
-const CACHE_NAME = "mans-cell-v1"
+const CACHE_NAME = "mans-cell-v2"
 const APP_SHELL = [
   "/",
-  "/manifest.json",
+  "/manifest.json"
+]
+
+const OPTIONAL_ASSETS = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png"
@@ -15,24 +18,38 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(APP_SHELL)
-    })
+    (async () => {
+      const cache = await caches.open(CACHE_NAME)
+
+      await cache.addAll(APP_SHELL)
+
+      for (const asset of OPTIONAL_ASSETS) {
+        try {
+          await cache.add(asset)
+        } catch (error) {
+          console.warn("Gagal cache asset optional:", asset, error)
+        }
+      }
+
+      await self.skipWaiting()
+    })()
   )
-  self.skipWaiting()
 })
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
+    (async () => {
+      const keys = await caches.keys()
+
+      await Promise.all(
         keys
           .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key))
       )
-    })
+
+      await self.clients.claim()
+    })()
   )
-  self.clients.claim()
 })
 
 self.addEventListener("fetch", (event) => {
@@ -41,27 +58,26 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return
 
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
+    (async () => {
+      const cachedResponse = await caches.match(request)
       if (cachedResponse) return cachedResponse
 
-      return fetch(request)
-        .then((networkResponse) => {
-          const responseClone = networkResponse.clone()
+      try {
+        const networkResponse = await fetch(request)
 
-          if (
-            request.url.startsWith(self.location.origin) &&
-            networkResponse.status === 200
-          ) {
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone)
-            })
-          }
+        if (
+          request.url.startsWith(self.location.origin) &&
+          networkResponse.status === 200
+        ) {
+          const cache = await caches.open(CACHE_NAME)
+          cache.put(request, networkResponse.clone())
+        }
 
-          return networkResponse
-        })
-        .catch(() => {
-          return caches.match("/")
-        })
-    })
+        return networkResponse
+      } catch (error) {
+        const fallback = await caches.match("/")
+        return fallback || Response.error()
+      }
+    })()
   )
 })
