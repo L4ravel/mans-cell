@@ -57,23 +57,19 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   }, [])
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator)) return
+  if (!("serviceWorker" in navigator)) return
 
-    const registerSW = async () => {
-      try {
-        await navigator.serviceWorker.register("/sw.js")
-        console.log("Service Worker registered")
-      } catch (error) {
-        console.error("Service Worker registration failed:", error)
-      }
+  const registerSW = async () => {
+    try {
+      await navigator.serviceWorker.register("/sw.js")
+      console.log("Service Worker registered")
+    } catch (error) {
+      console.error("Service Worker registration failed:", error)
     }
+  }
 
-    window.addEventListener("load", registerSW)
-
-    return () => {
-      window.removeEventListener("load", registerSW)
-    }
-  }, [])
+  registerSW()
+}, [])
 
   useEffect(() => {
     const handler = (e: Event) => {
