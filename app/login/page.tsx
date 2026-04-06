@@ -190,21 +190,26 @@ export default function LoginPage() {
               </motion.div>
             </div>
 
-            <div className="flex justify-center lg:justify-start mb-1 sm:mb-8">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                className="h-28 w-28 sm:h-20 sm:w-20 rounded-xl bg-transparent sm:bg-white shadow-none sm:shadow-lg flex items-center justify-center p-0 sm:p-2 border-none sm:border sm:border-slate-100"
-              >
-                <Image
-                  src="/logo.png"
-                  alt="Mans-Cell Logo"
-                  width={80}
-                  height={80}
-                  className="object-contain"
-                  priority
-                />
-              </motion.div>
-            </div>
+            <div className="flex justify-center lg:justify-start mb-4 sm:mb-8">
+  <motion.div
+    whileHover={{ scale: 1.03, y: -2 }}
+    transition={{ type: "spring", stiffness: 220, damping: 18 }}
+    className="group relative"
+  >
+    <div className="absolute inset-0 bg-blue-500/10 blur-2xl rounded-[1.75rem] scale-105 group-hover:bg-cyan-400/15 transition-all duration-500" />
+
+    <div className="relative w-[220px] sm:w-[280px] aspect-[2/1] rounded-[1.5rem] bg-white/80 backdrop-blur-xl border border-blue-100 shadow-[0_15px_40px_rgba(37,99,235,0.12)] flex items-center justify-center px-5 sm:px-6">
+      <Image
+        src="/logo.png"
+        alt="Mans-Cell Logo"
+        width={1000}
+        height={500}
+        className="w-full h-auto object-contain drop-shadow-[0_8px_20px_rgba(37,99,235,0.18)]"
+        priority
+      />
+    </div>
+  </motion.div>
+</div>
 
             <div className="mb-4">
               <h1 className="text-2xl sm:text-4xl font-black text-slate-800 mb-1 leading-tight tracking-tight">
@@ -288,7 +293,7 @@ export default function LoginPage() {
             </form>
           </div>
 
-          <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 p-16 flex-col justify-center items-center text-white relative overflow-hidden rounded-l-[11rem]">
+         <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 p-16 flex-col justify-start items-center pt-24 text-white relative overflow-hidden rounded-l-[11rem]">
             <div className="absolute inset-0 overflow-hidden opacity-10">
               <motion.div
                 animate={{ rotate: [0, 360], scale: [1, 1.2, 1] }}
@@ -336,34 +341,38 @@ export default function LoginPage() {
             </div>
 
             <motion.div
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, delay: 0.3 }}
-              className="relative z-10 text-center"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", stiffness: 200, delay: 0.5 }}
-                className="mb-4"
-              >
-                <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white/10 backdrop-blur-sm border-2 border-cyan-300/30 mb-6 shadow-lg shadow-cyan-500/10">
-                  <Image
-                    src="/logo.png"
-                    alt="Mans-Cell Logo"
-                    width={60}
-                    height={60}
-                    className="object-contain"
-                    priority
-                  />
-                </div>
-              </motion.div>
+  initial={{ opacity: 0, x: 50 }}
+  animate={{ opacity: 1, x: 0 }}
+  transition={{ duration: 0.8, delay: 0.3 }}
+  className="relative z-10 text-center flex flex-col items-center"
+>
+           <motion.div
+  initial={{ scale: 0.9, opacity: 0 }}
+  animate={{ scale: 1, opacity: 1 }}
+  transition={{ type: "spring", stiffness: 180, damping: 14, delay: 0.45 }}
+  className="mb-8"
+>
+  <div className="relative group">
+    <div className="absolute inset-0 bg-cyan-300/20 blur-3xl rounded-[2rem] scale-110" />
+
+    <div className="relative w-[260px] xl:w-[320px] aspect-[2/1] rounded-[2rem] bg-white/10 backdrop-blur-md border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.25)] flex items-center justify-center px-6 xl:px-8">
+      <Image
+        src="/logo.png"
+        alt="Mans-Cell Logo"
+        width={1000}
+        height={500}
+        className="w-full h-auto object-contain drop-shadow-[0_10px_30px_rgba(255,255,255,0.18)]"
+        priority
+      />
+    </div>
+  </div>
+</motion.div>
 
               <motion.h2
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.6 }}
-                className="text-4xl xl:text-5xl font-black mb-4 leading-tight"
+                className="text-3xl xl:text-5xl font-black mb-3 leading-tight tracking-tight"
               >
                 Mans-Cell
               </motion.h2>
@@ -379,7 +388,7 @@ export default function LoginPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.8 }}
-                className="text-lg text-blue-50 font-medium mb-8 max-w-sm mx-auto leading-relaxed"
+                className="text-base xl:text-lg text-blue-50/90 font-medium mb-8 max-w-md mx-auto leading-relaxed"
               >
                 Panel untuk mengelola data toko, master data, dan operasional Mans-Cell secara digital.
               </motion.p>
