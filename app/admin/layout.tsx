@@ -48,7 +48,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openGroup, setOpenGroup] = useState<string[]>([])
   const [loggingOut, setLoggingOut] = useState(false)
-  const [userRole, setUserRole] = useState<string>("")
+
+  // Tutup sidebar otomatis saat navigasi berhasil
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [pathname])
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
@@ -65,13 +69,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       const data = snap.data()
-
       const role: string = data?.role || ""
-      setUserRole(role)
 
-      const hasAccess = role === "admin"
-
-      if (!hasAccess) {
+      if (role !== "admin") {
         router.replace("/unauthorized")
       }
     })
@@ -108,22 +108,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") {
-      return (
-        pathname === "/admin/tambah-barang" ||
-        pathname === "/admin/tambah-kategori"
-      )
+      return pathname === "/admin/tambah-barang" || pathname === "/admin/tambah-kategori"
     }
-
     if (href === "/admin/dashboard-absensi") {
       return pathname === "/admin/dashboard-absensi"
     }
-
     return pathname === href
   }
 
   const handleLogout = async () => {
     if (loggingOut) return
-
     try {
       setLoggingOut(true)
       await signOut(auth)
@@ -161,20 +155,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     },
   ]
 
-
- return (
+  return (
     <div className="min-h-screen bg-slate-100 flex relative p-4 gap-4">
+
+      {/* ── Background Orbs ── */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute left-0 top-1/4 h-96 w-96 rounded-full bg-cyan-200/30 blur-[120px]" />
         <div className="absolute right-0 bottom-1/3 h-96 w-96 rounded-full bg-blue-200/30 blur-[120px]" />
         <div className="absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-indigo-200/20 blur-[100px]" />
       </div>
 
+      {/* ── Mobile Hamburger ── z-[60] lebih tinggi dari segalanya ── */}
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-8 left-8 z-50 flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/50 text-slate-700"
+        className="lg:hidden fixed top-8 left-8 z-[60] flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/50 text-slate-700"
       >
         <AnimatePresence mode="wait" initial={false}>
           {sidebarOpen ? (
@@ -201,24 +197,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </AnimatePresence>
       </motion.button>
 
+      {/*
+        ── Mobile Backdrop ──
+        KUNCI FIX: backdrop dimulai dari setelah sidebar selesai (left: 19rem)
+        sehingga TIDAK overlap dengan sidebar sama sekali.
+        Sidebar z-[50], backdrop z-[40] — sidebar selalu di atas backdrop.
+        Klik di area backdrop → tutup sidebar. Klik di sidebar → navigasi normal.
+      */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="lg:hidden fixed inset-0 bg-black/10 z-30"
             onClick={() => setSidebarOpen(false)}
+            className="lg:hidden fixed top-0 bottom-0 right-0 z-[40] bg-black/20"
+            style={{ left: "19rem" }}
           />
         )}
       </AnimatePresence>
 
       <div className="relative z-10 flex flex-1 gap-4">
+
+        {/* ── SIDEBAR ── z-[50] lebih tinggi dari backdrop z-[40] ── */}
         <aside
           className={`
             fixed lg:relative
             inset-y-4 left-4 lg:inset-y-0 lg:left-0
-            z-40 flex flex-col
+            z-[50] flex flex-col
             ${sidebarCollapsed ? "w-20" : "w-72"}
             bg-white backdrop-blur-xl
             border border-slate-200
@@ -228,6 +234,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)] lg:translate-x-0"}
           `}
         >
+          {/* ── Logo / Brand ── */}
           <div className="relative h-20 flex items-center gap-3 px-5 border-b border-slate-200 overflow-hidden rounded-tl-3xl bg-gradient-to-r from-slate-50 to-blue-50/50">
             <div className="absolute right-0 top-0 opacity-[0.06] pointer-events-none">
               <Cpu size={80} strokeWidth={1} className="text-cyan-600" />
@@ -257,6 +264,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )}
           </div>
 
+          {/* ── Collapse Toggle ── */}
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
@@ -270,10 +278,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )}
           </motion.button>
 
+          {/* ── Navigation ── */}
           <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
+
             <Link
               href="/admin"
-              onClick={() => setSidebarOpen(false)}
               className={`
                 group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
                 ${
@@ -306,13 +315,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               return (
                 <div key={group.label} className="space-y-0.5">
                   <button
-                   onClick={() =>
-  setOpenGroup((prev) =>
-    prev.includes(group.label)
-      ? prev.filter((label) => label !== group.label)
-      : [...prev, group.label]
-  )
-}
+                    onClick={() =>
+                      setOpenGroup((prev) =>
+                        prev.includes(group.label)
+                          ? prev.filter((l) => l !== group.label)
+                          : [...prev, group.label]
+                      )
+                    }
                     className={`
                       w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200
                       ${
@@ -373,9 +382,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                               >
                                 <Link
                                   href={item.href}
-                                  onClick={() => setSidebarOpen(false)}
                                   className={`
-                                    group flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200
+                                    group flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200
                                     ${
                                       active
                                         ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-sm shadow-blue-200/50"
@@ -383,16 +391,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     }
                                   `}
                                 >
-                                  <div className="flex items-center gap-2.5">
-                                    <ItemIcon
-                                      size={14}
-                                      strokeWidth={active ? 2.5 : 2}
-                                      className="flex-shrink-0"
-                                    />
-                                    <span className={active ? "font-bold truncate" : "font-semibold truncate"}>
-                                      {item.label}
-                                    </span>
-                                  </div>
+                                  <ItemIcon
+                                    size={14}
+                                    strokeWidth={active ? 2.5 : 2}
+                                    className="flex-shrink-0"
+                                  />
+                                  <span className={active ? "font-bold truncate" : "font-semibold truncate"}>
+                                    {item.label}
+                                  </span>
                                 </Link>
                               </motion.div>
                             )
@@ -406,22 +412,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             })}
           </nav>
 
-          <div className="px-3 pb-3 pt-2 border-t border-slate-200">
+          {/* ── Sidebar Footer ── */}
+          <div className="p-3 border-t border-slate-200 rounded-bl-3xl bg-slate-50/50">
             <motion.button
               whileHover={{ scale: loggingOut ? 1 : 1.02 }}
-              whileTap={{ scale: loggingOut ? 1 : 0.98 }}
+              whileTap={{ scale: loggingOut ? 1 : 0.97 }}
               onClick={handleLogout}
               disabled={loggingOut}
-              className={`
-                w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl
-                bg-red-50 border border-red-100 text-red-600
-                hover:bg-red-100 hover:border-red-200
-                transition-all duration-200 font-bold text-sm
-              `}
+              className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-600 hover:bg-red-100 hover:border-red-200 transition-all duration-200 font-bold text-sm"
             >
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-white/20">
-                <LogOut size={15} strokeWidth={2.5} />
-              </div>
+              <LogOut size={15} strokeWidth={2.5} />
               {!sidebarCollapsed && (
                 <span className="text-sm font-bold">
                   {loggingOut ? "Logging out..." : "Logout"}
@@ -431,13 +431,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </aside>
 
+        {/* ── MAIN CONTENT AREA ── */}
         <div className="flex-1 flex flex-col min-w-0 bg-white rounded-3xl lg:rounded-l-none lg:rounded-r-3xl border border-slate-200 lg:border-l-0 shadow-2xl shadow-slate-300/40 overflow-hidden">
-          <header className="h-20 flex items-center justify-between px-6 lg:px-8 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50">
-            <div className="flex items-center gap-4">
-              <div className="lg:hidden" />
-            </div>
 
-            <div className="flex items-center gap-3">
+          {/* ── HEADER ── */}
+          <header className="h-20 flex items-center justify-between px-6 lg:px-8 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50">
+            <div className="lg:hidden" />
+
+            <div className="flex items-center gap-3 ml-auto">
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 className="hidden sm:flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm transition-all duration-200"
@@ -450,6 +451,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </header>
 
+          {/* ── MAIN CONTENT ── */}
           <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto bg-slate-50/30">
             {children}
           </main>
