@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://manscell.com/karyawan"),
+  metadataBase: new URL("https://manscell.com/login"),
   title: {
     default: "Mans Cell",
     template: "%s | Mans Cell",
