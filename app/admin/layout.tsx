@@ -204,18 +204,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         Sidebar z-[50], backdrop z-[40] — sidebar selalu di atas backdrop.
         Klik di area backdrop → tutup sidebar. Klik di sidebar → navigasi normal.
       */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden fixed top-0 bottom-0 right-0 z-[40] bg-black/20"
-            style={{ left: "19rem" }}
-          />
-        )}
-      </AnimatePresence>
+    
 
       <div className="relative z-10 flex flex-1 gap-4">
 
