@@ -1,12 +1,12 @@
 /*
   Service Worker PWA Mans Cell.
   File ini menangani cache asset dasar dengan cara yang lebih aman.
-  Jika ada file optional yang gagal di-cache, service worker tidak langsung gagal total.
+  Fokus start app diarahkan ke /login agar sesuai entry point aplikasi.
 */
 
-const CACHE_NAME = "mans-cell-v2"
+const CACHE_NAME = "mans-cell-v3"
 const APP_SHELL = [
-  "/",
+  "/login",
   "/manifest.json"
 ]
 
@@ -75,7 +75,7 @@ self.addEventListener("fetch", (event) => {
 
         return networkResponse
       } catch (error) {
-        const fallback = await caches.match("/")
+        const fallback = await caches.match("/login")
         return fallback || Response.error()
       }
     })()
