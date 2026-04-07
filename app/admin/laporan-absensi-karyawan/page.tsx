@@ -134,7 +134,7 @@ const getHari = (t: string) =>
 
 const hitungTerlambatMenit = (j: string | null) => {
   if (!j) return null
-  const diff = toMinutes(j) - 7 * 60 - 30
+  const diff = toMinutes(j) - 8 * 60
   return diff > 0 ? diff : null
 }
 
@@ -144,7 +144,7 @@ const hitungTerlambatMenit = (j: string | null) => {
 function SelisihMasukBadge({ jamMasuk }: { jamMasuk: string | null }) {
   if (!jamMasuk) return <span className="text-slate-300 text-xs">—</span>
 
-  const diff = toMinutes(jamMasuk) - toMinutes("07:30")
+  const diff = toMinutes(jamMasuk) - toMinutes("08:00")
 
   if (diff <= 0) {
     return (
@@ -164,7 +164,7 @@ function SelisihMasukBadge({ jamMasuk }: { jamMasuk: string | null }) {
 function SelisihPulangBadge({ jamPulang }: { jamPulang: string | null }) {
   if (!jamPulang) return <span className="text-slate-300 text-xs">—</span>
 
-  const diff = toMinutes(jamPulang) - toMinutes("14:00")
+  const diff = toMinutes(jamPulang) - toMinutes("21:00")
 
   if (diff >= 0) {
     return (
