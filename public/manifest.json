@@ -2,7 +2,7 @@
   "name": "Mans Cell",
   "short_name": "Mans Cell",
   "description": "Sistem absensi karyawan",
-  "start_url": "/karyawan",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
