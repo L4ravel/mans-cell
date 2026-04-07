@@ -1,6 +1,6 @@
 /**
- * Halaman root ringan untuk redirect user secepat mungkin tanpa baca Firestore berulang.
- * Prioritas pakai cache role lokal, fallback ke auth state, tanpa query Firestore tambahan.
+ * Halaman root ringan untuk redirect user secepat mungkin menggunakan cache session lokal,
+ * sambil menampilkan splash screen Mans Cell bertema biru dengan deskripsi sistem absensi karyawan.
  */
 "use client"
 
@@ -20,7 +20,7 @@ export default function HomePage() {
   const router = useRouter()
 
   useEffect(() => {
-    const cachedRaw = localStorage.getItem("sidip_session")
+    const cachedRaw = localStorage.getItem("mans_cell_session")
     const cached: CachedSession | null = cachedRaw ? JSON.parse(cachedRaw) : null
 
     if (cached?.redirectTo) {
@@ -29,7 +29,7 @@ export default function HomePage() {
     }
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      await new Promise((r) => setTimeout(r, 600))
+      await new Promise((resolve) => setTimeout(resolve, 600))
 
       if (!user) {
         router.replace("/login")
@@ -43,7 +43,7 @@ export default function HomePage() {
   }, [router])
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800">
+    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-400 via-blue-500 to-blue-600">
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -56,7 +56,7 @@ export default function HomePage() {
           transition={{ duration: 0.35 }}
           className="mb-6 flex items-center justify-center w-20 h-20 rounded-2xl bg-white shadow-lg"
         >
-          <Image src="/logo.png" alt="SIDIP" width={80} height={80} priority />
+          <Image src="/logo.png" alt="Mans Cell" width={80} height={80} priority />
         </motion.div>
 
         <motion.h1
@@ -65,16 +65,16 @@ export default function HomePage() {
           transition={{ delay: 0.15 }}
           className="text-white text-3xl font-black tracking-wide"
         >
-          SIDIP
+          Mans Cell
         </motion.h1>
 
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.9 }}
           transition={{ delay: 0.25 }}
-          className="text-emerald-100 text-sm mt-1"
+          className="text-blue-500 text-sm mt-1"
         >
-          Sistem Digital Integrasi Pondok
+          Sistem absensi karyawan
         </motion.p>
 
         <motion.div
