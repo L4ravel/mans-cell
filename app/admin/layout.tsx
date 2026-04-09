@@ -1,7 +1,13 @@
+/* 
+  Layout admin dengan auth guard yang aman dari hydration mismatch.
+  Perbaikan utama: render awal server/client disamakan memakai hasHydrated,
+  lalu pengecekan auth Firebase baru dijalankan setelah mount di browser.
+*/
+
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { auth, db } from "@/lib/firebase"
@@ -25,6 +31,7 @@ import {
   Calendar,
   ClipboardList,
   UserX,
+  ArrowRightLeft,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -44,80 +51,185 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const router = useRouter()
 
+  const [hasHydrated, setHasHydrated] = useState(false)
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openGroup, setOpenGroup] = useState<string[]>([])
   const [loggingOut, setLoggingOut] = useState(false)
 
-  // Tutup sidebar otomatis saat navigasi berhasil
-  useEffect(() => {
-    setSidebarOpen(false)
-  }, [pathname])
+  const [authLoading, setAuthLoading] = useState(true)
+  const [isAuthorized, setIsAuthorized] = useState(false)
 
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged(async (user) => {
-      if (!user) {
-        router.replace("/login")
-        return
-      }
+  const menuGroups: MenuGroup[] = useMemo(
+    () => [
+      {
+        label: "Master Data",
+        icon: Database,
+        items: [
+          { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
+          { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
+          { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
+          { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
+          { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
+          { href: "/admin/buat-akun", icon: KeyRound, label: "Buat Akun" },
+        ],
+      },
+      {
+        label: "Absensi Karyawan",
+        icon: Users,
+        items: [
+          { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },
+          {
+            href: "/admin/laporan-absensi-karyawan",
+            icon: ClipboardList,
+            label: "Laporan Absensi Karyawan",
+          },
+          { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
+          { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
+          {
+            href: "/admin/laporan-absensi-bulanan",
+            icon: ClipboardList,
+            label: "Laporan Absensi Bulanan",
+          },
+        ],
+      },
+    ],
+    []
+  )
 
-      const snap = await getDoc(doc(db, "users", user.uid))
-
-      if (!snap.exists()) {
-        router.replace("/unauthorized")
-        return
-      }
-
-      const data = snap.data()
-      const role: string = data?.role || ""
-
-      if (role !== "admin") {
-        router.replace("/unauthorized")
-      }
-    })
-
-    return () => unsub()
-  }, [router])
-
-  useEffect(() => {
+  const getGroupsFromPath = (currentPath: string) => {
     const nextOpenGroup: string[] = []
 
     if (
-      pathname.startsWith("/admin/tambah-toko") ||
-      pathname.startsWith("/admin/tambah-karyawan") ||
-      pathname.startsWith("/admin/tambah-barang") ||
-      pathname.startsWith("/admin/tambah-kategori") ||
-      pathname.startsWith("/admin/tambah-barang-tetap") ||
-      pathname.startsWith("/admin/buat-akun")
+      currentPath.startsWith("/admin/tambah-toko") ||
+      currentPath.startsWith("/admin/tambah-karyawan") ||
+      currentPath.startsWith("/admin/tambah-barang") ||
+      currentPath.startsWith("/admin/tambah-kategori") ||
+      currentPath.startsWith("/admin/tambah-barang-tetap") ||
+      currentPath.startsWith("/admin/transfer-barang") ||
+      currentPath.startsWith("/admin/buat-akun")
     ) {
       nextOpenGroup.push("Master Data")
     }
 
     if (
-      pathname.startsWith("/admin/dashboard-absensi") ||
-      pathname.startsWith("/admin/pengaturan-jam") ||
-      pathname.startsWith("/admin/tidak-wajib-absensi") ||
-      pathname.startsWith("/admin/laporan-absensi-bulanan") ||
-      pathname.startsWith("/admin/laporan-absensi-karyawan")
+      currentPath.startsWith("/admin/dashboard-absensi") ||
+      currentPath.startsWith("/admin/pengaturan-jam") ||
+      currentPath.startsWith("/admin/tidak-wajib-absensi") ||
+      currentPath.startsWith("/admin/laporan-absensi-bulanan") ||
+      currentPath.startsWith("/admin/laporan-absensi-karyawan")
     ) {
       nextOpenGroup.push("Absensi Karyawan")
     }
 
-    setOpenGroup(nextOpenGroup)
-  }, [pathname])
+    return nextOpenGroup
+  }
+
+  useEffect(() => {
+    setHasHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hasHydrated) return
+    setSidebarOpen(false)
+  }, [pathname, hasHydrated])
+
+  useEffect(() => {
+    if (!hasHydrated) return
+
+    let isMounted = true
+
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      if (!isMounted) return
+
+      if (!user) {
+        setIsAuthorized(false)
+        setAuthLoading(false)
+        router.replace("/login")
+        return
+      }
+
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid))
+
+        if (!isMounted) return
+
+        if (!snap.exists()) {
+          setIsAuthorized(false)
+          setAuthLoading(false)
+          router.replace("/unauthorized")
+          return
+        }
+
+        const data = snap.data()
+        const role: string = data?.role || ""
+
+        if (role !== "admin") {
+          setIsAuthorized(false)
+          setAuthLoading(false)
+          router.replace("/unauthorized")
+          return
+        }
+
+        setIsAuthorized(true)
+      } catch (error) {
+        console.error("Gagal validasi user admin:", error)
+        setIsAuthorized(false)
+        router.replace("/login")
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isMounted = false
+      unsub()
+    }
+  }, [router, hasHydrated])
+
+  useEffect(() => {
+    if (!hasHydrated) return
+
+    const groupsFromPath = getGroupsFromPath(pathname)
+
+    setOpenGroup((prev) => {
+      const merged = new Set([...prev, ...groupsFromPath])
+      return Array.from(merged)
+    })
+  }, [pathname, hasHydrated])
+
+  useEffect(() => {
+    if (!hasHydrated) return
+
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setSidebarOpen(false)
+      }
+    }
+
+    handleResize()
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [hasHydrated])
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") {
       return pathname === "/admin/tambah-barang" || pathname === "/admin/tambah-kategori"
     }
+
     if (href === "/admin/dashboard-absensi") {
       return pathname === "/admin/dashboard-absensi"
     }
+
     return pathname === href
   }
 
   const handleLogout = async () => {
     if (loggingOut) return
+
     try {
       setLoggingOut(true)
       await signOut(auth)
@@ -130,153 +242,130 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }
 
-  const menuGroups: MenuGroup[] = [
-    {
-      label: "Master Data",
-      icon: Database,
-      items: [
-        { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
-        { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
-        { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
-        { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
-        { href: "/admin/buat-akun", icon: KeyRound, label: "Buat Akun" },
-      ],
-    },
-    {
-      label: "Absensi Karyawan",
-      icon: Users,
-      items: [
-        { href: "/admin/dashboard-absensi", icon: Home, label: "Dashboard Absensi" },
-        { href: "/admin/laporan-absensi-karyawan", icon: ClipboardList, label: "Laporan Absensi Karyawan" },
-        { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
-        { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
-        { href: "/admin/laporan-absensi-bulanan", icon: ClipboardList, label: "Laporan Absensi Bulanan" },
-      ],
-    },
-  ]
+  if (!hasHydrated) {
+    return null
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white shadow-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50">
+              <Cpu className="text-blue-600" size={20} strokeWidth={2.2} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-800">Memuat panel admin...</p>
+              <p className="text-xs text-slate-500">Sedang cek autentikasi dan role user</p>
+            </div>
+          </div>
+
+          <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthorized) {
+    return null
+  }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex relative p-4 gap-4">
-
-      {/* ── Background Orbs ── */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute left-0 top-1/4 h-96 w-96 rounded-full bg-cyan-200/30 blur-[120px]" />
-        <div className="absolute right-0 bottom-1/3 h-96 w-96 rounded-full bg-blue-200/30 blur-[120px]" />
-        <div className="absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-indigo-200/20 blur-[100px]" />
+    <div className="relative flex min-h-screen gap-3 overflow-x-hidden bg-slate-100 p-3 sm:gap-4 sm:p-4">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div className="absolute left-0 top-1/4 h-72 w-72 rounded-full bg-cyan-200/20 blur-[90px]" />
+        <div className="absolute bottom-1/3 right-0 h-72 w-72 rounded-full bg-blue-200/20 blur-[90px]" />
+        <div className="absolute left-1/2 top-0 h-56 w-56 -translate-x-1/2 rounded-full bg-indigo-200/15 blur-[80px]" />
       </div>
 
-      {/* ── Mobile Hamburger ── z-[60] lebih tinggi dari segalanya ── */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-8 left-8 z-[60] flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/50 text-slate-700"
+      {/* Mobile Hamburger */}
+      <button
+        type="button"
+        onClick={() => setSidebarOpen((prev) => !prev)}
+        className="fixed left-5 top-5 z-[70] flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-lg lg:hidden"
+        aria-label={sidebarOpen ? "Tutup sidebar" : "Buka sidebar"}
       >
-        <AnimatePresence mode="wait" initial={false}>
-          {sidebarOpen ? (
-            <motion.span
-              key="close"
-              initial={{ rotate: -90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: 90, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <X size={18} strokeWidth={2} />
-            </motion.span>
-          ) : (
-            <motion.span
-              key="menu"
-              initial={{ rotate: 90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: -90, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Menu size={18} strokeWidth={2} />
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </motion.button>
+        {sidebarOpen ? <X size={18} strokeWidth={2} /> : <Menu size={18} strokeWidth={2} />}
+      </button>
 
-      {/*
-        ── Mobile Backdrop ──
-        KUNCI FIX: backdrop dimulai dari setelah sidebar selesai (left: 19rem)
-        sehingga TIDAK overlap dengan sidebar sama sekali.
-        Sidebar z-[50], backdrop z-[40] — sidebar selalu di atas backdrop.
-        Klik di area backdrop → tutup sidebar. Klik di sidebar → navigasi normal.
-      */}
-    
+      {/* Mobile Backdrop */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.button
+            type="button"
+            aria-label="Tutup sidebar"
+            onClick={() => setSidebarOpen(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-[40] bg-slate-900/30 backdrop-blur-[2px] lg:hidden"
+          />
+        )}
+      </AnimatePresence>
 
-      <div className="relative z-10 flex flex-1 gap-4">
-
-        {/* ── SIDEBAR ── z-[50] lebih tinggi dari backdrop z-[40] ── */}
+      <div className="relative z-10 flex min-w-0 flex-1 gap-3 sm:gap-4">
+        {/* Sidebar */}
         <aside
           className={`
-            fixed lg:relative
-            inset-y-4 left-4 lg:inset-y-0 lg:left-0
-            z-[50] flex flex-col
+            fixed inset-y-3 left-3 z-[60] flex max-w-[calc(100vw-1.5rem)] flex-col
+            rounded-3xl border border-slate-200 bg-white shadow-xl transition-all duration-300 ease-in-out
+            lg:relative lg:inset-y-0 lg:left-0 lg:rounded-l-3xl lg:rounded-r-none
             ${sidebarCollapsed ? "w-20" : "w-72"}
-            bg-white backdrop-blur-xl
-            border border-slate-200
-            shadow-2xl shadow-slate-300/40
-            rounded-3xl lg:rounded-r-none lg:rounded-l-3xl
-            transition-all duration-300 ease-in-out
             ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)] lg:translate-x-0"}
           `}
         >
-          {/* ── Logo / Brand ── */}
-          <div className="relative h-20 flex items-center gap-3 px-5 border-b border-slate-200 overflow-hidden rounded-tl-3xl bg-gradient-to-r from-slate-50 to-blue-50/50">
-            <div className="absolute right-0 top-0 opacity-[0.06] pointer-events-none">
-              <Cpu size={80} strokeWidth={1} className="text-cyan-600" />
+          {/* Brand */}
+          <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
+            <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
+              <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
             </div>
 
-            <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <Store className="text-blue-600" size={20} strokeWidth={2.5} />
             </div>
 
             {!sidebarCollapsed && (
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.2 }}
-                className="relative"
-              >
-                <div className="text-base font-black text-slate-800 tracking-tight leading-none">
+              <div className="relative min-w-0">
+                <div className="leading-none tracking-tight text-base font-black text-slate-800">
                   Mans-Cell{" "}
-                  <span className="text-transparent bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text">
+                  <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
                     Admin
                   </span>
                 </div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-0.5">
+                <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
                   Panel Management
                 </div>
-              </motion.div>
+              </div>
             )}
           </div>
 
-          {/* ── Collapse Toggle ── */}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="hidden lg:flex absolute -right-3 top-[88px] h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md text-slate-500 hover:text-slate-700 transition-colors z-10"
+          {/* Collapse button */}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            className="absolute -right-3 top-[88px] z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition-colors hover:text-slate-700 lg:flex"
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {sidebarCollapsed ? (
               <ChevronRight size={13} strokeWidth={2.5} />
             ) : (
               <ChevronLeft size={13} strokeWidth={2.5} />
             )}
-          </motion.button>
+          </button>
 
-          {/* ── Navigation ── */}
-          <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
-
+          {/* Navigation */}
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
             <Link
               href="/admin"
               className={`
-                group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
+                group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200
                 ${
                   pathname === "/admin"
-                    ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md shadow-blue-200/50"
+                    ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
                 }
               `}
@@ -304,15 +393,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               return (
                 <div key={group.label} className="space-y-0.5">
                   <button
+                    type="button"
                     onClick={() =>
                       setOpenGroup((prev) =>
                         prev.includes(group.label)
-                          ? prev.filter((l) => l !== group.label)
+                          ? prev.filter((label) => label !== group.label)
                           : [...prev, group.label]
                       )
                     }
                     className={`
-                      w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200
+                      flex w-full items-center justify-between rounded-xl px-3 py-2.5 transition-all duration-200
                       ${
                         hasActiveChild
                           ? "bg-blue-50 text-blue-700"
@@ -320,28 +410,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       }
                     `}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <div
                         className={`
                           flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200
                           ${
                             hasActiveChild
-                              ? "bg-gradient-to-br from-blue-400 to-cyan-500 text-white shadow-sm shadow-blue-200/50"
+                              ? "bg-gradient-to-br from-blue-400 to-cyan-500 text-white shadow-sm"
                               : "bg-slate-100"
                           }
                         `}
                       >
                         <GroupIcon size={15} strokeWidth={2.5} />
                       </div>
+
                       {!sidebarCollapsed && (
-                        <span className="text-sm font-bold">{group.label}</span>
+                        <span className="truncate text-sm font-bold">{group.label}</span>
                       )}
                     </div>
 
                     {!sidebarCollapsed && (
                       <motion.div
                         animate={{ rotate: isOpen ? 180 : 0 }}
-                        transition={{ duration: 0.2 }}
+                        transition={{ duration: 0.18 }}
                       >
                         <ChevronDown size={14} strokeWidth={2.5} className="text-slate-400" />
                       </motion.div>
@@ -354,10 +445,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
+                        transition={{ duration: 0.18 }}
                         className="overflow-hidden pl-3"
                       >
-                        <div className="border-l-2 border-slate-100 pl-2 space-y-0.5 py-1">
+                        <div className="space-y-0.5 border-l-2 border-slate-100 py-1 pl-2">
                           {group.items.map((item, idx) => {
                             const ItemIcon = item.icon
                             const active = isActive(item.href)
@@ -365,17 +456,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             return (
                               <motion.div
                                 key={item.href}
-                                initial={{ opacity: 0, x: -8 }}
+                                initial={{ opacity: 0, x: -6 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: idx * 0.04 }}
+                                transition={{ delay: idx * 0.03, duration: 0.15 }}
                               >
                                 <Link
                                   href={item.href}
                                   className={`
-                                    group flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200
+                                    group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200
                                     ${
                                       active
-                                        ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-sm shadow-blue-200/50"
+                                        ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-sm"
                                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
                                     }
                                   `}
@@ -385,7 +476,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     strokeWidth={active ? 2.5 : 2}
                                     className="flex-shrink-0"
                                   />
-                                  <span className={active ? "font-bold truncate" : "font-semibold truncate"}>
+                                  <span
+                                    className={active ? "truncate font-bold" : "truncate font-semibold"}
+                                  >
                                     {item.label}
                                   </span>
                                 </Link>
@@ -401,14 +494,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             })}
           </nav>
 
-          {/* ── Sidebar Footer ── */}
-          <div className="p-3 border-t border-slate-200 rounded-bl-3xl bg-slate-50/50">
-            <motion.button
-              whileHover={{ scale: loggingOut ? 1 : 1.02 }}
-              whileTap={{ scale: loggingOut ? 1 : 0.97 }}
+          {/* Footer */}
+          <div className="rounded-bl-3xl border-t border-slate-200 bg-slate-50/50 p-3">
+            <button
+              type="button"
               onClick={handleLogout}
               disabled={loggingOut}
-              className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-600 hover:bg-red-100 hover:border-red-200 transition-all duration-200 font-bold text-sm"
+              className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-red-100 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-600 transition-all duration-200 hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
               <LogOut size={15} strokeWidth={2.5} />
               {!sidebarCollapsed && (
@@ -416,32 +508,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   {loggingOut ? "Logging out..." : "Logout"}
                 </span>
               )}
-            </motion.button>
+            </button>
           </div>
         </aside>
 
-        {/* ── MAIN CONTENT AREA ── */}
-        <div className="flex-1 flex flex-col min-w-0 bg-white rounded-3xl lg:rounded-l-none lg:rounded-r-3xl border border-slate-200 lg:border-l-0 shadow-2xl shadow-slate-300/40 overflow-hidden">
+        {/* Main */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:rounded-r-3xl lg:border-l-0">
+          <header className="flex h-20 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 lg:px-8">
+            <div className="w-10 lg:hidden" />
 
-          {/* ── HEADER ── */}
-          <header className="h-20 flex items-center justify-between px-6 lg:px-8 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50">
-            <div className="lg:hidden" />
-
-            <div className="flex items-center gap-3 ml-auto">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                className="hidden sm:flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm transition-all duration-200"
-              >
+            <div className="ml-auto flex items-center gap-3">
+              <div className="hidden items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:flex">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
                   <User size={14} strokeWidth={2.5} />
                 </div>
                 <span className="text-sm font-bold">Admin</span>
-              </motion.div>
+              </div>
             </div>
           </header>
 
-          {/* ── MAIN CONTENT ── */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto bg-slate-50/30">
+          <main className="flex-1 overflow-auto bg-slate-50/30 p-4 sm:p-6 lg:p-8">
             {children}
           </main>
         </div>
