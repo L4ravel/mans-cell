@@ -1,6 +1,6 @@
 /* 
-  Halaman admin barang untuk CRUD data barang per toko di Firestore.
-  Revisi ini memanggil satuan dari collection satuan_barang dan menambahkan tombol navigasi Satuan di header.
+  Halaman admin metode pembayaran untuk CRUD data metode pembayaran langsung ke Firestore.
+  File ini mendukung tipe pembayaran, provider, biaya admin, nomor rekening, nama rekening, dan status aktif.
 */
 
 "use client"
@@ -17,68 +17,41 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore"
-import { useRouter } from "next/navigation"
 import {
-  Package,
+  Wallet,
   Cpu,
   Plus,
   Pencil,
   Trash2,
   Search,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
-  Tag,
-  Boxes,
+  X,
   Check,
   RefreshCw,
-  BadgeDollarSign,
-  Layers3,
-  Store,
-  Truck,
-  Ruler,
-  TriangleAlert,
-  ChevronRight,
-  ChevronLeft,
-  X,
   AlertCircle,
-  Barcode,
+  Landmark,
+  CreditCard,
+  BadgePercent,
+  CircleDollarSign,
+  ShieldCheck,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
-type KategoriBarang = {
+type MetodePembayaran = {
   id: string
   nama: string
-}
-
-type SatuanBarang = {
-  id: string
-  nama: string
-}
-
-type Toko = {
-  id: string
-  nama: string
-  kode?: string
-  pemilik?: string
-  aktif?: boolean
-}
-
-type Barang = {
-  id: string
-  kodeBarang: string
-  nama: string
-  kategoriId: string
-  kategoriNama: string
-  tokoId: string
-  tokoNama: string
-  merk: string
-  supplier: string
-  satuan: string
-  hargaModal: number
-  hargaJual: number
-  stok: number
-  stokMinimum: number
+  tipe: "Tunai" | "Non-Tunai"
+  provider?: string
+  biayaAdmin?: number
+  nomorRekening?: string
+  namaRekening?: string
+  aktif: boolean
   createdAt: number
+  createdBy: string
   updatedAt?: number
+  updatedBy?: string
 }
 
 const ITEMS_OPTIONS = [
@@ -88,18 +61,16 @@ const ITEMS_OPTIONS = [
   { value: 0, label: "Semua" },
 ]
 
+const TIPE_OPTIONS = ["Tunai", "Non-Tunai"] as const
+
 const EMPTY_FORM = {
-  kodeBarang: "",
   nama: "",
-  kategoriId: "",
-  tokoId: "",
-  merk: "",
-  supplier: "",
-  satuan: "",
-  hargaModal: "",
-  hargaJual: "",
-  stok: "",
-  stokMinimum: "",
+  tipe: "Tunai",
+  provider: "",
+  biayaAdmin: "0",
+  nomorRekening: "",
+  namaRekening: "",
+  aktif: true,
 }
 
 function FormInput({
@@ -210,13 +181,8 @@ function FilterSelect({
   )
 }
 
-export default function TambahBarangPage() {
-  const router = useRouter()
-
-  const [data, setData] = useState<Barang[]>([])
-  const [kategoriList, setKategoriList] = useState<KategoriBarang[]>([])
-  const [satuanList, setSatuanList] = useState<SatuanBarang[]>([])
-  const [tokoList, setTokoList] = useState<Toko[]>([])
+export default function TambahMetodePembayaranPage() {
+  const [data, setData] = useState<MetodePembayaran[]>([])
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
@@ -230,105 +196,34 @@ export default function TambahBarangPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   const [search, setSearch] = useState("")
-  const [filterKategori, setFilterKategori] = useState("")
-  const [filterToko, setFilterToko] = useState("")
+  const [filterTipe, setFilterTipe] = useState("")
+  const [filterAktif, setFilterAktif] = useState("")
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
 
   const isEdit = !!editId
 
-  const fetchKategori = async () => {
-    try {
-      const qRef = query(collection(db, "kategori_barang"), orderBy("nama"))
-      const snap = await getDocs(qRef)
-
-      const list: KategoriBarang[] = snap.docs.map((d) => {
-        const x = d.data() as any
-        return {
-          id: d.id,
-          nama: x?.nama || "",
-        }
-      })
-
-      setKategoriList(list)
-    } catch (e) {
-      console.error(e)
-      setKategoriList([])
-    }
-  }
-
-  const fetchSatuan = async () => {
-    try {
-      const qRef = query(collection(db, "satuan_barang"), orderBy("nama"))
-      const snap = await getDocs(qRef)
-
-      const list: SatuanBarang[] = snap.docs
-        .map((d) => {
-          const x = d.data() as any
-          return {
-            id: d.id,
-            nama: x?.nama || "",
-          }
-        })
-        .filter((item) => item.nama)
-
-      setSatuanList(list)
-    } catch (e) {
-      console.error(e)
-      setSatuanList([])
-    }
-  }
-
-  const fetchToko = async () => {
-    try {
-      const qRef = query(collection(db, "toko"), orderBy("nama"))
-      const snap = await getDocs(qRef)
-
-      const list: Toko[] = snap.docs
-        .map((d) => {
-          const x = d.data() as any
-          return {
-            id: d.id,
-            nama: x?.nama || "",
-            kode: x?.kode || "",
-            pemilik: x?.pemilik || "",
-            aktif: Boolean(x?.aktif),
-          }
-        })
-        .filter((item) => item.nama)
-
-      setTokoList(list)
-    } catch (e) {
-      console.error(e)
-      setTokoList([])
-    }
-  }
-
   const fetchData = async () => {
     setLoading(true)
     try {
-      const qRef = query(collection(db, "barang"), orderBy("nama"))
+      const qRef = query(collection(db, "metode_pembayaran"), orderBy("nama"))
       const snap = await getDocs(qRef)
 
-      const list: Barang[] = snap.docs.map((d) => {
+      const list: MetodePembayaran[] = snap.docs.map((d) => {
         const x = d.data() as any
         return {
           id: d.id,
-          kodeBarang: x?.kodeBarang || "",
           nama: x?.nama || "",
-          kategoriId: x?.kategoriId || "",
-          kategoriNama: x?.kategoriNama || "",
-          tokoId: x?.tokoId || "",
-          tokoNama: x?.tokoNama || "",
-          merk: x?.merk || "",
-          supplier: x?.supplier || "",
-          satuan: x?.satuan || "",
-          hargaModal: Number(x?.hargaModal || 0),
-          hargaJual: Number(x?.hargaJual || 0),
-          stok: Number(x?.stok || 0),
-          stokMinimum: Number(x?.stokMinimum || 0),
+          tipe: x?.tipe || "Tunai",
+          provider: x?.provider || "",
+          biayaAdmin: Number(x?.biayaAdmin || 0),
+          nomorRekening: x?.nomorRekening || "",
+          namaRekening: x?.namaRekening || "",
+          aktif: Boolean(x?.aktif),
           createdAt: Number(x?.createdAt || Date.now()),
+          createdBy: x?.createdBy || "",
           updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
+          updatedBy: x?.updatedBy || "",
         }
       })
 
@@ -342,31 +237,9 @@ export default function TambahBarangPage() {
   }
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== "development") return
-
-    const clearDevCache = async () => {
-      try {
-        if (typeof window !== "undefined" && "caches" in window) {
-          const cacheKeys = await window.caches.keys()
-          await Promise.all(cacheKeys.map((key) => window.caches.delete(key)))
-        }
-
-        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations()
-          await Promise.all(registrations.map((registration) => registration.unregister()))
-        }
-      } catch (error) {
-        console.error("Gagal membersihkan cache dev:", error)
-      }
-    }
-
-    clearDevCache()
-  }, [])
-
-  useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
       if (u) {
-        await Promise.all([fetchKategori(), fetchSatuan(), fetchToko(), fetchData()])
+        await fetchData()
       }
     })
     return () => unsub()
@@ -379,19 +252,20 @@ export default function TambahBarangPage() {
       const matchSearch =
         !q ||
         d.nama.toLowerCase().includes(q) ||
-        d.kodeBarang.toLowerCase().includes(q) ||
-        d.merk.toLowerCase().includes(q) ||
-        d.supplier.toLowerCase().includes(q) ||
-        d.kategoriNama.toLowerCase().includes(q) ||
-        d.tokoNama.toLowerCase().includes(q) ||
-        d.satuan.toLowerCase().includes(q)
+        (d.provider || "").toLowerCase().includes(q) ||
+        (d.nomorRekening || "").toLowerCase().includes(q) ||
+        (d.namaRekening || "").toLowerCase().includes(q) ||
+        d.tipe.toLowerCase().includes(q)
 
-      const matchKategori = !filterKategori || d.kategoriId === filterKategori
-      const matchToko = !filterToko || d.tokoId === filterToko
+      const matchTipe = !filterTipe || d.tipe === filterTipe
+      const matchAktif =
+        !filterAktif ||
+        (filterAktif === "aktif" && d.aktif) ||
+        (filterAktif === "nonaktif" && !d.aktif)
 
-      return matchSearch && matchKategori && matchToko
+      return matchSearch && matchTipe && matchAktif
     })
-  }, [data, search, filterKategori, filterToko])
+  }, [data, search, filterTipe, filterAktif])
 
   const totalPages =
     itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / itemsPerPage))
@@ -411,28 +285,21 @@ export default function TambahBarangPage() {
   }
 
   const openAdd = () => {
-    setForm({
-      ...EMPTY_FORM,
-      satuan: satuanList[0]?.nama || "",
-    })
+    setForm(EMPTY_FORM)
     setEditId(null)
     setError(null)
     setShowModal(true)
   }
 
-  const openEdit = (d: Barang) => {
+  const openEdit = (d: MetodePembayaran) => {
     setForm({
-      kodeBarang: d.kodeBarang || "",
-      nama: d.nama,
-      kategoriId: d.kategoriId,
-      tokoId: d.tokoId || "",
-      merk: d.merk,
-      supplier: d.supplier || "",
-      satuan: d.satuan || "",
-      hargaModal: String(d.hargaModal || ""),
-      hargaJual: String(d.hargaJual || ""),
-      stok: String(d.stok || ""),
-      stokMinimum: String(d.stokMinimum || ""),
+      nama: d.nama || "",
+      tipe: d.tipe || "Tunai",
+      provider: d.provider || "",
+      biayaAdmin: String(d.biayaAdmin || 0),
+      nomorRekening: d.nomorRekening || "",
+      namaRekening: d.namaRekening || "",
+      aktif: Boolean(d.aktif),
     })
     setEditId(d.id)
     setError(null)
@@ -445,49 +312,30 @@ export default function TambahBarangPage() {
       setForm((f) => ({ ...f, [key]: val }))
 
   const validateForm = () => {
-    if (!isEdit && !form.tokoId) return "Toko wajib dipilih"
-    if (isEdit && !form.kodeBarang.trim()) return "Kode barang wajib diisi"
-    if (!form.nama.trim()) return "Nama barang wajib diisi"
-    if (!form.kategoriId) return "Kategori wajib dipilih"
-    if (!form.tokoId) return "Toko wajib dipilih"
-    if (!form.merk.trim()) return "Merk wajib diisi"
-    if (!form.supplier.trim()) return "Supplier wajib diisi"
-    if (!form.satuan.trim()) return "Satuan wajib dipilih"
-    if (!form.hargaModal.trim()) return "Harga modal wajib diisi"
-    if (!form.hargaJual.trim()) return "Harga jual wajib diisi"
-    if (!form.stok.trim()) return "Stok wajib diisi"
-    if (!form.stokMinimum.trim()) return "Stok minimum wajib diisi"
+    if (!form.nama.trim()) return "Nama metode pembayaran wajib diisi"
+    if (!form.tipe.trim()) return "Tipe pembayaran wajib dipilih"
 
-    const hargaModal = Number(form.hargaModal)
-    const hargaJual = Number(form.hargaJual)
-    const stok = Number(form.stok)
-    const stokMinimum = Number(form.stokMinimum)
+    const duplicateNama = data.find(
+      (item) =>
+        item.nama.trim().toLowerCase() === form.nama.trim().toLowerCase() &&
+        (!editId || item.id !== editId)
+    )
 
-    if (Number.isNaN(hargaModal) || hargaModal < 0) return "Harga modal tidak valid"
-    if (Number.isNaN(hargaJual) || hargaJual < 0) return "Harga jual tidak valid"
-    if (Number.isNaN(stok) || stok < 0) return "Stok tidak valid"
-    if (Number.isNaN(stokMinimum) || stokMinimum < 0) return "Stok minimum tidak valid"
-    if (hargaJual < hargaModal) return "Harga jual tidak boleh lebih kecil dari harga modal"
+    if (duplicateNama) return "Nama metode pembayaran sudah ada"
 
-    const kodeBarangFinal = isEdit
-      ? form.kodeBarang.trim().toLowerCase()
-      : generateKodeBarang(form.tokoId).trim().toLowerCase()
+    const biayaAdmin = Number(form.biayaAdmin || 0)
+    if (Number.isNaN(biayaAdmin) || biayaAdmin < 0) {
+      return "Biaya admin tidak valid"
+    }
+    if (biayaAdmin > 100) {
+      return "Biaya admin tidak boleh lebih dari 100%"
+    }
 
-    const duplicate = data.find((item) => {
-      const sameCode = item.kodeBarang.trim().toLowerCase() === kodeBarangFinal
-      const sameStore = item.tokoId === form.tokoId
-      const notSelf = !editId || item.id !== editId
-      return sameCode && sameStore && notSelf
-    })
+    if (form.tipe === "Tunai") return null
 
-    if (duplicate) return "Kode barang sudah dipakai di toko ini"
+    if (!form.provider.trim()) return "Provider wajib diisi untuk metode non-tunai"
 
     return null
-  }
-
-  const generateKodeBarang = (tokoId: string) => {
-    const time = Date.now().toString().slice(-6)
-    return `${tokoId.toUpperCase()}-${time}`
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -506,52 +354,22 @@ export default function TambahBarangPage() {
     setError(null)
 
     try {
-      const kategori = kategoriList.find((k) => k.id === form.kategoriId)
-      if (!kategori) {
-        setError("Kategori tidak ditemukan")
-        return
-      }
-
-      const toko = tokoList.find((t) => t.id === form.tokoId)
-      if (!toko) {
-        setError("Toko tidak ditemukan")
-        return
-      }
-
-      const kodeBarang = isEdit
-        ? form.kodeBarang.trim().toUpperCase()
-        : generateKodeBarang(form.tokoId)
-
-      const nama = form.nama.trim()
-      const merk = form.merk.trim()
-      const supplier = form.supplier.trim()
-      const satuan = form.satuan.trim()
-      const hargaModal = Number(form.hargaModal)
-      const hargaJual = Number(form.hargaJual)
-      const stok = Number(form.stok)
-      const stokMinimum = Number(form.stokMinimum)
       const now = Date.now()
 
-      if (isEdit && editId) {
-        const updatedItem: Partial<Barang> = {
-          kodeBarang,
-          nama,
-          kategoriId: kategori.id,
-          kategoriNama: kategori.nama,
-          tokoId: toko.id,
-          tokoNama: toko.nama,
-          merk,
-          supplier,
-          satuan,
-          hargaModal,
-          hargaJual,
-          stok,
-          stokMinimum,
-          updatedAt: now,
-        }
+      const payload = {
+        nama: form.nama.trim(),
+        tipe: form.tipe as MetodePembayaran["tipe"],
+        provider: form.tipe === "Non-Tunai" ? form.provider.trim() : "",
+        biayaAdmin: Number(form.biayaAdmin || 0),
+        nomorRekening: form.tipe === "Non-Tunai" ? form.nomorRekening.trim() : "",
+        namaRekening: form.tipe === "Non-Tunai" ? form.namaRekening.trim() : "",
+        aktif: Boolean(form.aktif),
+      }
 
-        await updateDoc(doc(db, "barang", editId), {
-          ...updatedItem,
+      if (isEdit && editId) {
+        await updateDoc(doc(db, "metode_pembayaran", editId), {
+          ...payload,
+          updatedAt: now,
           updatedBy: user.uid,
         })
 
@@ -561,64 +379,39 @@ export default function TambahBarangPage() {
               item.id === editId
                 ? {
                     ...item,
-                    kodeBarang,
-                    nama,
-                    kategoriId: kategori.id,
-                    kategoriNama: kategori.nama,
-                    tokoId: toko.id,
-                    tokoNama: toko.nama,
-                    merk,
-                    supplier,
-                    satuan,
-                    hargaModal,
-                    hargaJual,
-                    stok,
-                    stokMinimum,
+                    ...payload,
                     updatedAt: now,
+                    updatedBy: user.uid,
                   }
                 : item
             )
             .sort((a, b) => a.nama.localeCompare(b.nama))
         )
 
-        setSuccessMsg("Data barang berhasil diperbarui")
+        setSuccessMsg("Metode pembayaran berhasil diperbarui")
       } else {
-        const newRef = doc(collection(db, "barang"))
-        const newItem: Barang = {
+        const newRef = doc(collection(db, "metode_pembayaran"))
+        const newItem: MetodePembayaran = {
           id: newRef.id,
-          kodeBarang,
-          nama,
-          kategoriId: kategori.id,
-          kategoriNama: kategori.nama,
-          tokoId: toko.id,
-          tokoNama: toko.nama,
-          merk,
-          supplier,
-          satuan,
-          hargaModal,
-          hargaJual,
-          stok,
-          stokMinimum,
+          ...payload,
           createdAt: now,
+          createdBy: user.uid,
         }
 
-        await setDoc(newRef, {
-          ...newItem,
-          createdBy: user.uid,
-        })
+        await setDoc(newRef, newItem)
 
         setData((prev) =>
           [...prev, newItem].sort((a, b) => a.nama.localeCompare(b.nama))
         )
 
-        setSuccessMsg("Barang berhasil ditambahkan")
+        setSuccessMsg("Metode pembayaran berhasil ditambahkan")
       }
 
       closeModal()
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
       console.error(e)
-      setError("Gagal menyimpan data barang")
+      setError("Gagal menyimpan metode pembayaran")
     } finally {
       setSubmitLoading(false)
     }
@@ -629,15 +422,14 @@ export default function TambahBarangPage() {
 
     setDeleteLoading(true)
     try {
-      await deleteDoc(doc(db, "barang", deleteId))
-
+      await deleteDoc(doc(db, "metode_pembayaran", deleteId))
       setData((prev) => prev.filter((item) => item.id !== deleteId))
       setDeleteId(null)
-      setSuccessMsg("Data barang berhasil dihapus")
-
+      setSuccessMsg("Metode pembayaran berhasil dihapus")
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
       console.error(e)
+      setError("Gagal menghapus metode pembayaran")
     } finally {
       setDeleteLoading(false)
     }
@@ -653,14 +445,14 @@ export default function TambahBarangPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-              <Package size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+              <Wallet size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
             </div>
             <div>
               <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Data Barang
+                Metode Pembayaran
               </h1>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Barang · toko · supplier · stok minimum
+                Tunai · transfer · qris · e-wallet
               </p>
             </div>
           </div>
@@ -677,31 +469,11 @@ export default function TambahBarangPage() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => router.push("/admin/tambah-kategori")}
-              className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50"
-            >
-              <Tag size={13} strokeWidth={3} />
-              <span>Kategori</span>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => router.push("/admin/tambah-satuan")}
-              className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50"
-            >
-              <Ruler size={13} strokeWidth={3} />
-              <span>Satuan</span>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
               onClick={openAdd}
               className="flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-3 text-[10px] font-black uppercase tracking-wide text-white shadow-sm shadow-emerald-200/50 transition-all hover:shadow-md"
             >
               <Plus size={13} strokeWidth={3} />
-              <span>Tambah Barang</span>
+              <span>Tambah Metode</span>
             </motion.button>
 
             <motion.button
@@ -751,7 +523,7 @@ export default function TambahBarangPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="sm:col-span-2 lg:col-span-1">
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Cari Barang
+              Cari Metode
             </label>
             <div className="relative">
               <Search
@@ -765,44 +537,41 @@ export default function TambahBarangPage() {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Kode, nama, merk, supplier, toko..."
+                placeholder="Nama, provider, rekening..."
                 className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </div>
           </div>
 
           <FilterSelect
-            label="Kategori"
-            value={filterKategori}
+            label="Tipe"
+            value={filterTipe}
             onChange={(v) => {
-              setFilterKategori(v)
+              setFilterTipe(v)
               setPage(1)
             }}
-            icon={Layers3}
+            icon={CreditCard}
           >
-            <option value="">Semua Kategori</option>
-            {kategoriList.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.nama}
+            <option value="">Semua Tipe</option>
+            {TIPE_OPTIONS.map((item) => (
+              <option key={item} value={item}>
+                {item}
               </option>
             ))}
           </FilterSelect>
 
           <FilterSelect
-            label="Toko"
-            value={filterToko}
+            label="Status"
+            value={filterAktif}
             onChange={(v) => {
-              setFilterToko(v)
+              setFilterAktif(v)
               setPage(1)
             }}
-            icon={Store}
+            icon={ShieldCheck}
           >
-            <option value="">Semua Toko</option>
-            {tokoList.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nama}
-              </option>
-            ))}
+            <option value="">Semua Status</option>
+            <option value="aktif">Aktif</option>
+            <option value="nonaktif">Nonaktif</option>
           </FilterSelect>
 
           <FilterSelect
@@ -840,10 +609,10 @@ export default function TambahBarangPage() {
       {!loading && filtered.length === 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3 py-16">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-            <Boxes size={28} className="text-slate-300" strokeWidth={2} />
+            <Wallet size={28} className="text-slate-300" strokeWidth={2} />
           </div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Belum ada data barang
+            Belum ada metode pembayaran
           </p>
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -852,112 +621,85 @@ export default function TambahBarangPage() {
             className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 py-2 text-xs font-black text-white shadow-sm"
           >
             <Plus size={13} strokeWidth={3} />
-            Tambah Barang Pertama
+            Tambah Metode Pertama
           </motion.button>
         </motion.div>
       )}
 
       {!loading && paged.length > 0 && (
         <div className="space-y-2 sm:hidden">
-          {paged.map((d, idx) => {
-            const isLowStock = d.stok <= d.stokMinimum
-            return (
-              <motion.div
-                key={d.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">{d.nama}</p>
-                    <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      {d.kodeBarang || "-"} · {d.kategoriNama}
-                    </p>
-                  </div>
-                  <div className="flex flex-shrink-0 gap-1.5">
-                    <button
-                      onClick={() => openEdit(d)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
-                    >
-                      <Pencil size={12} strokeWidth={2.5} />
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(d.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
-                    >
-                      <Trash2 size={12} strokeWidth={2.5} />
-                    </button>
-                  </div>
+          {paged.map((d, idx) => (
+            <motion.div
+              key={d.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.03 }}
+              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black text-slate-800">{d.nama}</p>
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    {d.tipe} · {d.provider || "Tanpa Provider"}
+                  </p>
                 </div>
-
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded-lg bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
-                    {d.tokoNama || "-"}
-                  </span>
-                  <span className="rounded-lg bg-cyan-100 px-2 py-0.5 text-[10px] font-bold text-cyan-700">
-                    {d.merk || "-"}
-                  </span>
-                  <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                    {d.satuan || "-"}
-                  </span>
-                  <span
-                    className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
-                      isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
-                    }`}
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => openEdit(d)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100"
                   >
-                    Stok: {d.stok}
-                  </span>
+                    <Pencil size={12} strokeWidth={2.5} />
+                  </button>
+                  <button
+                    onClick={() => setDeleteId(d.id)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 hover:bg-red-100"
+                  >
+                    <Trash2 size={12} strokeWidth={2.5} />
+                  </button>
                 </div>
+              </div>
 
-                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Supplier
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">{d.supplier || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Satuan
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">{d.satuan || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Harga Modal
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">
-                      Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Harga Jual
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">
-                      Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Stok Minimum
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">{d.stokMinimum}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Status
-                    </p>
-                    <p className={`text-xs font-bold ${isLowStock ? "text-red-600" : "text-emerald-600"}`}>
-                      {isLowStock ? "Stok Menipis" : "Aman"}
-                    </p>
-                  </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded-lg bg-cyan-100 px-2 py-0.5 text-[10px] font-bold text-cyan-700">
+                  {d.tipe}
+                </span>
+                <span
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
+                    d.aktif ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {d.aktif ? "Aktif" : "Nonaktif"}
+                </span>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Provider
+                  </p>
+                  <p className="text-xs font-bold text-slate-700">{d.provider || "—"}</p>
                 </div>
-              </motion.div>
-            )
-          })}
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Biaya Admin
+                  </p>
+                  <p className="text-xs font-bold text-slate-700">{d.biayaAdmin || 0}%</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    No. Rekening
+                  </p>
+                  <p className="text-xs font-bold text-slate-700">{d.nomorRekening || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Nama Rekening
+                  </p>
+                  <p className="text-xs font-bold text-slate-700">{d.namaRekening || "—"}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
         </div>
       )}
 
@@ -972,7 +714,7 @@ export default function TambahBarangPage() {
             <table className="w-full text-xs">
               <thead className="border-b border-slate-200 bg-white/80">
                 <tr>
-                  {["No", "Kode", "Nama", "Toko", "Supplier", "Satuan", "Harga Modal", "Harga Jual", "Stok", "Min", "Aksi"].map((h) => (
+                  {["No", "Metode", "Tipe", "Provider", "Biaya Admin", "No. Rekening", "Nama Rekening", "Status", "Aksi"].map((h) => (
                     <th
                       key={h}
                       className={`whitespace-nowrap px-3 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 ${
@@ -985,82 +727,68 @@ export default function TambahBarangPage() {
                 </tr>
               </thead>
               <tbody>
-                {paged.map((d, i) => {
-                  const isLowStock = d.stok <= d.stokMinimum
-                  return (
-                    <motion.tr
-                      key={d.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.015 }}
-                      className="border-t border-slate-100 transition-colors hover:bg-slate-50/60"
-                    >
-                      <td className="px-3 py-2.5 text-center font-bold text-slate-400">
-                        {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        {d.kodeBarang || "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800">{d.nama}</span>
-                          <span className="text-[10px] font-semibold text-slate-400">
-                            {d.kategoriNama || "—"} · {d.merk || "—"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        {d.tokoNama || "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        {d.supplier || "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        <span className="rounded-lg bg-slate-100 px-2 py-1 font-bold text-slate-700">
-                          {d.satuan || "—"}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        <span
-                          className={`rounded-lg px-2 py-1 font-bold ${
-                            isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
-                          }`}
+                {paged.map((d, i) => (
+                  <motion.tr
+                    key={d.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.015 }}
+                    className="border-t border-slate-100 transition-colors hover:bg-slate-50/60"
+                  >
+                    <td className="px-3 py-2.5 text-center font-bold text-slate-400">
+                      {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-800">
+                      {d.nama}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span className="rounded-lg bg-cyan-100 px-2 py-1 font-bold text-cyan-700">
+                        {d.tipe}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
+                      {d.provider || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
+                      {d.biayaAdmin || 0}%
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
+                      {d.nomorRekening || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
+                      {d.namaRekening || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span
+                        className={`rounded-lg px-2 py-1 font-bold ${
+                          d.aktif ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {d.aktif ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <div className="flex justify-center gap-1.5">
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => openEdit(d)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100"
                         >
-                          {d.stok}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        {d.stokMinimum}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <div className="flex justify-center gap-1.5">
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => openEdit(d)}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
-                          >
-                            <Pencil size={12} strokeWidth={2.5} />
-                          </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => setDeleteId(d.id)}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
-                          >
-                            <Trash2 size={12} strokeWidth={2.5} />
-                          </motion.button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  )
-                })}
+                          <Pencil size={12} strokeWidth={2.5} />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => setDeleteId(d.id)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 hover:bg-red-100"
+                        >
+                          <Trash2 size={12} strokeWidth={2.5} />
+                        </motion.button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -1142,6 +870,7 @@ export default function TambahBarangPage() {
             }}
           >
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1160,17 +889,17 @@ export default function TambahBarangPage() {
                   </div>
                   <div>
                     <h2 className="text-base font-black leading-none text-white">
-                      {isEdit ? "Edit Barang" : "Tambah Barang"}
+                      {isEdit ? "Edit Metode Pembayaran" : "Tambah Metode Pembayaran"}
                     </h2>
                     <p className="mt-0.5 text-[10px] font-semibold text-white/70">
-                      {isEdit ? "Perbarui data barang" : "Isi field wajib (*)"}
+                      {isEdit ? "Perbarui metode pembayaran" : "Isi field wajib (*)"}
                     </p>
                   </div>
                 </div>
 
                 <button
                   onClick={closeModal}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white transition-colors hover:bg-white/30"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white hover:bg-white/30"
                 >
                   <X size={16} strokeWidth={2.5} />
                 </button>
@@ -1198,166 +927,103 @@ export default function TambahBarangPage() {
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <FormInput
-                      label="Kode Barang"
-                      required={isEdit}
-                      icon={Barcode}
-                      value={form.kodeBarang}
-                      onChange={(e: any) => setField("kodeBarang")(e.target.value)}
-                      placeholder={isEdit ? "Contoh: TOKO1-123456" : "Otomatis saat disimpan"}
-                      disabled={!isEdit}
-                    />
-
-                    <FormInput
-                      label="Nama Barang"
+                      label="Nama Metode"
                       required
-                      icon={Package}
+                      icon={Wallet}
                       value={form.nama}
                       onChange={(e: any) => setField("nama")(e.target.value)}
-                      placeholder="Contoh: iPhone 13 128GB"
+                      placeholder="Contoh: Tunai, Transfer BCA, QRIS"
                     />
+
+                    <FormSelect
+                      label="Tipe Pembayaran"
+                      required
+                      icon={CreditCard}
+                      value={form.tipe}
+                      onChange={(e: any) => setField("tipe")(e.target.value)}
+                    >
+                      {TIPE_OPTIONS.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </FormSelect>
+
+                    <FormInput
+                      label="Provider"
+                      required={form.tipe === "Non-Tunai"}
+                      icon={Landmark}
+                      value={form.provider}
+                      onChange={(e: any) => setField("provider")(e.target.value)}
+                      placeholder="Contoh: BCA, QRIS, OVO, GoPay"
+                    />
+
+                    <FormInput
+                      label="Biaya Admin (%)"
+                      icon={BadgePercent}
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={form.biayaAdmin}
+                      onChange={(e: any) => setField("biayaAdmin")(e.target.value)}
+                      placeholder="0"
+                    />
+
+                    <FormInput
+                      label="Nomor Rekening"
+                      icon={CircleDollarSign}
+                      value={form.nomorRekening}
+                      onChange={(e: any) => setField("nomorRekening")(e.target.value)}
+                      placeholder="Opsional"
+                    />
+
+                    <FormInput
+                      label="Nama Rekening"
+                      icon={Landmark}
+                      value={form.namaRekening}
+                      onChange={(e: any) => setField("namaRekening")(e.target.value)}
+                      placeholder="Opsional"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <input
+                      id="aktif"
+                      type="checkbox"
+                      checked={form.aktif}
+                      onChange={(e) => setField("aktif")(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    <label htmlFor="aktif" className="text-sm font-bold text-slate-700">
+                      Status Aktif
+                    </label>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <FormSelect
-                      label="Kategori"
-                      required
-                      icon={Tag}
-                      value={form.kategoriId}
-                      onChange={(e: any) => setField("kategoriId")(e.target.value)}
-                    >
-                      <option value="">Pilih Kategori</option>
-                      {kategoriList.map((k) => (
-                        <option key={k.id} value={k.id}>
-                          {k.nama}
-                        </option>
-                      ))}
-                    </FormSelect>
-
-                    <FormSelect
-                      label="Toko"
-                      required
-                      icon={Store}
-                      value={form.tokoId}
-                      onChange={(e: any) => setField("tokoId")(e.target.value)}
-                    >
-                      <option value="">Pilih Toko</option>
-                      {tokoList.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.nama}
-                          {t.kode ? ` (${t.kode})` : ""}
-                        </option>
-                      ))}
-                    </FormSelect>
-
-                    <FormSelect
-                      label="Satuan"
-                      required
-                      icon={Ruler}
-                      value={form.satuan}
-                      onChange={(e: any) => setField("satuan")(e.target.value)}
-                    >
-                      <option value="">Pilih Satuan</option>
-                      {satuanList.map((item) => (
-                        <option key={item.id} value={item.nama}>
-                          {item.nama}
-                        </option>
-                      ))}
-                    </FormSelect>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <FormInput
-                      label="Merk"
-                      required
-                      icon={Package}
-                      value={form.merk}
-                      onChange={(e: any) => setField("merk")(e.target.value)}
-                      placeholder="Contoh: Apple"
-                    />
-
-                    <FormInput
-                      label="Supplier"
-                      required
-                      icon={Truck}
-                      value={form.supplier}
-                      onChange={(e: any) => setField("supplier")(e.target.value)}
-                      placeholder="Contoh: PT Sumber Jaya"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <FormInput
-                      label="Harga Modal"
-                      required
-                      icon={BadgeDollarSign}
-                      type="number"
-                      min="0"
-                      value={form.hargaModal}
-                      onChange={(e: any) => setField("hargaModal")(e.target.value)}
-                      placeholder="1200000"
-                    />
-
-                    <FormInput
-                      label="Harga Jual"
-                      required
-                      icon={BadgeDollarSign}
-                      type="number"
-                      min="0"
-                      value={form.hargaJual}
-                      onChange={(e: any) => setField("hargaJual")(e.target.value)}
-                      placeholder="1500000"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <FormInput
-                      label="Stok"
-                      required
-                      icon={Boxes}
-                      type="number"
-                      min="0"
-                      value={form.stok}
-                      onChange={(e: any) => setField("stok")(e.target.value)}
-                      placeholder="10"
-                    />
-
-                    <FormInput
-                      label="Stok Minimum"
-                      required
-                      icon={TriangleAlert}
-                      type="number"
-                      min="0"
-                      value={form.stokMinimum}
-                      onChange={(e: any) => setField("stokMinimum")(e.target.value)}
-                      placeholder="3"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2.5">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-violet-500">
-                        Preview Toko
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                        Preview Nama
                       </p>
-                      <p className="mt-1 text-sm font-bold text-violet-700">
-                        {tokoList.find((t) => t.id === form.tokoId)?.nama || "Belum dipilih"}
+                      <p className="mt-1 text-sm font-bold text-emerald-700">
+                        {form.nama || "Belum diisi"}
                       </p>
                     </div>
 
                     <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 px-3 py-2.5">
                       <p className="text-[9px] font-black uppercase tracking-widest text-cyan-500">
-                        Preview Kategori
+                        Preview Tipe
                       </p>
                       <p className="mt-1 text-sm font-bold text-cyan-700">
-                        {kategoriList.find((k) => k.id === form.kategoriId)?.nama || "Belum dipilih"}
+                        {form.tipe || "Belum dipilih"}
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">
-                        Preview Satuan
+                    <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2.5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-violet-500">
+                        Status
                       </p>
-                      <p className="mt-1 text-sm font-bold text-emerald-700">
-                        {form.satuan || "Belum dipilih"}
+                      <p className="mt-1 text-sm font-bold text-violet-700">
+                        {form.aktif ? "Aktif" : "Nonaktif"}
                       </p>
                     </div>
                   </div>
@@ -1369,7 +1035,7 @@ export default function TambahBarangPage() {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={closeModal}
-                    className="rounded-xl border-2 border-slate-200 bg-white px-5 py-2.5 text-sm font-black text-slate-600 transition-colors hover:bg-slate-50"
+                    className="rounded-xl border-2 border-slate-200 bg-white px-5 py-2.5 text-sm font-black text-slate-600 hover:bg-slate-50"
                   >
                     Batal
                   </motion.button>
@@ -1379,7 +1045,7 @@ export default function TambahBarangPage() {
                     disabled={submitLoading}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-5 py-2.5 text-sm font-black text-white shadow-sm shadow-emerald-200/50 transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-5 py-2.5 text-sm font-black text-white shadow-sm shadow-emerald-200/50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {submitLoading ? (
                       <>
@@ -1394,7 +1060,7 @@ export default function TambahBarangPage() {
                     ) : (
                       <>
                         <Check size={14} strokeWidth={3} />
-                        {isEdit ? "Perbarui" : "Simpan Barang"}
+                        {isEdit ? "Perbarui" : "Simpan Metode"}
                       </>
                     )}
                   </motion.button>
@@ -1426,13 +1092,13 @@ export default function TambahBarangPage() {
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
                     <Trash2 size={18} className="text-white" strokeWidth={2.5} />
                   </div>
-                  <h2 className="text-base font-black text-white">Hapus Barang</h2>
+                  <h2 className="text-base font-black text-white">Hapus Metode</h2>
                 </div>
               </div>
 
               <div className="px-6 py-5">
                 <p className="text-sm font-semibold text-slate-600">
-                  Yakin ingin menghapus data barang ini? Tindakan ini{" "}
+                  Yakin ingin menghapus metode pembayaran ini? Tindakan ini{" "}
                   <span className="font-black text-red-600">tidak dapat dibatalkan</span>.
                 </p>
               </div>

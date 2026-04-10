@@ -32,6 +32,8 @@ import {
   ClipboardList,
   UserX,
   ArrowRightLeft,
+  UserPlus,
+  Wallet,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -72,7 +74,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
           { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
-          { href: "/admin/buat-akun", icon: KeyRound, label: "Buat Akun" },
+          { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
+          { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
+          { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
+          { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
         ],
       },
       {
@@ -108,6 +113,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-kategori") ||
       currentPath.startsWith("/admin/tambah-barang-tetap") ||
       currentPath.startsWith("/admin/transfer-barang") ||
+      currentPath.startsWith("/admin/tambah-metode-pembayaran") ||
+      currentPath.startsWith("/admin/tambah-pelanggan") ||
+      currentPath.startsWith("/admin/akun-pelanggan") ||
       currentPath.startsWith("/admin/buat-akun")
     ) {
       nextOpenGroup.push("Master Data")
@@ -217,7 +225,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") {
-      return pathname === "/admin/tambah-barang" || pathname === "/admin/tambah-kategori"
+      return pathname === "/admin/tambah-barang" || pathname === "/admin/tambah-kategori" || pathname === "/admin/tambah-satuan"
     }
 
     if (href === "/admin/dashboard-absensi") {
