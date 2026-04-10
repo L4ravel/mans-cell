@@ -1,7 +1,7 @@
 /* 
-  Halaman admin barang untuk CRUD data barang per toko di Firestore.
-  Revisi ini memanggil kategori, satuan, toko, dan supplier dari database,
-  serta menambahkan tombol navigasi Supplier di samping tombol Satuan.
+  Halaman admin diskon untuk CRUD data diskon langsung ke Firestore dari client.
+  Diskon dibuat sebagai master promo, memilih toko dan barang dari database,
+  dengan layout konsisten seperti halaman master data lainnya.
 */
 
 "use client"
@@ -20,49 +20,25 @@ import {
 } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import {
-  Package,
+  Percent,
   Cpu,
   Plus,
   Pencil,
   Trash2,
   Search,
-  ChevronDown,
-  Tag,
-  Boxes,
+  ChevronLeft,
+  ChevronRight,
+  X,
   Check,
   RefreshCw,
-  BadgeDollarSign,
-  Layers3,
-  Store,
-  Truck,
-  Ruler,
-  TriangleAlert,
-  ChevronRight,
-  ChevronLeft,
-  X,
   AlertCircle,
-  Barcode,
-  Building2,
+  Package,
+  Boxes,
+  Store,
+  Tag,
+  BadgeDollarSign,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-
-type KategoriBarang = {
-  id: string
-  nama: string
-}
-
-type SatuanBarang = {
-  id: string
-  nama: string
-}
-
-type Supplier = {
-  id: string
-  nama: string
-  telepon?: string
-  alamat?: string
-  keterangan?: string
-}
 
 type Toko = {
   id: string
@@ -76,19 +52,39 @@ type Barang = {
   id: string
   kodeBarang: string
   nama: string
-  kategoriId: string
-  kategoriNama: string
   tokoId: string
   tokoNama: string
-  merk: string
-  supplier: string
-  satuan: string
-  hargaModal: number
   hargaJual: number
-  stok: number
-  stokMinimum: number
+}
+
+type DiskonBarangRingkas = {
+  id: string
+  nama: string
+  kodeBarang: string
+  hargaJual: number
+}
+
+type Diskon = {
+  id: string
+  namaPromo: string
+  tokoId: string
+  tokoNama: string
+  tipeDiskon: "persen" | "nominal"
+  nilaiDiskon: number
+  barangIds: string[]
+  barangRingkas: DiskonBarangRingkas[]
+  isActive: boolean
   createdAt: number
   updatedAt?: number
+}
+
+type DiskonForm = {
+  namaPromo: string
+  tokoId: string
+  tipeDiskon: "persen" | "nominal"
+  nilaiDiskon: string
+  barangIds: string[]
+  isActive: boolean
 }
 
 const ITEMS_OPTIONS = [
@@ -98,18 +94,13 @@ const ITEMS_OPTIONS = [
   { value: 0, label: "Semua" },
 ]
 
-const EMPTY_FORM = {
-  kodeBarang: "",
-  nama: "",
-  kategoriId: "",
+const EMPTY_FORM: DiskonForm = {
+  namaPromo: "",
   tokoId: "",
-  merk: "",
-  supplier: "",
-  satuan: "",
-  hargaModal: "",
-  hargaJual: "",
-  stok: "",
-  stokMinimum: "",
+  tipeDiskon: "persen",
+  nilaiDiskon: "",
+  barangIds: [],
+  isActive: true,
 }
 
 function FormInput({
@@ -158,19 +149,12 @@ function FormSelect({
         {label}
         {required && <span className="ml-0.5 text-red-400">*</span>}
       </label>
-      <div className="relative">
-        <select
-          {...props}
-          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-        >
-          {children}
-        </select>
-        <ChevronDown
-          size={13}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-          strokeWidth={2.5}
-        />
-      </div>
+      <select
+        {...props}
+        className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+      >
+        {children}
+      </select>
     </div>
   )
 }
@@ -180,53 +164,33 @@ function FilterSelect({
   onChange,
   children,
   label,
-  icon: Icon,
 }: {
   value: string | number
   onChange: (v: string) => void
   children: React.ReactNode
   label: string
-  icon?: any
 }) {
   return (
     <div>
       <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
         {label}
       </label>
-      <div className="relative">
-        {Icon && (
-          <Icon
-            size={13}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            strokeWidth={2}
-          />
-        )}
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
-            Icon ? "pl-8" : "pl-3"
-          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20`}
-        >
-          {children}
-        </select>
-        <ChevronDown
-          size={13}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-          strokeWidth={2.5}
-        />
-      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+      >
+        {children}
+      </select>
     </div>
   )
 }
 
-export default function TambahBarangPage() {
+export default function TambahDiskonPage() {
   const router = useRouter()
 
-  const [data, setData] = useState<Barang[]>([])
-  const [kategoriList, setKategoriList] = useState<KategoriBarang[]>([])
-  const [satuanList, setSatuanList] = useState<SatuanBarang[]>([])
-  const [supplierList, setSupplierList] = useState<Supplier[]>([])
+  const [data, setData] = useState<Diskon[]>([])
+  const [barangList, setBarangList] = useState<Barang[]>([])
   const [tokoList, setTokoList] = useState<Toko[]>([])
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
@@ -236,84 +200,18 @@ export default function TambahBarangPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [form, setForm] = useState<DiskonForm>(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   const [search, setSearch] = useState("")
-  const [filterKategori, setFilterKategori] = useState("")
   const [filterToko, setFilterToko] = useState("")
+  const [filterStatus, setFilterStatus] = useState("")
+  const [searchBarangModal, setSearchBarangModal] = useState("")
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
 
   const isEdit = !!editId
-
-  const fetchKategori = async () => {
-    try {
-      const qRef = query(collection(db, "kategori_barang"), orderBy("nama"))
-      const snap = await getDocs(qRef)
-
-      const list: KategoriBarang[] = snap.docs.map((d) => {
-        const x = d.data() as any
-        return {
-          id: d.id,
-          nama: x?.nama || "",
-        }
-      })
-
-      setKategoriList(list)
-    } catch (e) {
-      console.error(e)
-      setKategoriList([])
-    }
-  }
-
-  const fetchSatuan = async () => {
-    try {
-      const qRef = query(collection(db, "satuan_barang"), orderBy("nama"))
-      const snap = await getDocs(qRef)
-
-      const list: SatuanBarang[] = snap.docs
-        .map((d) => {
-          const x = d.data() as any
-          return {
-            id: d.id,
-            nama: x?.nama || "",
-          }
-        })
-        .filter((item) => item.nama)
-
-      setSatuanList(list)
-    } catch (e) {
-      console.error(e)
-      setSatuanList([])
-    }
-  }
-
-  const fetchSupplier = async () => {
-    try {
-      const qRef = query(collection(db, "supplier"), orderBy("nama"))
-      const snap = await getDocs(qRef)
-
-      const list: Supplier[] = snap.docs
-        .map((d) => {
-          const x = d.data() as any
-          return {
-            id: d.id,
-            nama: x?.nama || "",
-            telepon: x?.telepon || "",
-            alamat: x?.alamat || "",
-            keterangan: x?.keterangan || "",
-          }
-        })
-        .filter((item) => item.nama)
-
-      setSupplierList(list)
-    } catch (e) {
-      console.error(e)
-      setSupplierList([])
-    }
-  }
 
   const fetchToko = async () => {
     try {
@@ -340,29 +238,57 @@ export default function TambahBarangPage() {
     }
   }
 
-  const fetchData = async () => {
-    setLoading(true)
+  const fetchBarang = async () => {
     try {
       const qRef = query(collection(db, "barang"), orderBy("nama"))
       const snap = await getDocs(qRef)
 
-      const list: Barang[] = snap.docs.map((d) => {
+      const list: Barang[] = snap.docs
+        .map((d) => {
+          const x = d.data() as any
+          return {
+            id: d.id,
+            kodeBarang: x?.kodeBarang || "",
+            nama: x?.nama || "",
+            tokoId: x?.tokoId || "",
+            tokoNama: x?.tokoNama || "",
+            hargaJual: Number(x?.hargaJual || 0),
+          }
+        })
+        .filter((item) => item.nama && item.tokoId)
+
+      setBarangList(list)
+    } catch (e) {
+      console.error(e)
+      setBarangList([])
+    }
+  }
+
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      const qRef = query(collection(db, "diskon"), orderBy("namaPromo"))
+      const snap = await getDocs(qRef)
+
+      const list: Diskon[] = snap.docs.map((d) => {
         const x = d.data() as any
         return {
           id: d.id,
-          kodeBarang: x?.kodeBarang || "",
-          nama: x?.nama || "",
-          kategoriId: x?.kategoriId || "",
-          kategoriNama: x?.kategoriNama || "",
+          namaPromo: x?.namaPromo || "",
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || "",
-          merk: x?.merk || "",
-          supplier: x?.supplier || "",
-          satuan: x?.satuan || "",
-          hargaModal: Number(x?.hargaModal || 0),
-          hargaJual: Number(x?.hargaJual || 0),
-          stok: Number(x?.stok || 0),
-          stokMinimum: Number(x?.stokMinimum || 0),
+          tipeDiskon: x?.tipeDiskon === "nominal" ? "nominal" : "persen",
+          nilaiDiskon: Number(x?.nilaiDiskon || 0),
+          barangIds: Array.isArray(x?.barangIds) ? x.barangIds : [],
+          barangRingkas: Array.isArray(x?.barangRingkas)
+            ? x.barangRingkas.map((item: any) => ({
+                id: item?.id || "",
+                nama: item?.nama || "",
+                kodeBarang: item?.kodeBarang || "",
+                hargaJual: Number(item?.hargaJual || 0),
+              }))
+            : [],
+          isActive: Boolean(x?.isActive),
           createdAt: Number(x?.createdAt || Date.now()),
           updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
         }
@@ -378,62 +304,52 @@ export default function TambahBarangPage() {
   }
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== "development") return
-
-    const clearDevCache = async () => {
-      try {
-        if (typeof window !== "undefined" && "caches" in window) {
-          const cacheKeys = await window.caches.keys()
-          await Promise.all(cacheKeys.map((key) => window.caches.delete(key)))
-        }
-
-        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations()
-          await Promise.all(registrations.map((registration) => registration.unregister()))
-        }
-      } catch (error) {
-        console.error("Gagal membersihkan cache dev:", error)
-      }
-    }
-
-    clearDevCache()
-  }, [])
-
-  useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
       if (u) {
-        await Promise.all([
-          fetchKategori(),
-          fetchSatuan(),
-          fetchSupplier(),
-          fetchToko(),
-          fetchData(),
-        ])
+        await Promise.all([fetchToko(), fetchBarang(), fetchData()])
       }
     })
     return () => unsub()
   }, [])
 
   const filtered = useMemo(() => {
-    return data.filter((d) => {
-      const q = search.toLowerCase().trim()
+    const q = search.toLowerCase().trim()
 
+    return data.filter((d) => {
       const matchSearch =
         !q ||
-        d.nama.toLowerCase().includes(q) ||
-        d.kodeBarang.toLowerCase().includes(q) ||
-        d.merk.toLowerCase().includes(q) ||
-        d.supplier.toLowerCase().includes(q) ||
-        d.kategoriNama.toLowerCase().includes(q) ||
+        d.namaPromo.toLowerCase().includes(q) ||
         d.tokoNama.toLowerCase().includes(q) ||
-        d.satuan.toLowerCase().includes(q)
+        d.tipeDiskon.toLowerCase().includes(q) ||
+        d.barangRingkas.some(
+          (b) =>
+            b.nama.toLowerCase().includes(q) ||
+            b.kodeBarang.toLowerCase().includes(q)
+        )
 
-      const matchKategori = !filterKategori || d.kategoriId === filterKategori
       const matchToko = !filterToko || d.tokoId === filterToko
+      const matchStatus =
+        !filterStatus ||
+        (filterStatus === "aktif" && d.isActive) ||
+        (filterStatus === "nonaktif" && !d.isActive)
 
-      return matchSearch && matchKategori && matchToko
+      return matchSearch && matchToko && matchStatus
     })
-  }, [data, search, filterKategori, filterToko])
+  }, [data, search, filterToko, filterStatus])
+
+  const barangBySelectedToko = useMemo(() => {
+    const q = searchBarangModal.toLowerCase().trim()
+
+    return barangList.filter((item) => {
+      const sameToko = !form.tokoId || item.tokoId === form.tokoId
+      const matchSearch =
+        !q ||
+        item.nama.toLowerCase().includes(q) ||
+        item.kodeBarang.toLowerCase().includes(q)
+
+      return sameToko && matchSearch
+    })
+  }, [barangList, form.tokoId, searchBarangModal])
 
   const totalPages =
     itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / itemsPerPage))
@@ -449,88 +365,126 @@ export default function TambahBarangPage() {
     setShowModal(false)
     setEditId(null)
     setForm(EMPTY_FORM)
+    setSearchBarangModal("")
     setError(null)
   }
 
   const openAdd = () => {
-    setForm({
-      ...EMPTY_FORM,
-      satuan: satuanList[0]?.nama || "",
-      supplier: supplierList[0]?.nama || "",
-    })
+    setForm(EMPTY_FORM)
     setEditId(null)
+    setSearchBarangModal("")
     setError(null)
     setShowModal(true)
   }
 
-  const openEdit = (d: Barang) => {
+  const openEdit = (d: Diskon) => {
     setForm({
-      kodeBarang: d.kodeBarang || "",
-      nama: d.nama,
-      kategoriId: d.kategoriId,
-      tokoId: d.tokoId || "",
-      merk: d.merk,
-      supplier: d.supplier || "",
-      satuan: d.satuan || "",
-      hargaModal: String(d.hargaModal || ""),
-      hargaJual: String(d.hargaJual || ""),
-      stok: String(d.stok || ""),
-      stokMinimum: String(d.stokMinimum || ""),
+      namaPromo: d.namaPromo,
+      tokoId: d.tokoId,
+      tipeDiskon: d.tipeDiskon,
+      nilaiDiskon: String(d.nilaiDiskon),
+      barangIds: d.barangIds || [],
+      isActive: d.isActive,
     })
     setEditId(d.id)
+    setSearchBarangModal("")
     setError(null)
     setShowModal(true)
   }
 
-  const setField =
-    (key: keyof typeof EMPTY_FORM) =>
-    (val: any) =>
-      setForm((f) => ({ ...f, [key]: val }))
-
-  const validateForm = () => {
-    if (!isEdit && !form.tokoId) return "Toko wajib dipilih"
-    if (isEdit && !form.kodeBarang.trim()) return "Kode barang wajib diisi"
-    if (!form.nama.trim()) return "Nama barang wajib diisi"
-    if (!form.kategoriId) return "Kategori wajib dipilih"
-    if (!form.tokoId) return "Toko wajib dipilih"
-    if (!form.merk.trim()) return "Merk wajib diisi"
-    if (!form.supplier.trim()) return "Supplier wajib dipilih"
-    if (!form.satuan.trim()) return "Satuan wajib dipilih"
-    if (!form.hargaModal.trim()) return "Harga modal wajib diisi"
-    if (!form.hargaJual.trim()) return "Harga jual wajib diisi"
-    if (!form.stok.trim()) return "Stok wajib diisi"
-    if (!form.stokMinimum.trim()) return "Stok minimum wajib diisi"
-
-    const hargaModal = Number(form.hargaModal)
-    const hargaJual = Number(form.hargaJual)
-    const stok = Number(form.stok)
-    const stokMinimum = Number(form.stokMinimum)
-
-    if (Number.isNaN(hargaModal) || hargaModal < 0) return "Harga modal tidak valid"
-    if (Number.isNaN(hargaJual) || hargaJual < 0) return "Harga jual tidak valid"
-    if (Number.isNaN(stok) || stok < 0) return "Stok tidak valid"
-    if (Number.isNaN(stokMinimum) || stokMinimum < 0) return "Stok minimum tidak valid"
-    if (hargaJual < hargaModal) return "Harga jual tidak boleh lebih kecil dari harga modal"
-
-    const kodeBarangFinal = isEdit
-      ? form.kodeBarang.trim().toLowerCase()
-      : generateKodeBarang(form.tokoId).trim().toLowerCase()
-
-    const duplicate = data.find((item) => {
-      const sameCode = item.kodeBarang.trim().toLowerCase() === kodeBarangFinal
-      const sameStore = item.tokoId === form.tokoId
-      const notSelf = !editId || item.id !== editId
-      return sameCode && sameStore && notSelf
+  const toggleBarang = (barangId: string) => {
+    setForm((prev) => {
+      const exists = prev.barangIds.includes(barangId)
+      return {
+        ...prev,
+        barangIds: exists
+          ? prev.barangIds.filter((id) => id !== barangId)
+          : [...prev.barangIds, barangId],
+      }
     })
-
-    if (duplicate) return "Kode barang sudah dipakai di toko ini"
-
-    return null
   }
 
-  const generateKodeBarang = (tokoId: string) => {
-    const time = Date.now().toString().slice(-6)
-    return `${tokoId.toUpperCase()}-${time}`
+  const handleChangeToko = (tokoId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      tokoId,
+      barangIds: [],
+    }))
+  }
+
+  const formatRupiah = (nilai: number) => {
+    return `Rp ${Number(nilai || 0).toLocaleString("id-ID")}`
+  }
+
+  const formatNilaiDiskon = (tipe: "persen" | "nominal", nilai: number) => {
+    if (tipe === "persen") return `${nilai}%`
+    return formatRupiah(nilai)
+  }
+
+  const hitungHargaSetelahDiskon = (
+    harga: number,
+    tipe: "persen" | "nominal",
+    nilaiDiskon: number
+  ) => {
+    if (tipe === "persen") {
+      const hasil = harga - harga * (nilaiDiskon / 100)
+      return Math.max(0, Math.round(hasil))
+    }
+
+    return Math.max(0, harga - nilaiDiskon)
+  }
+
+  const getHargaSebelumText = (items: DiskonBarangRingkas[]) => {
+    if (!items.length) return "—"
+
+    const hargaList = items.map((item) => Number(item.hargaJual || 0)).sort((a, b) => a - b)
+    const min = hargaList[0]
+    const max = hargaList[hargaList.length - 1]
+
+    if (min === max) return formatRupiah(min)
+    return `${formatRupiah(min)} - ${formatRupiah(max)}`
+  }
+
+  const getHargaSesudahText = (
+    items: DiskonBarangRingkas[],
+    tipe: "persen" | "nominal",
+    nilaiDiskon: number
+  ) => {
+    if (!items.length) return "—"
+
+    const hargaList = items
+      .map((item) => hitungHargaSetelahDiskon(Number(item.hargaJual || 0), tipe, nilaiDiskon))
+      .sort((a, b) => a - b)
+
+    const min = hargaList[0]
+    const max = hargaList[hargaList.length - 1]
+
+    if (min === max) return formatRupiah(min)
+    return `${formatRupiah(min)} - ${formatRupiah(max)}`
+  }
+
+  const validateForm = () => {
+    const namaPromo = form.namaPromo.trim()
+    const nilaiDiskon = Number(form.nilaiDiskon)
+
+    if (!namaPromo) return "Nama promo wajib diisi"
+    if (!form.tokoId) return "Toko wajib dipilih"
+    if (!form.tipeDiskon) return "Tipe diskon wajib dipilih"
+    if (!form.nilaiDiskon.trim()) return "Nilai diskon wajib diisi"
+    if (Number.isNaN(nilaiDiskon) || nilaiDiskon <= 0) return "Nilai diskon tidak valid"
+    if (form.tipeDiskon === "persen" && nilaiDiskon > 100) return "Diskon persen maksimal 100"
+    if (form.barangIds.length === 0) return "Pilih minimal 1 barang"
+
+    const duplicate = data.find((item) => {
+      const sameName = item.namaPromo.trim().toLowerCase() === namaPromo.toLowerCase()
+      const sameToko = item.tokoId === form.tokoId
+      const notSelf = !editId || item.id !== editId
+      return sameName && sameToko && notSelf
+    })
+
+    if (duplicate) return "Nama promo sudah ada di toko ini"
+
+    return null
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -549,53 +503,44 @@ export default function TambahBarangPage() {
     setError(null)
 
     try {
-      const kategori = kategoriList.find((k) => k.id === form.kategoriId)
-      if (!kategori) {
-        setError("Kategori tidak ditemukan")
-        return
-      }
-
       const toko = tokoList.find((t) => t.id === form.tokoId)
       if (!toko) {
         setError("Toko tidak ditemukan")
         return
       }
 
-      const supplier = supplierList.find((s) => s.nama === form.supplier)
-      if (!supplier) {
-        setError("Supplier tidak ditemukan")
+      const barangDipilih = barangList.filter(
+        (item) => item.tokoId === form.tokoId && form.barangIds.includes(item.id)
+      )
+
+      if (barangDipilih.length === 0) {
+        setError("Barang diskon tidak ditemukan")
         return
       }
 
-      const kodeBarang = isEdit
-        ? form.kodeBarang.trim().toUpperCase()
-        : generateKodeBarang(form.tokoId)
-
-      const nama = form.nama.trim()
-      const merk = form.merk.trim()
-      const supplierNama = supplier.nama.trim()
-      const satuan = form.satuan.trim()
-      const hargaModal = Number(form.hargaModal)
-      const hargaJual = Number(form.hargaJual)
-      const stok = Number(form.stok)
-      const stokMinimum = Number(form.stokMinimum)
+      const namaPromo = form.namaPromo.trim()
+      const tipeDiskon = form.tipeDiskon
+      const nilaiDiskon = Number(form.nilaiDiskon)
+      const barangIds = barangDipilih.map((item) => item.id)
+      const barangRingkas: DiskonBarangRingkas[] = barangDipilih.map((item) => ({
+        id: item.id,
+        nama: item.nama,
+        kodeBarang: item.kodeBarang,
+        hargaJual: item.hargaJual,
+      }))
+      const isActive = Boolean(form.isActive)
       const now = Date.now()
 
       if (isEdit && editId) {
-        await updateDoc(doc(db, "barang", editId), {
-          kodeBarang,
-          nama,
-          kategoriId: kategori.id,
-          kategoriNama: kategori.nama,
+        await updateDoc(doc(db, "diskon", editId), {
+          namaPromo,
           tokoId: toko.id,
           tokoNama: toko.nama,
-          merk,
-          supplier: supplierNama,
-          satuan,
-          hargaModal,
-          hargaJual,
-          stok,
-          stokMinimum,
+          tipeDiskon,
+          nilaiDiskon,
+          barangIds,
+          barangRingkas,
+          isActive,
           updatedAt: now,
           updatedBy: user.uid,
         })
@@ -606,44 +551,34 @@ export default function TambahBarangPage() {
               item.id === editId
                 ? {
                     ...item,
-                    kodeBarang,
-                    nama,
-                    kategoriId: kategori.id,
-                    kategoriNama: kategori.nama,
+                    namaPromo,
                     tokoId: toko.id,
                     tokoNama: toko.nama,
-                    merk,
-                    supplier: supplierNama,
-                    satuan,
-                    hargaModal,
-                    hargaJual,
-                    stok,
-                    stokMinimum,
+                    tipeDiskon,
+                    nilaiDiskon,
+                    barangIds,
+                    barangRingkas,
+                    isActive,
                     updatedAt: now,
                   }
                 : item
             )
-            .sort((a, b) => a.nama.localeCompare(b.nama))
+            .sort((a, b) => a.namaPromo.localeCompare(b.namaPromo))
         )
 
-        setSuccessMsg("Data barang berhasil diperbarui")
+        setSuccessMsg("Diskon berhasil diperbarui")
       } else {
-        const newRef = doc(collection(db, "barang"))
-        const newItem: Barang = {
+        const newRef = doc(collection(db, "diskon"))
+        const newItem: Diskon = {
           id: newRef.id,
-          kodeBarang,
-          nama,
-          kategoriId: kategori.id,
-          kategoriNama: kategori.nama,
+          namaPromo,
           tokoId: toko.id,
           tokoNama: toko.nama,
-          merk,
-          supplier: supplierNama,
-          satuan,
-          hargaModal,
-          hargaJual,
-          stok,
-          stokMinimum,
+          tipeDiskon,
+          nilaiDiskon,
+          barangIds,
+          barangRingkas,
+          isActive,
           createdAt: now,
         }
 
@@ -653,17 +588,17 @@ export default function TambahBarangPage() {
         })
 
         setData((prev) =>
-          [...prev, newItem].sort((a, b) => a.nama.localeCompare(b.nama))
+          [...prev, newItem].sort((a, b) => a.namaPromo.localeCompare(b.namaPromo))
         )
 
-        setSuccessMsg("Barang berhasil ditambahkan")
+        setSuccessMsg("Diskon berhasil ditambahkan")
       }
 
       closeModal()
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
       console.error(e)
-      setError("Gagal menyimpan data barang")
+      setError("Gagal menyimpan diskon")
     } finally {
       setSubmitLoading(false)
     }
@@ -674,11 +609,11 @@ export default function TambahBarangPage() {
 
     setDeleteLoading(true)
     try {
-      await deleteDoc(doc(db, "barang", deleteId))
+      await deleteDoc(doc(db, "diskon", deleteId))
 
       setData((prev) => prev.filter((item) => item.id !== deleteId))
       setDeleteId(null)
-      setSuccessMsg("Data barang berhasil dihapus")
+      setSuccessMsg("Diskon berhasil dihapus")
 
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
@@ -698,14 +633,14 @@ export default function TambahBarangPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-              <Package size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+              <Percent size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
             </div>
             <div>
               <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Data Barang
+                Master Diskon
               </h1>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Barang · toko · supplier · stok minimum
+                Promo · toko · barang
               </p>
             </div>
           </div>
@@ -722,31 +657,21 @@ export default function TambahBarangPage() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => router.push("/admin/tambah-kategori")}
+              onClick={() => router.push("/admin/tambah-toko")}
               className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50"
             >
-              <Tag size={13} strokeWidth={3} />
-              <span>Kategori</span>
+              <Store size={13} strokeWidth={3} />
+              <span>Toko</span>
             </motion.button>
 
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => router.push("/admin/tambah-satuan")}
+              onClick={() => router.push("/admin/tambah-barang")}
               className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50"
             >
-              <Ruler size={13} strokeWidth={3} />
-              <span>Satuan</span>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => router.push("/admin/tambah-supplier")}
-              className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50"
-            >
-              <Building2 size={13} strokeWidth={3} />
-              <span>Supplier</span>
+              <Package size={13} strokeWidth={3} />
+              <span>Barang</span>
             </motion.button>
 
             <motion.button
@@ -756,7 +681,7 @@ export default function TambahBarangPage() {
               className="flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-3 text-[10px] font-black uppercase tracking-wide text-white shadow-sm shadow-emerald-200/50 transition-all hover:shadow-md"
             >
               <Plus size={13} strokeWidth={3} />
-              <span>Tambah Barang</span>
+              <span>Tambah Diskon</span>
             </motion.button>
 
             <motion.button
@@ -804,9 +729,9 @@ export default function TambahBarangPage() {
         className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2 lg:col-span-1">
+          <div>
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Cari Barang
+              Cari Diskon
             </label>
             <div className="relative">
               <Search
@@ -820,28 +745,11 @@ export default function TambahBarangPage() {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Kode, nama, merk, supplier, toko..."
+                placeholder="Nama promo, toko, barang..."
                 className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </div>
           </div>
-
-          <FilterSelect
-            label="Kategori"
-            value={filterKategori}
-            onChange={(v) => {
-              setFilterKategori(v)
-              setPage(1)
-            }}
-            icon={Layers3}
-          >
-            <option value="">Semua Kategori</option>
-            {kategoriList.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.nama}
-              </option>
-            ))}
-          </FilterSelect>
 
           <FilterSelect
             label="Toko"
@@ -850,7 +758,6 @@ export default function TambahBarangPage() {
               setFilterToko(v)
               setPage(1)
             }}
-            icon={Store}
           >
             <option value="">Semua Toko</option>
             {tokoList.map((t) => (
@@ -858,6 +765,19 @@ export default function TambahBarangPage() {
                 {t.nama}
               </option>
             ))}
+          </FilterSelect>
+
+          <FilterSelect
+            label="Status"
+            value={filterStatus}
+            onChange={(v) => {
+              setFilterStatus(v)
+              setPage(1)
+            }}
+          >
+            <option value="">Semua Status</option>
+            <option value="aktif">Aktif</option>
+            <option value="nonaktif">Nonaktif</option>
           </FilterSelect>
 
           <FilterSelect
@@ -893,12 +813,16 @@ export default function TambahBarangPage() {
       )}
 
       {!loading && filtered.length === 0 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3 py-16">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center gap-3 py-16"
+        >
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
             <Boxes size={28} className="text-slate-300" strokeWidth={2} />
           </div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Belum ada data barang
+            Belum ada master diskon
           </p>
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -907,112 +831,90 @@ export default function TambahBarangPage() {
             className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 py-2 text-xs font-black text-white shadow-sm"
           >
             <Plus size={13} strokeWidth={3} />
-            Tambah Barang Pertama
+            Tambah Diskon Pertama
           </motion.button>
         </motion.div>
       )}
 
       {!loading && paged.length > 0 && (
         <div className="space-y-2 sm:hidden">
-          {paged.map((d, idx) => {
-            const isLowStock = d.stok <= d.stokMinimum
-            return (
-              <motion.div
-                key={d.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">{d.nama}</p>
-                    <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      {d.kodeBarang || "-"} · {d.kategoriNama}
-                    </p>
-                  </div>
-                  <div className="flex flex-shrink-0 gap-1.5">
-                    <button
-                      onClick={() => openEdit(d)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
-                    >
-                      <Pencil size={12} strokeWidth={2.5} />
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(d.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
-                    >
-                      <Trash2 size={12} strokeWidth={2.5} />
-                    </button>
-                  </div>
+          {paged.map((d, idx) => (
+            <motion.div
+              key={d.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.03 }}
+              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-slate-800">{d.namaPromo}</p>
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    {d.tokoNama} · {formatNilaiDiskon(d.tipeDiskon, d.nilaiDiskon)}
+                  </p>
                 </div>
-
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded-lg bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
-                    {d.tokoNama || "-"}
-                  </span>
-                  <span className="rounded-lg bg-cyan-100 px-2 py-0.5 text-[10px] font-bold text-cyan-700">
-                    {d.merk || "-"}
-                  </span>
-                  <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                    {d.satuan || "-"}
-                  </span>
-                  <span
-                    className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
-                      isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
-                    }`}
+                <div className="flex flex-shrink-0 gap-1.5">
+                  <button
+                    onClick={() => openEdit(d)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
                   >
-                    Stok: {d.stok}
-                  </span>
+                    <Pencil size={12} strokeWidth={2.5} />
+                  </button>
+                  <button
+                    onClick={() => setDeleteId(d.id)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
+                  >
+                    <Trash2 size={12} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded-lg bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                  {d.tipeDiskon === "persen" ? "Persen" : "Nominal"}
+                </span>
+                <span className="rounded-lg bg-cyan-100 px-2 py-0.5 text-[10px] font-bold text-cyan-700">
+                  {d.barangIds.length} barang
+                </span>
+                <span
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
+                    d.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {d.isActive ? "Aktif" : "Nonaktif"}
+                </span>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Harga Sebelum
+                  </p>
+                  <p className="text-xs font-bold text-slate-700">
+                    {getHargaSebelumText(d.barangRingkas)}
+                  </p>
                 </div>
 
-                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Supplier
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">{d.supplier || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Satuan
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">{d.satuan || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Harga Modal
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">
-                      Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Harga Jual
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">
-                      Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Stok Minimum
-                    </p>
-                    <p className="text-xs font-bold text-slate-700">{d.stokMinimum}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Status
-                    </p>
-                    <p className={`text-xs font-bold ${isLowStock ? "text-red-600" : "text-emerald-600"}`}>
-                      {isLowStock ? "Stok Menipis" : "Aman"}
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Harga Sesudah
+                  </p>
+                  <p className="text-xs font-bold text-emerald-600">
+                    {getHargaSesudahText(d.barangRingkas, d.tipeDiskon, d.nilaiDiskon)}
+                  </p>
                 </div>
-              </motion.div>
-            )
-          })}
+              </div>
+
+              <div className="mt-2 border-t border-slate-100 pt-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Barang Promo
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-700">
+                  {d.barangRingkas.map((b) => b.nama).join(", ") || "—"}
+                </p>
+              </div>
+            </motion.div>
+          ))}
         </div>
       )}
 
@@ -1029,17 +931,14 @@ export default function TambahBarangPage() {
                 <tr>
                   {[
                     "No",
-                    "Kode",
-                    "Nama Barang",
-                    "Kategori",
+                    "Nama Promo",
                     "Toko",
-                    "Merk",
-                    "Supplier",
-                    "Satuan",
-                    "Modal",
-                    "Jual",
-                    "Stok",
-                    "Min",
+                    "Tipe",
+                    "Nilai",
+                    "Harga Sebelum",
+                    "Harga Sesudah",
+                    "Barang",
+                    "Status",
                     "Aksi",
                   ].map((h) => (
                     <th
@@ -1054,80 +953,71 @@ export default function TambahBarangPage() {
                 </tr>
               </thead>
               <tbody>
-                {paged.map((d, i) => {
-                  const isLowStock = d.stok <= d.stokMinimum
-
-                  return (
-                    <motion.tr
-                      key={d.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.015 }}
-                      className="border-t border-slate-100 transition-colors hover:bg-slate-50/60"
-                    >
-                      <td className="px-3 py-2.5 text-center font-bold text-slate-400">
-                        {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        {d.kodeBarang}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-800">
-                        {d.nama}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        {d.kategoriNama}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        {d.tokoNama}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        {d.merk}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        {d.supplier}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        {d.satuan}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        Rp {Number(d.hargaModal || 0).toLocaleString("id-ID")}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        Rp {Number(d.hargaJual || 0).toLocaleString("id-ID")}
-                      </td>
-                      <td
-                        className={`whitespace-nowrap px-3 py-2.5 font-black ${
-                          isLowStock ? "text-red-600" : "text-emerald-600"
+                {paged.map((d, i) => (
+                  <motion.tr
+                    key={d.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.015 }}
+                    className="border-t border-slate-100 transition-colors hover:bg-slate-50/60"
+                  >
+                    <td className="px-3 py-2.5 text-center font-bold text-slate-400">
+                      {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-800">
+                      {d.namaPromo}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
+                      {d.tokoNama}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold capitalize text-slate-600">
+                      {d.tipeDiskon}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
+                      {formatNilaiDiskon(d.tipeDiskon, d.nilaiDiskon)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
+                      {getHargaSebelumText(d.barangRingkas)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-black text-emerald-600">
+                      {getHargaSesudahText(d.barangRingkas, d.tipeDiskon, d.nilaiDiskon)}
+                    </td>
+                    <td className="px-3 py-2.5 font-semibold text-slate-600">
+                      {d.barangIds.length} barang
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${
+                          d.isActive
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        {d.stok}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
-                        {d.stokMinimum}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <div className="flex justify-center gap-1.5">
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => openEdit(d)}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
-                          >
-                            <Pencil size={12} strokeWidth={2.5} />
-                          </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => setDeleteId(d.id)}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
-                          >
-                            <Trash2 size={12} strokeWidth={2.5} />
-                          </motion.button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  )
-                })}
+                        {d.isActive ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <div className="flex justify-center gap-1.5">
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => openEdit(d)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                        >
+                          <Pencil size={12} strokeWidth={2.5} />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => setDeleteId(d.id)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
+                        >
+                          <Trash2 size={12} strokeWidth={2.5} />
+                        </motion.button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -1218,7 +1108,7 @@ export default function TambahBarangPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             >
               <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 py-4">
                 <div className="flex items-center gap-3">
@@ -1231,10 +1121,10 @@ export default function TambahBarangPage() {
                   </div>
                   <div>
                     <h2 className="text-base font-black leading-none text-white">
-                      {isEdit ? "Edit Barang" : "Tambah Barang"}
+                      {isEdit ? "Edit Diskon" : "Tambah Diskon"}
                     </h2>
                     <p className="mt-0.5 text-[10px] font-semibold text-white/70">
-                      {isEdit ? "Perbarui data barang" : "Isi field wajib (*)"}
+                      Pilih toko, barang, lalu atur promo diskon
                     </p>
                   </div>
                 </div>
@@ -1268,47 +1158,23 @@ export default function TambahBarangPage() {
                   </AnimatePresence>
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {isEdit && (
-                      <FormInput
-                        label="Kode Barang"
-                        required
-                        icon={Barcode}
-                        value={form.kodeBarang}
-                        onChange={(e: any) => setField("kodeBarang")(e.target.value)}
-                        placeholder="Kode barang"
-                      />
-                    )}
-
                     <FormInput
-                      label="Nama Barang"
-                      required
-                      icon={Package}
-                      value={form.nama}
-                      onChange={(e: any) => setField("nama")(e.target.value)}
-                      placeholder="Contoh: Oppo A58"
-                    />
-
-                    <FormSelect
-                      label="Kategori"
+                      label="Nama Promo"
                       required
                       icon={Tag}
-                      value={form.kategoriId}
-                      onChange={(e: any) => setField("kategoriId")(e.target.value)}
-                    >
-                      <option value="">Pilih kategori</option>
-                      {kategoriList.map((k) => (
-                        <option key={k.id} value={k.id}>
-                          {k.nama}
-                        </option>
-                      ))}
-                    </FormSelect>
+                      value={form.namaPromo}
+                      onChange={(e: any) =>
+                        setForm((prev) => ({ ...prev, namaPromo: e.target.value }))
+                      }
+                      placeholder="Contoh: Promo Lebaran"
+                    />
 
                     <FormSelect
                       label="Toko"
                       required
                       icon={Store}
                       value={form.tokoId}
-                      onChange={(e: any) => setField("tokoId")(e.target.value)}
+                      onChange={(e: any) => handleChangeToko(e.target.value)}
                     >
                       <option value="">Pilih toko</option>
                       {tokoList.map((t) => (
@@ -1318,88 +1184,147 @@ export default function TambahBarangPage() {
                       ))}
                     </FormSelect>
 
-                    <FormInput
-                      label="Merk"
-                      required
-                      icon={BadgeDollarSign}
-                      value={form.merk}
-                      onChange={(e: any) => setField("merk")(e.target.value)}
-                      placeholder="Contoh: Samsung"
-                    />
-
                     <FormSelect
-                      label="Supplier"
+                      label="Tipe Diskon"
                       required
-                      icon={Truck}
-                      value={form.supplier}
-                      onChange={(e: any) => setField("supplier")(e.target.value)}
+                      icon={Percent}
+                      value={form.tipeDiskon}
+                      onChange={(e: any) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          tipeDiskon: e.target.value as "persen" | "nominal",
+                        }))
+                      }
                     >
-                      <option value="">Pilih supplier</option>
-                      {supplierList.map((s) => (
-                        <option key={s.id} value={s.nama}>
-                          {s.nama}
-                        </option>
-                      ))}
-                    </FormSelect>
-
-                    <FormSelect
-                      label="Satuan"
-                      required
-                      icon={Ruler}
-                      value={form.satuan}
-                      onChange={(e: any) => setField("satuan")(e.target.value)}
-                    >
-                      <option value="">Pilih satuan</option>
-                      {satuanList.map((s) => (
-                        <option key={s.id} value={s.nama}>
-                          {s.nama}
-                        </option>
-                      ))}
+                      <option value="persen">Persen (%)</option>
+                      <option value="nominal">Nominal (Rp)</option>
                     </FormSelect>
 
                     <FormInput
-                      label="Harga Modal"
+                      label={form.tipeDiskon === "persen" ? "Nilai Diskon (%)" : "Nilai Diskon (Rp)"}
                       required
                       icon={BadgeDollarSign}
                       type="number"
                       min="0"
-                      value={form.hargaModal}
-                      onChange={(e: any) => setField("hargaModal")(e.target.value)}
-                      placeholder="0"
+                      value={form.nilaiDiskon}
+                      onChange={(e: any) =>
+                        setForm((prev) => ({ ...prev, nilaiDiskon: e.target.value }))
+                      }
+                      placeholder={form.tipeDiskon === "persen" ? "Contoh: 10" : "Contoh: 5000"}
                     />
+                  </div>
 
-                    <FormInput
-                      label="Harga Jual"
-                      required
-                      icon={BadgeDollarSign}
-                      type="number"
-                      min="0"
-                      value={form.hargaJual}
-                      onChange={(e: any) => setField("hargaJual")(e.target.value)}
-                      placeholder="0"
-                    />
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                          Pilih Barang Promo
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          {form.tokoId
+                            ? `Menampilkan barang dari toko terpilih`
+                            : `Pilih toko dulu agar daftar barang muncul`}
+                        </p>
+                      </div>
 
-                    <FormInput
-                      label="Stok"
-                      required
-                      icon={Boxes}
-                      type="number"
-                      min="0"
-                      value={form.stok}
-                      onChange={(e: any) => setField("stok")(e.target.value)}
-                      placeholder="0"
-                    />
+                      <div className="w-full sm:max-w-xs">
+                        <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                          Cari Barang
+                        </label>
+                        <div className="relative">
+                          <Search
+                            size={13}
+                            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                            strokeWidth={2}
+                          />
+                          <input
+                            value={searchBarangModal}
+                            onChange={(e) => setSearchBarangModal(e.target.value)}
+                            placeholder="Nama / kode barang..."
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-                    <FormInput
-                      label="Stok Minimum"
-                      required
-                      icon={TriangleAlert}
-                      type="number"
-                      min="0"
-                      value={form.stokMinimum}
-                      onChange={(e: any) => setField("stokMinimum")(e.target.value)}
-                      placeholder="0"
-                    />
+                    <div className="max-h-[320px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                      {!form.tokoId ? (
+                        <div className="px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                          Pilih toko terlebih dahulu
+                        </div>
+                      ) : barangBySelectedToko.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                          Tidak ada barang ditemukan
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {barangBySelectedToko.map((item) => {
+                            const checked = form.barangIds.includes(item.id)
+                            const hargaSetelah = hitungHargaSetelahDiskon(
+                              Number(item.hargaJual || 0),
+                              form.tipeDiskon,
+                              Number(form.nilaiDiskon || 0)
+                            )
+
+                            return (
+                              <label
+                                key={item.id}
+                                className="flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleBarang(item.id)}
+                                  className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
+                                />
+
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-black text-slate-800">
+                                    {item.nama}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                                    {item.kodeBarang || "-"}
+                                  </p>
+                                  <div className="mt-1 flex flex-wrap gap-2 text-[11px] font-bold">
+                                    <span className="text-slate-600">
+                                      Sebelum: {formatRupiah(item.hargaJual)}
+                                    </span>
+                                    <span className="text-emerald-600">
+                                      Sesudah: {formatRupiah(hargaSetelah)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {form.barangIds.length > 0 && (
+                      <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-cyan-600">
+                        {form.barangIds.length} barang dipilih
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={form.isActive}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, isActive: e.target.checked }))
+                        }
+                        className="h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
+                      />
+                      <div>
+                        <p className="text-sm font-black text-slate-800">Aktifkan Diskon</p>
+                        <p className="text-[11px] font-semibold text-slate-500">
+                          Jika aktif, promo siap dipanggil oleh halaman kasir
+                        </p>
+                      </div>
+                    </label>
                   </div>
                 </div>
 
@@ -1434,7 +1359,7 @@ export default function TambahBarangPage() {
                     ) : (
                       <>
                         <Check size={14} strokeWidth={3} />
-                        {isEdit ? "Perbarui" : "Simpan Barang"}
+                        {isEdit ? "Perbarui" : "Simpan Diskon"}
                       </>
                     )}
                   </motion.button>
@@ -1466,13 +1391,13 @@ export default function TambahBarangPage() {
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
                     <Trash2 size={18} className="text-white" strokeWidth={2.5} />
                   </div>
-                  <h2 className="text-base font-black text-white">Hapus Barang</h2>
+                  <h2 className="text-base font-black text-white">Hapus Diskon</h2>
                 </div>
               </div>
 
               <div className="px-6 py-5">
                 <p className="text-sm font-semibold text-slate-600">
-                  Yakin ingin menghapus data barang ini? Tindakan ini{" "}
+                  Yakin ingin menghapus diskon ini? Tindakan ini{" "}
                   <span className="font-black text-red-600">tidak dapat dibatalkan</span>.
                 </p>
               </div>

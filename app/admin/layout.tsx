@@ -1,7 +1,7 @@
 /* 
   Layout admin dengan auth guard yang aman dari hydration mismatch.
-  Perbaikan utama: render awal server/client disamakan memakai hasHydrated,
-  lalu pengecekan auth Firebase baru dijalankan setelah mount di browser.
+  Revisi ini menambahkan grup baru Transaksi dan memindahkan menu terkait transaksi
+  agar sidebar lebih rapi: Master Data, Transaksi, dan Absensi Karyawan.
 */
 
 "use client"
@@ -34,6 +34,8 @@ import {
   ArrowRightLeft,
   UserPlus,
   Wallet,
+  Percent,
+  ShoppingCart,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -74,10 +76,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
           { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
-          { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
           { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
           { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
           { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
+        ],
+      },
+      {
+        label: "Transaksi",
+        icon: ShoppingCart,
+        items: [
+          { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
+          { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
+          { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
         ],
       },
       {
@@ -111,14 +121,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-karyawan") ||
       currentPath.startsWith("/admin/tambah-barang") ||
       currentPath.startsWith("/admin/tambah-kategori") ||
+      currentPath.startsWith("/admin/tambah-satuan") ||
+      currentPath.startsWith("/admin/tambah-supplier") ||
       currentPath.startsWith("/admin/tambah-barang-tetap") ||
       currentPath.startsWith("/admin/transfer-barang") ||
-      currentPath.startsWith("/admin/tambah-metode-pembayaran") ||
       currentPath.startsWith("/admin/tambah-pelanggan") ||
       currentPath.startsWith("/admin/akun-pelanggan") ||
       currentPath.startsWith("/admin/buat-akun")
     ) {
       nextOpenGroup.push("Master Data")
+    }
+
+    if (
+      currentPath.startsWith("/admin/transaksi") ||
+      currentPath.startsWith("/admin/tambah-diskon") ||
+      currentPath.startsWith("/admin/tambah-metode-pembayaran")
+    ) {
+      nextOpenGroup.push("Transaksi")
     }
 
     if (
@@ -225,11 +244,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") {
-      return pathname === "/admin/tambah-barang" || pathname === "/admin/tambah-kategori" || pathname === "/admin/tambah-satuan"
+      return (
+        pathname === "/admin/tambah-barang" ||
+        pathname === "/admin/tambah-kategori" ||
+        pathname === "/admin/tambah-satuan" ||
+        pathname === "/admin/tambah-supplier"
+      )
     }
 
     if (href === "/admin/dashboard-absensi") {
       return pathname === "/admin/dashboard-absensi"
+    }
+
+    if (href === "/admin/transaksi") {
+      return pathname === "/admin/transaksi"
     }
 
     return pathname === href
@@ -256,8 +284,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white shadow-xl p-6">
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+        <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50">
               <Cpu className="text-blue-600" size={20} strokeWidth={2.2} />
@@ -282,14 +310,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="relative flex min-h-screen gap-3 overflow-x-hidden bg-slate-100 p-3 sm:gap-4 sm:p-4">
-      {/* Background */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="absolute left-0 top-1/4 h-72 w-72 rounded-full bg-cyan-200/20 blur-[90px]" />
         <div className="absolute bottom-1/3 right-0 h-72 w-72 rounded-full bg-blue-200/20 blur-[90px]" />
         <div className="absolute left-1/2 top-0 h-56 w-56 -translate-x-1/2 rounded-full bg-indigo-200/15 blur-[80px]" />
       </div>
 
-      {/* Mobile Hamburger */}
       <button
         type="button"
         onClick={() => setSidebarOpen((prev) => !prev)}
@@ -299,7 +325,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {sidebarOpen ? <X size={18} strokeWidth={2} /> : <Menu size={18} strokeWidth={2} />}
       </button>
 
-      {/* Mobile Backdrop */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.button
@@ -316,7 +341,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </AnimatePresence>
 
       <div className="relative z-10 flex min-w-0 flex-1 gap-3 sm:gap-4">
-        {/* Sidebar */}
         <aside
           className={`
             fixed inset-y-3 left-3 z-[60] flex max-w-[calc(100vw-1.5rem)] flex-col
@@ -326,7 +350,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)] lg:translate-x-0"}
           `}
         >
-          {/* Brand */}
           <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
             <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
               <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
@@ -338,7 +361,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
             {!sidebarCollapsed && (
               <div className="relative min-w-0">
-                <div className="leading-none tracking-tight text-base font-black text-slate-800">
+                <div className="text-base font-black leading-none tracking-tight text-slate-800">
                   Mans-Cell{" "}
                   <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
                     Admin
@@ -351,7 +374,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )}
           </div>
 
-          {/* Collapse button */}
           <button
             type="button"
             onClick={() => setSidebarCollapsed((prev) => !prev)}
@@ -365,7 +387,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )}
           </button>
 
-          {/* Navigation */}
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
             <Link
               href="/admin"
@@ -484,9 +505,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     strokeWidth={active ? 2.5 : 2}
                                     className="flex-shrink-0"
                                   />
-                                  <span
-                                    className={active ? "truncate font-bold" : "truncate font-semibold"}
-                                  >
+                                  <span className={active ? "truncate font-bold" : "truncate font-semibold"}>
                                     {item.label}
                                   </span>
                                 </Link>
@@ -502,7 +521,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             })}
           </nav>
 
-          {/* Footer */}
           <div className="rounded-bl-3xl border-t border-slate-200 bg-slate-50/50 p-3">
             <button
               type="button"
@@ -520,7 +538,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </aside>
 
-        {/* Main */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:rounded-r-3xl lg:border-l-0">
           <header className="flex h-20 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 lg:px-8">
             <div className="w-10 lg:hidden" />
