@@ -36,6 +36,9 @@ import {
   Wallet,
   Percent,
   ShoppingCart,
+  Receipt,
+  Boxes,
+  BarChart3,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -86,8 +89,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         icon: ShoppingCart,
         items: [
           { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
-          { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
-          { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
+{ href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
+{ href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
+{ href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
+{ href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
+{ href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
+{ href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
         ],
       },
       {
@@ -135,7 +142,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (
       currentPath.startsWith("/admin/transaksi") ||
       currentPath.startsWith("/admin/tambah-diskon") ||
-      currentPath.startsWith("/admin/tambah-metode-pembayaran")
+      currentPath.startsWith("/admin/tambah-metode-pembayaran") ||
+      currentPath.startsWith("/admin/riwayat-transaksi") ||
+      currentPath.startsWith("/admin/mutasi-stok") ||
+      currentPath.startsWith("/admin/laporan-harian") ||
+      currentPath.startsWith("/admin/laporan-bulanan")
     ) {
       nextOpenGroup.push("Transaksi")
     }

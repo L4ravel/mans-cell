@@ -1,5 +1,7 @@
-// Halaman login Mans-Cell dengan redirect berbasis roles.
-// Jika roles mengandung "admin" masuk ke /admin, jika mengandung "karyawan" masuk ke /karyawan.
+/* 
+  Halaman login Mans-Cell dengan redirect berbasis role.
+  Jika role admin masuk ke /admin, karyawan ke /karyawan, pelanggan ke /pelanggan.
+*/
 
 "use client"
 
@@ -9,10 +11,18 @@ import Image from "next/image"
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth"
 import { doc, getDoc } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
-import { Lock, Mail, Loader2, ArrowRight, EyeOff, Eye, ShieldCheck } from "lucide-react"
+import {
+  Lock,
+  Mail,
+  Loader2,
+  ArrowRight,
+  EyeOff,
+  Eye,
+  ShieldCheck,
+} from "lucide-react"
 import { motion } from "framer-motion"
 
-type UserRole = "admin" | "karyawan"
+type UserRole = "admin" | "karyawan" | "pelanggan"
 
 function extractRoles(raw: any): string[] {
   if (Array.isArray(raw?.roles)) {
@@ -43,6 +53,10 @@ function getRedirectByRoles(roles: string[]): { role: UserRole; redirectTo: stri
     return { role: "karyawan", redirectTo: "/karyawan" }
   }
 
+  if (roles.includes("pelanggan")) {
+    return { role: "pelanggan", redirectTo: "/pelanggan" }
+  }
+
   return null
 }
 
@@ -66,6 +80,7 @@ export default function LoginPage() {
 
       try {
         const snap = await getDoc(doc(db, "users", user.uid))
+
         if (!snap.exists()) {
           await signOut(auth)
           setCheckingSession(false)
@@ -82,8 +97,10 @@ export default function LoginPage() {
         }
 
         await signOut(auth)
+        setError("Akun ini tidak punya akses ke panel.")
       } catch (err) {
         console.error(err)
+        setError("Gagal memeriksa sesi akun.")
       } finally {
         setCheckingSession(false)
       }
@@ -191,25 +208,25 @@ export default function LoginPage() {
             </div>
 
             <div className="flex justify-center lg:justify-start mb-4 sm:mb-8">
-  <motion.div
-    whileHover={{ scale: 1.03, y: -2 }}
-    transition={{ type: "spring", stiffness: 220, damping: 18 }}
-    className="group relative"
-  >
-    <div className="absolute inset-0 bg-blue-500/10 blur-2xl rounded-[1.75rem] scale-105 group-hover:bg-cyan-400/15 transition-all duration-500" />
+              <motion.div
+                whileHover={{ scale: 1.03, y: -2 }}
+                transition={{ type: "spring", stiffness: 220, damping: 18 }}
+                className="group relative"
+              >
+                <div className="absolute inset-0 bg-blue-500/10 blur-2xl rounded-[1.75rem] scale-105 group-hover:bg-cyan-400/15 transition-all duration-500" />
 
-    <div className="relative w-[220px] sm:w-[280px] aspect-[2/1] rounded-[1.5rem] bg-white/80 backdrop-blur-xl border border-blue-100 shadow-[0_15px_40px_rgba(37,99,235,0.12)] flex items-center justify-center px-5 sm:px-6">
-      <Image
-        src="/logo.png"
-        alt="Mans-Cell Logo"
-        width={1000}
-        height={500}
-        className="w-full h-auto object-contain drop-shadow-[0_8px_20px_rgba(37,99,235,0.18)]"
-        priority
-      />
-    </div>
-  </motion.div>
-</div>
+                <div className="relative w-[220px] sm:w-[280px] aspect-[2/1] rounded-[1.5rem] bg-white/80 backdrop-blur-xl border border-blue-100 shadow-[0_15px_40px_rgba(37,99,235,0.12)] flex items-center justify-center px-5 sm:px-6">
+                  <Image
+                    src="/logo.png"
+                    alt="Mans-Cell Logo"
+                    width={1000}
+                    height={500}
+                    className="w-full h-auto object-contain drop-shadow-[0_8px_20px_rgba(37,99,235,0.18)]"
+                    priority
+                  />
+                </div>
+              </motion.div>
+            </div>
 
             <div className="mb-4">
               <h1 className="text-2xl sm:text-4xl font-black text-slate-800 mb-1 leading-tight tracking-tight">
@@ -293,7 +310,7 @@ export default function LoginPage() {
             </form>
           </div>
 
-         <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 p-16 flex-col justify-start items-center pt-24 text-white relative overflow-hidden rounded-l-[11rem]">
+          <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 p-16 flex-col justify-start items-center pt-24 text-white relative overflow-hidden rounded-l-[11rem]">
             <div className="absolute inset-0 overflow-hidden opacity-10">
               <motion.div
                 animate={{ rotate: [0, 360], scale: [1, 1.2, 1] }}
@@ -341,32 +358,32 @@ export default function LoginPage() {
             </div>
 
             <motion.div
-  initial={{ opacity: 0, x: 50 }}
-  animate={{ opacity: 1, x: 0 }}
-  transition={{ duration: 0.8, delay: 0.3 }}
-  className="relative z-10 text-center flex flex-col items-center"
->
-           <motion.div
-  initial={{ scale: 0.9, opacity: 0 }}
-  animate={{ scale: 1, opacity: 1 }}
-  transition={{ type: "spring", stiffness: 180, damping: 14, delay: 0.45 }}
-  className="mb-8"
->
-  <div className="relative group">
-    <div className="absolute inset-0 bg-cyan-300/20 blur-3xl rounded-[2rem] scale-110" />
+              initial={{ opacity: 0, x: 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8, delay: 0.3 }}
+              className="relative z-10 text-center flex flex-col items-center"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 180, damping: 14, delay: 0.45 }}
+                className="mb-8"
+              >
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-cyan-300/20 blur-3xl rounded-[2rem] scale-110" />
 
-    <div className="relative w-[260px] xl:w-[320px] aspect-[2/1] rounded-[2rem] bg-white/10 backdrop-blur-md border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.25)] flex items-center justify-center px-6 xl:px-8">
-      <Image
-        src="/logo.png"
-        alt="Mans-Cell Logo"
-        width={1000}
-        height={500}
-        className="w-full h-auto object-contain drop-shadow-[0_10px_30px_rgba(255,255,255,0.18)]"
-        priority
-      />
-    </div>
-  </div>
-</motion.div>
+                  <div className="relative w-[260px] xl:w-[320px] aspect-[2/1] rounded-[2rem] bg-white/10 backdrop-blur-md border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.25)] flex items-center justify-center px-6 xl:px-8">
+                    <Image
+                      src="/logo.png"
+                      alt="Mans-Cell Logo"
+                      width={1000}
+                      height={500}
+                      className="w-full h-auto object-contain drop-shadow-[0_10px_30px_rgba(255,255,255,0.18)]"
+                      priority
+                    />
+                  </div>
+                </div>
+              </motion.div>
 
               <motion.h2
                 initial={{ opacity: 0, y: 20 }}
