@@ -1,7 +1,12 @@
-// Halaman admin transfer barang antar toko dengan draft, kirim, terima, batal, dan filter waktu riwayat.
+/* 
+  Halaman admin transfer barang antar toko.
+  File ini mendukung draft transfer banyak barang sekaligus, pencarian barang, kirim, terima,
+  batal, detail transfer, dan filter riwayat transfer.
+*/
+
 "use client"
 
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { auth, db } from "@/lib/firebase"
 import {
   collection,
@@ -29,6 +34,7 @@ import {
   Package,
   RefreshCw,
   Search,
+  Store,
   Truck,
   Undo2,
   X,
@@ -104,10 +110,13 @@ type TransferBarang = {
 
 type TransferForm = {
   tokoAsalId: string
-  barangId: string
   tokoTujuanId: string
-  qty: string
   catatan: string
+}
+
+type SelectedTransferItem = {
+  barangId: string
+  qty: string
 }
 
 type ReceiveForm = {
@@ -123,9 +132,7 @@ const ITEMS_OPTIONS = [
 
 const EMPTY_FORM: TransferForm = {
   tokoAsalId: "",
-  barangId: "",
   tokoTujuanId: "",
-  qty: "",
   catatan: "",
 }
 
@@ -226,7 +233,9 @@ function FilterSelect({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</label>
+      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </label>
       <div className="relative">
         <select
           value={value}
@@ -242,6 +251,60 @@ function FilterSelect({
         />
       </div>
     </div>
+  )
+}
+
+function Modal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  open: boolean
+  title: string
+  subtitle?: string
+  onClose: () => void
+  children: ReactNode
+}) {
+  return (
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-black text-slate-800">{title}</h3>
+                {subtitle ? (
+                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    {subtitle}
+                  </p>
+                ) : null}
+              </div>
+
+              <button
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-all hover:bg-slate-50"
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(90vh-78px)] overflow-y-auto px-5 py-4">{children}</div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }
 
@@ -331,6 +394,7 @@ export default function TransferBarangPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const [form, setForm] = useState<TransferForm>(EMPTY_FORM)
+  const [selectedItems, setSelectedItems] = useState<SelectedTransferItem[]>([])
   const [receiveForm, setReceiveForm] = useState<ReceiveForm>(EMPTY_RECEIVE_FORM)
 
   const [error, setError] = useState<string | null>(null)
@@ -348,6 +412,9 @@ export default function TransferBarangPage() {
   const [selectedDetail, setSelectedDetail] = useState<TransferBarang | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<TransferBarang | null>(null)
   const [cancelTarget, setCancelTarget] = useState<TransferBarang | null>(null)
+
+  const [barangModalOpen, setBarangModalOpen] = useState(false)
+  const [barangModalSearch, setBarangModalSearch] = useState("")
 
   const setField =
     (key: keyof TransferForm) =>
@@ -415,7 +482,9 @@ export default function TransferBarangPage() {
 
   const fetchTransfer = async () => {
     try {
-      const snap = await getDocs(query(collection(db, "transfer_barang"), orderBy("createdAt", "desc")))
+      const snap = await getDocs(
+        query(collection(db, "transfer_barang"), orderBy("createdAt", "desc"))
+      )
       const list: TransferBarang[] = snap.docs.map((item) => {
         const x = item.data() as any
         return {
@@ -483,17 +552,44 @@ export default function TransferBarangPage() {
   }, [])
 
   const barangTokoAsal = useMemo(() => {
-    return barangList.filter((item) => item.tokoId === form.tokoAsalId)
+    return barangList
+      .filter((item) => item.tokoId === form.tokoAsalId)
+      .sort((a, b) => a.nama.localeCompare(b.nama))
   }, [barangList, form.tokoAsalId])
 
-  const barangDipilih = useMemo(() => {
-    return barangList.find((item) => item.id === form.barangId) || null
-  }, [barangList, form.barangId])
+  const barangModalFiltered = useMemo(() => {
+    const q = barangModalSearch.toLowerCase().trim()
+
+    return barangTokoAsal.filter((item) => {
+      if (!q) return true
+
+      return (
+        item.nama.toLowerCase().includes(q) ||
+        item.kodeBarang.toLowerCase().includes(q) ||
+        item.kategoriNama.toLowerCase().includes(q) ||
+        item.merk.toLowerCase().includes(q)
+      )
+    })
+  }, [barangTokoAsal, barangModalSearch])
+
+  const selectedBarangDetail = useMemo(() => {
+    return selectedItems
+      .map((item) => {
+        const barang = barangList.find((x) => x.id === item.barangId)
+        if (!barang) return null
+        return { ...item, barang }
+      })
+      .filter(Boolean) as Array<SelectedTransferItem & { barang: Barang }>
+  }, [selectedItems, barangList])
 
   const filteredTransfer = useMemo(() => {
     const q = search.toLowerCase().trim()
-    const startMillis = filterStartDate ? new Date(`${filterStartDate}T00:00:00`).getTime() : 0
-    const endMillis = filterEndDate ? new Date(`${filterEndDate}T23:59:59.999`).getTime() : 0
+    const startMillis = filterStartDate
+      ? new Date(`${filterStartDate}T00:00:00`).getTime()
+      : 0
+    const endMillis = filterEndDate
+      ? new Date(`${filterEndDate}T23:59:59.999`).getTime()
+      : 0
 
     return transferList.filter((item) => {
       const matchSearch =
@@ -516,7 +612,15 @@ export default function TransferBarangPage() {
 
       return matchSearch && matchStatus && matchAsal && matchTujuan && matchDate
     })
-  }, [transferList, search, filterStatus, filterAsal, filterTujuan, filterStartDate, filterEndDate])
+  }, [
+    transferList,
+    search,
+    filterStatus,
+    filterAsal,
+    filterTujuan,
+    filterStartDate,
+    filterEndDate,
+  ])
 
   const totalPages =
     itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filteredTransfer.length / itemsPerPage))
@@ -530,6 +634,9 @@ export default function TransferBarangPage() {
 
   const resetForm = () => {
     setForm(EMPTY_FORM)
+    setSelectedItems([])
+    setBarangModalSearch("")
+    setBarangModalOpen(false)
     setError(null)
   }
 
@@ -540,20 +647,56 @@ export default function TransferBarangPage() {
     setPage(1)
   }
 
+  const isBarangSelected = (barangId: string) => {
+    return selectedItems.some((item) => item.barangId === barangId)
+  }
+
+  const toggleBarangSelection = (barangId: string) => {
+    setSelectedItems((prev) => {
+      const exists = prev.some((item) => item.barangId === barangId)
+
+      if (exists) {
+        return prev.filter((item) => item.barangId !== barangId)
+      }
+
+      return [...prev, { barangId, qty: "1" }]
+    })
+  }
+
+  const setQtySelectedBarang = (barangId: string, qty: string) => {
+    setSelectedItems((prev) =>
+      prev.map((item) => (item.barangId === barangId ? { ...item, qty } : item))
+    )
+  }
+
+  const removeSelectedBarang = (barangId: string) => {
+    setSelectedItems((prev) => prev.filter((item) => item.barangId !== barangId))
+  }
+
   const validateForm = () => {
     if (!form.tokoAsalId) return "Toko asal wajib dipilih"
-    if (!form.barangId) return "Barang wajib dipilih"
     if (!form.tokoTujuanId) return "Toko tujuan wajib dipilih"
-    if (form.tokoAsalId === form.tokoTujuanId) return "Toko asal dan toko tujuan tidak boleh sama"
-    if (!form.qty.trim()) return "Qty wajib diisi"
+    if (form.tokoAsalId === form.tokoTujuanId) {
+      return "Toko asal dan toko tujuan tidak boleh sama"
+    }
+    if (selectedItems.length === 0) return "Pilih minimal 1 barang"
 
-    const qty = Number(form.qty)
-    if (Number.isNaN(qty) || qty <= 0) return "Qty tidak valid"
+    const seenBarang = new Set<string>()
 
-    const barang = barangList.find((item) => item.id === form.barangId)
-    if (!barang) return "Barang asal tidak ditemukan"
-    if (barang.tokoId !== form.tokoAsalId) return "Barang tidak cocok dengan toko asal"
-    if (qty > barang.stok) return "Stok toko asal tidak mencukupi"
+    for (const item of selectedItems) {
+      if (!item.barangId) return "Ada barang yang belum valid"
+      if (seenBarang.has(item.barangId)) return "Ada barang ganda di daftar transfer"
+      seenBarang.add(item.barangId)
+
+      const qty = Number(item.qty)
+      if (!item.qty.trim()) return "Qty barang wajib diisi"
+      if (Number.isNaN(qty) || qty <= 0) return "Qty barang tidak valid"
+
+      const barang = barangList.find((x) => x.id === item.barangId)
+      if (!barang) return "Ada barang yang tidak ditemukan"
+      if (barang.tokoId !== form.tokoAsalId) return "Ada barang yang tidak cocok dengan toko asal"
+      if (qty > barang.stok) return `Stok ${barang.nama} tidak mencukupi`
+    }
 
     return null
   }
@@ -570,12 +713,11 @@ export default function TransferBarangPage() {
       return
     }
 
-    const barang = barangList.find((item) => item.id === form.barangId)
     const tokoAsal = tokoList.find((item) => item.id === form.tokoAsalId)
     const tokoTujuan = tokoList.find((item) => item.id === form.tokoTujuanId)
 
-    if (!barang || !tokoAsal || !tokoTujuan) {
-      setError("Data barang atau toko tidak ditemukan")
+    if (!tokoAsal || !tokoTujuan) {
+      setError("Data toko tidak ditemukan")
       return
     }
 
@@ -583,63 +725,73 @@ export default function TransferBarangPage() {
     setError(null)
 
     try {
-      const qty = Number(form.qty)
-      const existingTarget = barangList.find(
-        (item) =>
-          item.tokoId === tokoTujuan.id &&
-          item.kodeBarang.trim().toLowerCase() === barang.kodeBarang.trim().toLowerCase()
+      const kodeBatch = buildKodeTransfer()
+
+      await Promise.all(
+        selectedItems.map(async (selected, index) => {
+          const barang = barangList.find((item) => item.id === selected.barangId)
+          if (!barang) throw new Error("Barang tidak ditemukan")
+
+          const qty = Number(selected.qty)
+          const existingTarget = barangList.find(
+            (item) =>
+              item.tokoId === tokoTujuan.id &&
+              item.kodeBarang.trim().toLowerCase() ===
+                barang.kodeBarang.trim().toLowerCase()
+          )
+
+          const newTransferRef = doc(collection(db, "transfer_barang"))
+          const targetBarangRef = existingTarget
+            ? doc(db, "barang", existingTarget.id)
+            : doc(collection(db, "barang"))
+
+          await setDoc(newTransferRef, {
+            kodeTransfer: `${kodeBatch}-${String(index + 1).padStart(2, "0")}`,
+            status: "DRAFT",
+            barangId: barang.id,
+            barangTujuanId: targetBarangRef.id,
+            kodeBarang: barang.kodeBarang,
+            namaBarang: barang.nama,
+            kategoriId: barang.kategoriId,
+            kategoriNama: barang.kategoriNama,
+            merk: barang.merk,
+            supplier: barang.supplier,
+            satuan: barang.satuan,
+            hargaModal: barang.hargaModal,
+            hargaJual: barang.hargaJual,
+            qty,
+            stokMinimum: barang.stokMinimum,
+            tokoAsalId: tokoAsal.id,
+            tokoAsalNama: tokoAsal.nama,
+            tokoTujuanId: tokoTujuan.id,
+            tokoTujuanNama: tokoTujuan.nama,
+            catatan: form.catatan.trim(),
+            catatanPenerimaan: "",
+            alasanBatal: "",
+            stokAsalSebelum: barang.stok,
+            stokAsalSesudah: 0,
+            stokTujuanSebelum: existingTarget?.stok || 0,
+            stokTujuanSesudah: 0,
+            createdBy: user.uid,
+            sentBy: "",
+            receivedBy: "",
+            cancelledBy: "",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            sentAt: null,
+            receivedAt: null,
+            cancelledAt: null,
+          })
+        })
       )
-
-      const newTransferRef = doc(collection(db, "transfer_barang"))
-      const targetBarangRef = existingTarget
-        ? doc(db, "barang", existingTarget.id)
-        : doc(collection(db, "barang"))
-
-      await setDoc(newTransferRef, {
-        kodeTransfer: buildKodeTransfer(),
-        status: "DRAFT",
-        barangId: barang.id,
-        barangTujuanId: targetBarangRef.id,
-        kodeBarang: barang.kodeBarang,
-        namaBarang: barang.nama,
-        kategoriId: barang.kategoriId,
-        kategoriNama: barang.kategoriNama,
-        merk: barang.merk,
-        supplier: barang.supplier,
-        satuan: barang.satuan,
-        hargaModal: barang.hargaModal,
-        hargaJual: barang.hargaJual,
-        qty,
-        stokMinimum: barang.stokMinimum,
-        tokoAsalId: tokoAsal.id,
-        tokoAsalNama: tokoAsal.nama,
-        tokoTujuanId: tokoTujuan.id,
-        tokoTujuanNama: tokoTujuan.nama,
-        catatan: form.catatan.trim(),
-        catatanPenerimaan: "",
-        alasanBatal: "",
-        stokAsalSebelum: barang.stok,
-        stokAsalSesudah: 0,
-        stokTujuanSebelum: existingTarget?.stok || 0,
-        stokTujuanSesudah: 0,
-        createdBy: user.uid,
-        sentBy: "",
-        receivedBy: "",
-        cancelledBy: "",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        sentAt: null,
-        receivedAt: null,
-        cancelledAt: null,
-      })
 
       await fetchAll()
       resetForm()
-      setSuccessMsg("Transfer draft berhasil dibuat")
+      setSuccessMsg("Draft transfer barang berhasil dibuat")
       setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
-      setError("Gagal membuat draft transfer")
+      setError(e?.message || "Gagal membuat draft transfer")
     } finally {
       setSubmitLoading(false)
     }
@@ -671,7 +823,9 @@ export default function TransferBarangPage() {
         const latestStock = Number(latestSource?.stok || 0)
         const qty = Number(latestTransfer?.qty || 0)
 
-        if (latestStatus !== "DRAFT") throw new Error("Transfer hanya bisa dikirim dari status draft")
+        if (latestStatus !== "DRAFT") {
+          throw new Error("Transfer hanya bisa dikirim dari status draft")
+        }
         if (qty <= 0) throw new Error("Qty transfer tidak valid")
         if (latestStock < qty) throw new Error("Stok toko asal tidak mencukupi")
 
@@ -801,7 +955,10 @@ export default function TransferBarangPage() {
     setError(null)
 
     try {
-      const reason = window.prompt("Alasan pembatalan transfer:", cancelTarget.alasanBatal || "")
+      const reason = window.prompt(
+        "Alasan pembatalan transfer:",
+        cancelTarget.alasanBatal || ""
+      )
       if (reason === null) {
         setActionLoading(null)
         return
@@ -873,9 +1030,11 @@ export default function TransferBarangPage() {
               <ArrowLeftRight size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
             </div>
             <div>
-              <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">Transfer Barang</h1>
+              <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+                Transfer Barang
+              </h1>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Draft · terkirim · diterima · batal · filter waktu
+                Multi barang · popup cari barang · draft · kirim · terima · batal
               </p>
             </div>
           </div>
@@ -952,28 +1111,33 @@ export default function TransferBarangPage() {
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-black text-slate-800 sm:text-base">Buat Draft Transfer</h2>
+            <h2 className="text-sm font-black text-slate-800 sm:text-base">
+              Buat Draft Transfer
+            </h2>
             <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               Stok asal berkurang saat dikirim, stok tujuan bertambah saat diterima
             </p>
           </div>
-          <div className="hidden h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 sm:flex">
-            <Truck size={18} strokeWidth={2.5} />
-          </div>
+
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
+          >
+            Reset Form
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <FormSelect
             label="Toko Asal"
             required
             value={form.tokoAsalId}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-              setForm((prev) => ({
-                ...prev,
-                tokoAsalId: e.target.value,
-                barangId: "",
-                tokoTujuanId: prev.tokoTujuanId === e.target.value ? "" : prev.tokoTujuanId,
-              }))
+            onChange={(e: any) => {
+              const value = e.target.value
+              setForm((prev) => ({ ...prev, tokoAsalId: value }))
+              setSelectedItems([])
+              setBarangModalSearch("")
             }}
           >
             <option value="">Pilih toko asal</option>
@@ -985,25 +1149,10 @@ export default function TransferBarangPage() {
           </FormSelect>
 
           <FormSelect
-            label="Barang"
-            required
-            value={form.barangId}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) => setField("barangId")(e.target.value)}
-            disabled={!form.tokoAsalId}
-          >
-            <option value="">Pilih barang asal</option>
-            {barangTokoAsal.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.kodeBarang || "-"} · {item.nama} · stok {item.stok}
-              </option>
-            ))}
-          </FormSelect>
-
-          <FormSelect
             label="Toko Tujuan"
             required
             value={form.tokoTujuanId}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) => setField("tokoTujuanId")(e.target.value)}
+            onChange={(e: any) => setField("tokoTujuanId")(e.target.value)}
           >
             <option value="">Pilih toko tujuan</option>
             {tokoList
@@ -1015,112 +1164,145 @@ export default function TransferBarangPage() {
               ))}
           </FormSelect>
 
-          <FormInput
-            label="Qty Transfer"
-            required
-            type="number"
-            min={1}
-            value={form.qty}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setField("qty")(e.target.value)}
-            placeholder="Masukkan qty"
-          />
+          <div className="md:col-span-2">
+            <label className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+              Barang
+              <span className="ml-0.5 text-red-400">*</span>
+            </label>
 
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 lg:col-span-2">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Ringkasan Barang</p>
-            {barangDipilih ? (
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/70 p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Nama</p>
-                  <p className="text-sm font-bold text-slate-700">{barangDipilih.nama}</p>
+                  <p className="text-sm font-black text-slate-800">
+                    {selectedItems.length > 0
+                      ? `${selectedItems.length} barang dipilih`
+                      : "Belum ada barang dipilih"}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                    Pilih banyak barang dari toko asal, lalu isi qty masing-masing
+                  </p>
                 </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Kode</p>
-                  <p className="text-sm font-bold text-slate-700">{barangDipilih.kodeBarang || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Stok Asal</p>
-                  <p className="text-sm font-bold text-slate-700">{barangDipilih.stok}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Satuan</p>
-                  <p className="text-sm font-bold text-slate-700">{barangDipilih.satuan}</p>
-                </div>
+
+                <button
+                  type="button"
+                  disabled={!form.tokoAsalId}
+                  onClick={() => setBarangModalOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Boxes size={16} />
+                  Pilih Barang
+                </button>
               </div>
-            ) : (
-              <p className="mt-2 text-xs font-semibold text-slate-400">Pilih barang untuk melihat ringkasan</p>
-            )}
+
+              {selectedBarangDetail.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  {selectedBarangDetail.map(({ barang, qty }) => (
+                    <div
+                      key={barang.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-800">
+                            {barang.kodeBarang} · {barang.nama}
+                          </p>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                            Stok {barang.stok} • {barang.kategoriNama || "Tanpa Kategori"} •{" "}
+                            {barang.merk || "Tanpa Merk"}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <div className="w-full sm:w-36">
+                            <FormInput
+                              label="Qty"
+                              value={qty}
+                              inputMode="numeric"
+                              onChange={(e: any) =>
+                                setQtySelectedBarang(
+                                  barang.id,
+                                  String(e.target.value).replace(/[^\d]/g, "")
+                                )
+                              }
+                              placeholder="Qty"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedBarang(barang.id)}
+                            className="inline-flex h-[42px] items-center justify-center rounded-xl border border-red-200 bg-white px-3 text-[11px] font-black text-red-600 transition-all hover:bg-red-50"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="md:col-span-2">
             <FormTextArea
               label="Catatan"
               value={form.catatan}
-              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setField("catatan")(e.target.value)}
-              placeholder="Catatan tambahan transfer..."
+              onChange={(e: any) => setField("catatan")(e.target.value)}
+              placeholder="Contoh: transfer stok untuk kebutuhan cabang"
             />
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={resetForm}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 shadow-sm hover:bg-slate-50"
-          >
-            Reset
-          </motion.button>
-          <motion.button
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
             type="submit"
-            whileHover={{ scale: submitLoading ? 1 : 1.03 }}
-            whileTap={{ scale: submitLoading ? 1 : 0.97 }}
             disabled={submitLoading}
-            className="rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-sm shadow-emerald-200/50 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitLoading ? "Menyimpan..." : "Simpan Draft"}
-          </motion.button>
+            {submitLoading ? (
+              <RefreshCw size={16} className="animate-spin" />
+            ) : (
+              <Package size={16} />
+            )}
+            Simpan Draft Transfer
+          </button>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-bold text-cyan-700 ring-1 ring-cyan-200">
+              Barang: {selectedItems.length}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+              Total Qty:{" "}
+              {selectedItems.reduce((acc, item) => acc + Number(item.qty || 0), 0)}
+            </span>
+          </div>
         </div>
       </motion.form>
 
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
+        className="rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white p-4 shadow-sm sm:p-5"
       >
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-black text-slate-800 sm:text-base">Riwayat Transfer</h2>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Filter status, toko, pencarian, dan rentang tanggal
-            </p>
-          </div>
-          <div className="hidden h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 sm:flex">
-            <CalendarRange size={18} strokeWidth={2.5} />
-          </div>
+        <div className="mb-4">
+          <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Riwayat</h2>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Cari transfer berdasarkan status, toko, dan rentang waktu
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">Cari Transfer</label>
-            <div className="relative">
-              <Search
-                size={13}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                strokeWidth={2}
-              />
-              <input
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  setPage(1)
-                }}
-                placeholder="Kode, barang, toko, supplier..."
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-              />
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <FormInput
+            label="Cari"
+            value={search}
+            onChange={(e: any) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
+            placeholder="Kode, barang, toko, supplier..."
+          />
 
           <FilterSelect
             label="Status"
@@ -1130,7 +1312,7 @@ export default function TransferBarangPage() {
               setPage(1)
             }}
           >
-            <option value="">Semua Status</option>
+            <option value="">Semua status</option>
             <option value="DRAFT">Draft</option>
             <option value="DIKIRIM">Terkirim</option>
             <option value="DITERIMA">Diterima</option>
@@ -1145,7 +1327,7 @@ export default function TransferBarangPage() {
               setPage(1)
             }}
           >
-            <option value="">Semua Toko Asal</option>
+            <option value="">Semua toko asal</option>
             {tokoList.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.nama}
@@ -1161,7 +1343,7 @@ export default function TransferBarangPage() {
               setPage(1)
             }}
           >
-            <option value="">Semua Toko Tujuan</option>
+            <option value="">Semua toko tujuan</option>
             {tokoList.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.nama}
@@ -1170,480 +1352,573 @@ export default function TransferBarangPage() {
           </FilterSelect>
 
           <FormInput
-            label="Tanggal Awal"
+            label="Dari Tanggal"
             type="date"
             value={filterStartDate}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            onChange={(e: any) => {
               setFilterStartDate(e.target.value)
               setPage(1)
             }}
           />
 
           <FormInput
-            label="Tanggal Akhir"
+            label="Sampai Tanggal"
             type="date"
             value={filterEndDate}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            onChange={(e: any) => {
               setFilterEndDate(e.target.value)
               setPage(1)
             }}
           />
+        </div>
 
-          <FilterSelect
-            label="Tampilkan"
-            value={itemsPerPage}
-            onChange={(v) => {
-              setItemsPerPage(Number(v))
-              setPage(1)
-            }}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={resetDateFilter}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
           >
-            {ITEMS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label} data
-              </option>
-            ))}
-          </FilterSelect>
+            Reset Tanggal
+          </button>
 
-          <div className="flex items-end">
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={resetDateFilter}
-              className="flex h-[42px] w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-slate-600 shadow-sm hover:bg-slate-50"
-            >
-              Reset Filter Tanggal
-            </motion.button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("")
+              setFilterStatus("")
+              setFilterAsal("")
+              setFilterTujuan("")
+              resetDateFilter()
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
+          >
+            Reset Semua Filter
+          </button>
         </div>
       </motion.div>
 
-      {loading && (
-        <div className="flex justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-cyan-500"
-            />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Memuat data...</p>
+      <motion.div
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="rounded-xl border border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm sm:p-5"
+      >
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-black text-slate-800 sm:text-base">Riwayat Transfer</h2>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Total {filteredTransfer.length} transfer
+            </p>
+          </div>
+
+          <div className="w-full sm:w-40">
+            <FilterSelect
+              label="Tampil"
+              value={itemsPerPage}
+              onChange={(v) => {
+                setItemsPerPage(Number(v))
+                setPage(1)
+              }}
+            >
+              {ITEMS_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </FilterSelect>
           </div>
         </div>
-      )}
 
-      {!loading && filteredTransfer.length === 0 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3 py-16">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-            <Boxes size={28} className="text-slate-300" strokeWidth={2} />
+        {pagedTransfer.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            Belum ada data transfer
           </div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Belum ada riwayat transfer</p>
-        </motion.div>
-      )}
+        ) : (
+          <div className="space-y-3">
+            {pagedTransfer.map((item) => {
+              const meta = getStatusMeta(item.status)
+              const StatusIcon = meta.icon
 
-      {!loading && pagedTransfer.length > 0 && (
-        <div className="space-y-2 sm:hidden">
-          {pagedTransfer.map((item, idx) => {
-            const meta = getStatusMeta(item.status)
-            const StatusIcon = meta.icon
-            const canSend = item.status === "DRAFT"
-            const canReceive = item.status === "DIKIRIM"
-            const canCancel = item.status === "DRAFT" || item.status === "DIKIRIM"
-
-            return (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">{item.namaBarang}</p>
-                    <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      {item.kodeTransfer} · {item.kodeBarang || "-"}
-                    </p>
-                  </div>
-                  <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black ${meta.className}`}>
-                    <StatusIcon size={11} strokeWidth={2.5} />
-                    {meta.label}
-                  </span>
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded-lg bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">{item.tokoAsalNama}</span>
-                  <span className="rounded-lg bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{item.tokoTujuanNama}</span>
-                  <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">Qty: {item.qty}</span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Dibuat</p>
-                    <p className="text-xs font-bold text-slate-700">{formatDateTime(item.createdAt)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Harga Jual</p>
-                    <p className="text-xs font-bold text-slate-700">{formatCurrency(item.hargaJual)}</p>
-                  </div>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setSelectedDetail(item)}
-                    className="flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm"
-                  >
-                    <Eye size={12} strokeWidth={2.5} /> Detail
-                  </button>
-                  <button
-                    onClick={() => handleSendTransfer(item)}
-                    disabled={!canSend || actionLoading === item.id}
-                    className="flex items-center justify-center gap-1 rounded-xl bg-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Truck size={12} strokeWidth={2.5} /> Kirim
-                  </button>
-                  <button
-                    onClick={() => {
-                      setReceiveTarget(item)
-                      setReceiveForm(EMPTY_RECEIVE_FORM)
-                    }}
-                    disabled={!canReceive || actionLoading === item.id}
-                    className="flex items-center justify-center gap-1 rounded-xl bg-emerald-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Check size={12} strokeWidth={2.5} /> Sudah Diterima
-                  </button>
-                  <button
-                    onClick={() => setCancelTarget(item)}
-                    disabled={!canCancel || actionLoading === item.id}
-                    className="flex items-center justify-center gap-1 rounded-xl bg-red-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Undo2 size={12} strokeWidth={2.5} /> Batalkan
-                  </button>
-                </div>
-              </motion.div>
-            )
-          })}
-        </div>
-      )}
-
-      {!loading && pagedTransfer.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white/60 shadow-sm backdrop-blur-xl sm:block"
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="border-b border-slate-200 bg-white/80">
-                <tr>
-                  {["No", "Kode", "Barang", "Asal", "Tujuan", "Qty", "Dibuat", "Status", "Aksi"].map((h) => (
-                    <th
-                      key={h}
-                      className={`whitespace-nowrap px-3 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 ${
-                        h === "No" || h === "Aksi" ? "text-center" : "text-left"
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pagedTransfer.map((item, i) => {
-                  const meta = getStatusMeta(item.status)
-                  const StatusIcon = meta.icon
-                  const canSend = item.status === "DRAFT"
-                  const canReceive = item.status === "DIKIRIM"
-                  const canCancel = item.status === "DRAFT" || item.status === "DIKIRIM"
-
-                  return (
-                    <motion.tr
-                      key={item.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.015 }}
-                      className="border-t border-slate-100 transition-colors hover:bg-slate-50/60"
-                    >
-                      <td className="px-3 py-3 text-center font-bold text-slate-400">
-                        {itemsPerPage === 0 ? i + 1 : (page - 1) * itemsPerPage + i + 1}
-                      </td>
-                      <td className="px-3 py-3 font-bold text-slate-700">{item.kodeTransfer}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800">{item.namaBarang}</span>
-                          <span className="text-[10px] font-semibold text-slate-400">{item.kodeBarang || "-"}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 font-semibold text-slate-700">{item.tokoAsalNama}</td>
-                      <td className="px-3 py-3 font-semibold text-slate-700">{item.tokoTujuanNama}</td>
-                      <td className="px-3 py-3 font-bold text-slate-700">{item.qty}</td>
-                      <td className="px-3 py-3 font-semibold text-slate-600">{formatDateTime(item.createdAt)}</td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black ${meta.className}`}>
-                          <StatusIcon size={11} strokeWidth={2.5} />
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black ${meta.className}`}
+                        >
+                          <StatusIcon size={12} strokeWidth={2.5} />
                           {meta.label}
                         </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => setSelectedDetail(item)}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                            title="Detail"
-                          >
-                            <Eye size={13} strokeWidth={2.4} />
-                          </button>
-                          <button
-                            onClick={() => handleSendTransfer(item)}
-                            disabled={!canSend || actionLoading === item.id}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Kirim"
-                          >
-                            <Truck size={13} strokeWidth={2.4} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setReceiveTarget(item)
-                              setReceiveForm(EMPTY_RECEIVE_FORM)
-                            }}
-                            disabled={!canReceive || actionLoading === item.id}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Sudah Diterima"
-                          >
-                            <Check size={13} strokeWidth={2.4} />
-                          </button>
-                          <button
-                            onClick={() => setCancelTarget(item)}
-                            disabled={!canCancel || actionLoading === item.id}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Batalkan"
-                          >
-                            <Undo2 size={13} strokeWidth={2.4} />
-                          </button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-      )}
 
-      {!loading && filteredTransfer.length > 0 && (
-        <div className="flex flex-col items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Halaman {page} dari {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => goPage(page - 1)}
-              disabled={page <= 1}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40"
-            >
-              <ChevronLeft size={14} strokeWidth={2.5} />
-            </button>
-            <button
-              onClick={() => goPage(page + 1)}
-              disabled={page >= totalPages}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40"
-            >
-              <ChevronRight size={14} strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      )}
+                        <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-700 ring-1 ring-slate-200">
+                          {item.kodeTransfer}
+                        </span>
+                      </div>
 
-      <AnimatePresence>
-        {detailData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-5"
-            >
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-black text-slate-800">Detail Transfer</h3>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{detailData.kodeTransfer}</p>
-                </div>
-                <button onClick={() => setSelectedDetail(null)} className="text-slate-400 hover:text-slate-600">
-                  <X size={18} strokeWidth={2.8} />
-                </button>
-              </div>
+                      <p className="mt-3 text-sm font-black text-slate-800">
+                        {item.kodeBarang} · {item.namaBarang}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                        {item.tokoAsalNama} → {item.tokoTujuanNama} • Qty {item.qty} •{" "}
+                        {item.satuan}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                        Dibuat {formatDateTime(item.createdAt)}
+                      </p>
+                    </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {[
-                  ["Status", getStatusMeta(detailData.status).label],
-                  ["Barang", detailData.namaBarang],
-                  ["Kode Barang", detailData.kodeBarang || "-"],
-                  ["Kategori", detailData.kategoriNama || "-"],
-                  ["Merk", detailData.merk || "-"],
-                  ["Supplier", detailData.supplier || "-"],
-                  ["Satuan", detailData.satuan || "-"],
-                  ["Qty", String(detailData.qty)],
-                  ["Toko Asal", detailData.tokoAsalNama || "-"],
-                  ["Toko Tujuan", detailData.tokoTujuanNama || "-"],
-                  ["Harga Modal", formatCurrency(detailData.hargaModal)],
-                  ["Harga Jual", formatCurrency(detailData.hargaJual)],
-                  ["Stok Asal Sebelum", String(detailData.stokAsalSebelum)],
-                  ["Stok Asal Sesudah", String(detailData.stokAsalSesudah)],
-                  ["Stok Tujuan Sebelum", String(detailData.stokTujuanSebelum)],
-                  ["Stok Tujuan Sesudah", String(detailData.stokTujuanSesudah)],
-                  ["Dibuat", formatDateTime(detailData.createdAt)],
-                  ["Terkirim", formatDateTime(detailData.sentAt)],
-                  ["Diterima", formatDateTime(detailData.receivedAt)],
-                  ["Dibatalkan", formatDateTime(detailData.cancelledAt)],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-                    <p className="mt-1 text-sm font-bold text-slate-700">{value}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDetail(item)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
+                      >
+                        <Eye size={14} />
+                        Detail
+                      </button>
+
+                      {item.status === "DRAFT" && (
+                        <button
+                          type="button"
+                          onClick={() => handleSendTransfer(item)}
+                          disabled={actionLoading === item.id}
+                          className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-amber-600 disabled:opacity-60"
+                        >
+                          {actionLoading === item.id ? (
+                            <RefreshCw size={14} className="animate-spin" />
+                          ) : (
+                            <Truck size={14} />
+                          )}
+                          Kirim
+                        </button>
+                      )}
+
+                      {item.status === "DIKIRIM" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReceiveTarget(item)
+                            setReceiveForm(EMPTY_RECEIVE_FORM)
+                          }}
+                          disabled={actionLoading === item.id}
+                          className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
+                        >
+                          <CircleCheckBig size={14} />
+                          Sudah Diterima
+                        </button>
+                      )}
+
+                      {(item.status === "DRAFT" || item.status === "DIKIRIM") && (
+                        <button
+                          type="button"
+                          onClick={() => setCancelTarget(item)}
+                          disabled={actionLoading === item.id}
+                          className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-[11px] font-black text-red-600 transition-all hover:bg-red-50 disabled:opacity-60"
+                        >
+                          <Undo2 size={14} />
+                          Batalkan
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ))}
-              </div>
-
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Catatan Transfer</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-700">{detailData.catatan || "-"}</p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Catatan Penerimaan</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-700">{detailData.catatanPenerimaan || "-"}</p>
-                </div>
-              </div>
-
-              {detailData.alasanBatal && (
-                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-red-400">Alasan Batal</p>
-                  <p className="mt-1 text-sm font-bold text-red-700">{detailData.alasanBatal}</p>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
+              )
+            })}
+          </div>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {receiveTarget && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              className="w-full max-w-lg rounded-2xl bg-white p-4 shadow-2xl sm:p-5"
-            >
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-black text-slate-800">Sudah Diterima</h3>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{receiveTarget.kodeTransfer}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setReceiveTarget(null)
-                    setReceiveForm(EMPTY_RECEIVE_FORM)
-                  }}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  <X size={18} strokeWidth={2.8} />
-                </button>
+        {itemsPerPage !== 0 && totalPages > 1 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[11px] font-bold text-slate-500">
+              Halaman {page} dari {totalPages}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => goPage(page - 1)}
+                disabled={page <= 1}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => goPage(page + 1)}
+                disabled={page >= totalPages}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </motion.div>
+
+      <Modal
+        open={barangModalOpen}
+        onClose={() => setBarangModalOpen(false)}
+        title="Pilih Barang Transfer"
+        subtitle="Bisa pilih banyak barang sekaligus dan cari nama barang"
+      >
+        {!form.tokoAsalId ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            Pilih toko asal dulu
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <FormInput
+                  label="Cari Barang"
+                  value={barangModalSearch}
+                  onChange={(e: any) => setBarangModalSearch(e.target.value)}
+                  placeholder="Nama barang, kode barang, kategori, merk..."
+                />
               </div>
 
-              <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                <p className="text-sm font-bold text-emerald-700">
-                  Konfirmasi penerimaan untuk {receiveTarget.namaBarang} sebanyak {receiveTarget.qty} {receiveTarget.satuan}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Ringkasan
+                </p>
+                <p className="mt-1 text-sm font-black text-slate-800">
+                  {selectedItems.length} barang dipilih
+                </p>
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                  Total qty{" "}
+                  {selectedItems.reduce((acc, item) => acc + Number(item.qty || 0), 0)}
                 </p>
               </div>
+            </div>
 
-              <FormTextArea
-                label="Catatan Penerimaan"
-                value={receiveForm.catatanPenerimaan}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setReceiveField("catatanPenerimaan")(e.target.value)}
-                placeholder="Catatan setelah barang diterima..."
-              />
+            {barangModalFiltered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Barang tidak ditemukan
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {barangModalFiltered.map((item) => {
+                  const selected = selectedItems.find((x) => x.barangId === item.id)
+                  return (
+                    <div
+                      key={item.id}
+                      className={`rounded-2xl border p-4 transition-all ${
+                        selected
+                          ? "border-cyan-300 bg-cyan-50/60"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <label className="mt-0.5 flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selected)}
+                              onChange={() => toggleBarangSelection(item.id)}
+                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                            />
+                          </label>
 
-              <div className="mt-4 flex justify-end gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-slate-800">
+                              {item.kodeBarang} · {item.nama}
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                              Stok {item.stok} • {item.kategoriNama || "Tanpa Kategori"} •{" "}
+                              {item.merk || "Tanpa Merk"}
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                              Supplier {item.supplier || "-"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex w-full items-end gap-2 lg:w-auto">
+                          <div className="w-full lg:w-36">
+                            <FormInput
+                              label="Qty"
+                              value={selected?.qty || ""}
+                              disabled={!selected}
+                              inputMode="numeric"
+                              onChange={(e: any) =>
+                                setQtySelectedBarang(
+                                  item.id,
+                                  String(e.target.value).replace(/[^\d]/g, "")
+                                )
+                              }
+                              placeholder="Qty"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+              <div className="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => {
-                    setReceiveTarget(null)
-                    setReceiveForm(EMPTY_RECEIVE_FORM)
+                    setSelectedItems(
+                      barangModalFiltered.map((item) => ({
+                        barangId: item.id,
+                        qty:
+                          selectedItems.find((x) => x.barangId === item.id)?.qty || "1",
+                      }))
+                    )
                   }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 shadow-sm hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
                 >
-                  Tutup
+                  Pilih Semua Hasil
                 </button>
+
                 <button
-                  onClick={handleReceiveTransfer}
-                  disabled={actionLoading === receiveTarget.id}
-                  className="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-sm disabled:opacity-60"
+                  type="button"
+                  onClick={() => setSelectedItems([])}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
                 >
-                  {actionLoading === receiveTarget.id ? "Memproses..." : "Sudah Diterima"}
+                  Kosongkan Pilihan
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+
+              <button
+                type="button"
+                onClick={() => setBarangModalOpen(false)}
+                className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-cyan-600"
+              >
+                Selesai Pilih Barang
+              </button>
+            </div>
+          </div>
         )}
-      </AnimatePresence>
+      </Modal>
 
-      <AnimatePresence>
-        {cancelTarget && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              className="w-full max-w-md rounded-2xl bg-white p-4 shadow-2xl sm:p-5"
-            >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-black text-slate-800">Batalkan Transfer</h3>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{cancelTarget.kodeTransfer}</p>
-                </div>
-                <button onClick={() => setCancelTarget(null)} className="text-slate-400 hover:text-slate-600">
-                  <X size={18} strokeWidth={2.8} />
-                </button>
-              </div>
-
-              <p className="text-sm font-semibold text-slate-600">
-                Transfer dengan status <span className="font-black text-slate-800">{getStatusMeta(cancelTarget.status).label}</span> akan dibatalkan.
-                {cancelTarget.status === "DIKIRIM" && " Stok toko asal akan dikembalikan otomatis."}
+      <Modal
+        open={Boolean(detailData)}
+        onClose={() => setSelectedDetail(null)}
+        title="Detail Transfer"
+        subtitle={detailData?.kodeTransfer || ""}
+      >
+        {detailData ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Barang
               </p>
+              <p className="mt-2 text-sm font-black text-slate-800">
+                {detailData.kodeBarang} · {detailData.namaBarang}
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-slate-500">
+                {detailData.kategoriNama || "-"} • {detailData.merk || "-"} •{" "}
+                {detailData.supplier || "-"}
+              </p>
+            </div>
 
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  onClick={() => setCancelTarget(null)}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 shadow-sm hover:bg-slate-50"
-                >
-                  Tutup
-                </button>
-                <button
-                  onClick={handleCancelTransfer}
-                  disabled={actionLoading === cancelTarget.id}
-                  className="rounded-xl bg-red-500 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-sm disabled:opacity-60"
-                >
-                  {actionLoading === cancelTarget.id ? "Memproses..." : "Ya, Batalkan"}
-                </button>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Status
+              </p>
+              <p className="mt-2 text-sm font-black text-slate-800">
+                {getStatusMeta(detailData.status).label}
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-slate-500">
+                Qty {detailData.qty} {detailData.satuan}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Toko Asal
+              </p>
+              <p className="mt-2 text-sm font-black text-slate-800">
+                {detailData.tokoAsalNama}
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-slate-500">
+                Stok {detailData.stokAsalSebelum} → {detailData.stokAsalSesudah}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Toko Tujuan
+              </p>
+              <p className="mt-2 text-sm font-black text-slate-800">
+                {detailData.tokoTujuanNama}
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-slate-500">
+                Stok {detailData.stokTujuanSebelum} → {detailData.stokTujuanSesudah}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 md:col-span-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Catatan
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-700">
+                {detailData.catatan || "-"}
+              </p>
+              <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Catatan Penerimaan
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-700">
+                {detailData.catatanPenerimaan || "-"}
+              </p>
+              <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Alasan Batal
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-700">
+                {detailData.alasanBatal || "-"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 md:col-span-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Dibuat
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">
+                    {formatDateTime(detailData.createdAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Dikirim
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">
+                    {formatDateTime(detailData.sentAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Diterima
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">
+                    {formatDateTime(detailData.receivedAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Dibatalkan
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">
+                    {formatDateTime(detailData.cancelledAt)}
+                  </p>
+                </div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(receiveTarget)}
+        onClose={() => {
+          setReceiveTarget(null)
+          setReceiveForm(EMPTY_RECEIVE_FORM)
+        }}
+        title="Konfirmasi Penerimaan"
+        subtitle={receiveTarget?.kodeTransfer || ""}
+      >
+        {receiveTarget ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <p className="text-sm font-black text-slate-800">
+                {receiveTarget.namaBarang} • Qty {receiveTarget.qty}
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-slate-500">
+                {receiveTarget.tokoAsalNama} → {receiveTarget.tokoTujuanNama}
+              </p>
+            </div>
+
+            <FormTextArea
+              label="Catatan Penerimaan"
+              value={receiveForm.catatanPenerimaan}
+              onChange={(e: any) => setReceiveField("catatanPenerimaan")(e.target.value)}
+              placeholder="Opsional"
+            />
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setReceiveTarget(null)
+                  setReceiveForm(EMPTY_RECEIVE_FORM)
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-all hover:bg-slate-50"
+              >
+                Tutup
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReceiveTransfer}
+                disabled={actionLoading === receiveTarget.id}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
+              >
+                {actionLoading === receiveTarget.id ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <CircleCheckBig size={16} />
+                )}
+                Konfirmasi Diterima
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(cancelTarget)}
+        onClose={() => setCancelTarget(null)}
+        title="Batalkan Transfer"
+        subtitle={cancelTarget?.kodeTransfer || ""}
+      >
+        {cancelTarget ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-black text-red-700">
+                Transfer ini akan dibatalkan.
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-red-600">
+                Kalau status sudah terkirim, stok asal akan dikembalikan lagi.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCancelTarget(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-all hover:bg-slate-50"
+              >
+                Tutup
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCancelTransfer}
+                disabled={actionLoading === cancelTarget.id}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-red-600 disabled:opacity-60"
+              >
+                {actionLoading === cancelTarget.id ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <Undo2 size={16} />
+                )}
+                Ya, Batalkan
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }
