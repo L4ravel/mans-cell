@@ -1,13 +1,17 @@
 /* 
   Halaman admin transaksi kasir.
-  File ini mengambil data toko, barang, diskon, dan metode pembayaran dari Firestore,
-  lalu membuat UI kasir dengan keranjang, total bayar, simpan transaksi,
-  potong stok, catat mutasi stok keluar, serta update laporan harian dan bulanan.
+  Fitur:
+  - transaksi kasir per toko
+  - scanner barcode gun / keyboard global
+  - scanner barcode kamera
+  - diskon otomatis
+  - stok keluar + mutasi stok
+  - tulis laporan harian & bulanan
 */
 
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { auth, db } from "@/lib/firebase"
 import {
   collection,
@@ -39,6 +43,8 @@ import {
   Boxes,
   Layers3,
   Tag,
+  Camera,
+  X,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -130,6 +136,19 @@ type LaporanMetodeBreakdown = {
   admin: number
 }
 
+declare global {
+  interface Window {
+    BarcodeDetector?: {
+      new (options?: { formats?: string[] }): {
+        detect: (
+          source: HTMLVideoElement | HTMLCanvasElement | ImageBitmapSource
+        ) => Promise<Array<{ rawValue?: string; format?: string }>>
+      }
+      getSupportedFormats?: () => Promise<string[]>
+    }
+  }
+}
+
 function formatRupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -147,6 +166,10 @@ function formatRibuanInput(value: string) {
 
 function formatPercent(value: number) {
   return `${Number(value || 0)}%`
+}
+
+function normalizeBarcode(value: string) {
+  return String(value || "").trim().replace(/\s+/g, "").toUpperCase()
 }
 
 function hitungHargaSetelahDiskon(
@@ -297,17 +320,8 @@ function buildLaporanPayload({
   return {
     id,
     ...(hari
-      ? {
-          tanggalKey: periodeKey,
-          tahun,
-          bulan,
-          hari,
-        }
-      : {
-          bulanKey: periodeKey,
-          tahun,
-          bulan,
-        }),
+      ? { tanggalKey: periodeKey, tahun, bulan, hari }
+      : { bulanKey: periodeKey, tahun, bulan }),
     tokoId,
     tokoNama,
     jumlahTransaksi: jumlahTransaksiBaru,
@@ -365,13 +379,7 @@ function InfoCard({
   )
 }
 
-function FieldLabel({
-  icon: Icon,
-  label,
-}: {
-  icon?: any
-  label: string
-}) {
+function FieldLabel({ icon: Icon, label }: { icon?: any; label: string }) {
   return (
     <label className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
       {Icon ? <Icon size={11} strokeWidth={2.5} /> : null}
@@ -399,6 +407,25 @@ export default function TransaksiPage() {
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
+  const [showCameraScanner, setShowCameraScanner] = useState(false)
+  const [cameraLoading, setCameraLoading] = useState(false)
+  const [cameraActive, setCameraActive] = useState(false)
+  const [cameraSupported, setCameraSupported] = useState(true)
+  const [cameraStatus, setCameraStatus] = useState("Arahkan barcode ke kotak scan")
+  const [lastCameraResult, setLastCameraResult] = useState("")
+
+  const scanBufferRef = useRef("")
+  const scanLastTimeRef = useRef(0)
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
+  const cameraDetectorRef = useRef<InstanceType<NonNullable<typeof window.BarcodeDetector>> | null>(null)
+  const cameraRafRef = useRef<number | null>(null)
+  const cameraDetectingRef = useRef(false)
+  const cameraLastDetectAtRef = useRef(0)
+  const cameraCooldownRef = useRef(0)
+
   const fetchToko = async () => {
     const snap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
     const list: Toko[] = snap.docs
@@ -413,7 +440,6 @@ export default function TransaksiPage() {
         }
       })
       .filter((item) => item.nama && item.aktif !== false)
-
     setTokoList(list)
   }
 
@@ -442,7 +468,6 @@ export default function TransaksiPage() {
         }
       })
       .filter((item) => item.nama && item.tokoId)
-
     setBarangList(list)
   }
 
@@ -471,22 +496,18 @@ export default function TransaksiPage() {
         updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
       }
     })
-
     setDiskonList(list)
   }
 
   const fetchMetode = async () => {
     const snap = await getDocs(query(collection(db, "metode_pembayaran"), orderBy("nama")))
-
     const list: MetodePembayaran[] = snap.docs
       .map((d) => {
         const x = d.data() as any
         return {
           id: d.id,
           nama: x?.nama || "",
-          tipe: (x?.tipe === "Non-Tunai" ? "Non-Tunai" : "Tunai") as
-            | "Tunai"
-            | "Non-Tunai",
+          tipe: (x?.tipe === "Non-Tunai" ? "Non-Tunai" : "Tunai") as "Tunai" | "Non-Tunai",
           provider: x?.provider || "",
           biayaAdmin: Number(x?.biayaAdmin || 0),
           nomorRekening: x?.nomorRekening || "",
@@ -499,14 +520,12 @@ export default function TransaksiPage() {
         }
       })
       .filter((item) => item.nama && item.aktif)
-
     setMetodeList(list)
   }
 
   const fetchAll = async () => {
     setLoading(true)
     setError(null)
-
     try {
       await Promise.all([fetchToko(), fetchBarang(), fetchDiskon(), fetchMetode()])
     } catch (e) {
@@ -519,11 +538,18 @@ export default function TransaksiPage() {
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
-      if (u) {
-        await fetchAll()
-      }
+      if (u) await fetchAll()
     })
     return () => unsub()
+  }, [])
+
+  useEffect(() => {
+    const supported =
+      typeof window !== "undefined" &&
+      !!window.BarcodeDetector &&
+      !!navigator.mediaDevices?.getUserMedia
+
+    setCameraSupported(supported)
   }, [])
 
   const selectedToko = useMemo(
@@ -538,7 +564,6 @@ export default function TransaksiPage() {
 
   const barangByToko = useMemo(() => {
     const q = searchBarang.toLowerCase().trim()
-
     return barangList.filter((item) => {
       const sameToko = !selectedTokoId || item.tokoId === selectedTokoId
       const matchSearch =
@@ -547,17 +572,25 @@ export default function TransaksiPage() {
         item.kodeBarang.toLowerCase().includes(q) ||
         item.merk.toLowerCase().includes(q) ||
         item.kategoriNama.toLowerCase().includes(q)
-
       return sameToko && matchSearch
     })
   }, [barangList, selectedTokoId, searchBarang])
+
+  const barangBarcodeMap = useMemo(() => {
+    const map = new Map<string, Barang>()
+    for (const item of barangList) {
+      if (!item?.id || !item?.kodeBarang) continue
+      if (selectedTokoId && item.tokoId !== selectedTokoId) continue
+      map.set(normalizeBarcode(item.kodeBarang), item)
+    }
+    return map
+  }, [barangList, selectedTokoId])
 
   const addToCart = (barang: Barang) => {
     if (!selectedTokoId) {
       setError("Pilih toko terlebih dahulu")
       return
     }
-
     if (barang.stok <= 0) {
       setError("Stok barang habis")
       return
@@ -567,12 +600,10 @@ export default function TransaksiPage() {
 
     setCart((prev) => {
       const found = prev.find((item) => item.barangId === barang.id)
-
       const diskon = getBestDiskonForBarang(
         barang.id,
         diskonList.filter((d) => d.tokoId === barang.tokoId && d.isActive)
       )
-
       const hargaSetelahDiskon = hitungHargaSetelahDiskon(
         barang.hargaJual,
         diskon?.tipeDiskon,
@@ -624,14 +655,269 @@ export default function TransaksiPage() {
     })
   }
 
+  const commitBarcodeValue = (rawValue: string, source: "scanner" | "camera") => {
+    const kode = normalizeBarcode(rawValue)
+    if (!kode) return false
+
+    if (!selectedTokoId) {
+      setError("Pilih toko terlebih dahulu sebelum scan barcode")
+      setTimeout(() => setError(null), 1800)
+      return false
+    }
+
+    const found = barangBarcodeMap.get(kode)
+
+    if (!found) {
+      setError(`Barcode ${kode} tidak ditemukan di toko ini`)
+      setTimeout(() => setError(null), 1800)
+      return false
+    }
+
+    if (Number(found.stok || 0) <= 0) {
+      setError(`Stok ${found.nama} habis`)
+      setTimeout(() => setError(null), 1800)
+      return false
+    }
+
+    addToCart(found)
+    setSuccessMsg(`${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama}`)
+    setTimeout(() => setSuccessMsg(null), 1200)
+    return true
+  }
+
+  useEffect(() => {
+    const resetScanBuffer = () => {
+      scanBufferRef.current = ""
+      scanLastTimeRef.current = 0
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current)
+        scanTimeoutRef.current = null
+      }
+    }
+
+    const commitScan = () => {
+      const raw = scanBufferRef.current
+      resetScanBuffer()
+      commitBarcodeValue(raw, "scanner")
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+      if (showCameraScanner) return
+
+      const now = Date.now()
+      const diff = now - scanLastTimeRef.current
+
+      if (diff > 120) {
+        scanBufferRef.current = ""
+      }
+
+      scanLastTimeRef.current = now
+
+      if (e.key === "Enter") {
+        if (scanBufferRef.current.length >= 3) {
+          e.preventDefault()
+          commitScan()
+        } else {
+          resetScanBuffer()
+        }
+        return
+      }
+
+      if (e.key === "Shift" || e.key === "CapsLock" || e.key === "Tab") return
+
+      if (e.key === "Backspace") {
+        scanBufferRef.current = scanBufferRef.current.slice(0, -1)
+        return
+      }
+
+      if (e.key.length === 1) {
+        scanBufferRef.current += e.key
+
+        if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current)
+
+        scanTimeoutRef.current = setTimeout(() => {
+          if (scanBufferRef.current.length >= 6) {
+            commitScan()
+          } else {
+            resetScanBuffer()
+          }
+        }, 80)
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      resetScanBuffer()
+    }
+  }, [barangBarcodeMap, selectedTokoId, showCameraScanner])
+
+  const stopCameraScanner = () => {
+    if (cameraRafRef.current) {
+      cancelAnimationFrame(cameraRafRef.current)
+      cameraRafRef.current = null
+    }
+
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop())
+      cameraStreamRef.current = null
+    }
+
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.srcObject = null
+    }
+
+    cameraDetectorRef.current = null
+    cameraDetectingRef.current = false
+    setCameraActive(false)
+    setCameraLoading(false)
+    setCameraStatus("Arahkan barcode ke kotak scan")
+  }
+
+  const startCameraLoop = () => {
+    const loop = async () => {
+      const video = videoRef.current
+
+      if (!video || !cameraDetectorRef.current || !cameraStreamRef.current) return
+
+      const now = Date.now()
+
+      if (
+        !cameraDetectingRef.current &&
+        now - cameraLastDetectAtRef.current >= 220 &&
+        now >= cameraCooldownRef.current &&
+        video.readyState >= 2
+      ) {
+        cameraDetectingRef.current = true
+        cameraLastDetectAtRef.current = now
+
+        try {
+          const results = await cameraDetectorRef.current.detect(video)
+
+          if (Array.isArray(results) && results.length > 0) {
+            const rawValue = normalizeBarcode(results[0]?.rawValue || "")
+
+            if (rawValue) {
+              setLastCameraResult(rawValue)
+              setCameraStatus(`Terdeteksi: ${rawValue}`)
+
+              const success = commitBarcodeValue(rawValue, "camera")
+              if (success) {
+                cameraCooldownRef.current = Date.now() + 1300
+                if ("vibrate" in navigator) {
+                  navigator.vibrate?.(120)
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Gagal mendeteksi barcode kamera:", error)
+        } finally {
+          cameraDetectingRef.current = false
+        }
+      }
+
+      cameraRafRef.current = requestAnimationFrame(loop)
+    }
+
+    cameraRafRef.current = requestAnimationFrame(loop)
+  }
+
+  const startCameraScanner = async () => {
+    if (!selectedTokoId) {
+      setError("Pilih toko terlebih dahulu sebelum membuka kamera")
+      return
+    }
+
+    if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
+      setCameraSupported(false)
+      setError("Browser ini belum mendukung scan barcode kamera")
+      return
+    }
+
+    try {
+      setCameraLoading(true)
+      setError(null)
+      setCameraStatus("Menyalakan kamera...")
+
+      const supportedFormats = window.BarcodeDetector.getSupportedFormats
+        ? await window.BarcodeDetector.getSupportedFormats()
+        : []
+
+      const preferredFormats = [
+        "code_128",
+        "ean_13",
+        "ean_8",
+        "upc_a",
+        "upc_e",
+        "code_39",
+        "codabar",
+        "itf",
+      ]
+
+      const finalFormats =
+        supportedFormats.length > 0
+          ? preferredFormats.filter((item) => supportedFormats.includes(item))
+          : preferredFormats
+
+      cameraDetectorRef.current = new window.BarcodeDetector({
+        formats: finalFormats.length > 0 ? finalFormats : undefined,
+      })
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      })
+
+      cameraStreamRef.current = stream
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+
+      setCameraActive(true)
+      setCameraStatus("Arahkan barcode ke kotak scan")
+      startCameraLoop()
+    } catch (error: any) {
+      console.error(error)
+      setError("Gagal membuka kamera. Pastikan izin kamera diberikan.")
+      stopCameraScanner()
+    } finally {
+      setCameraLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (showCameraScanner) {
+      void startCameraScanner()
+    } else {
+      stopCameraScanner()
+    }
+
+    return () => {
+      stopCameraScanner()
+    }
+  }, [showCameraScanner])
+
+  useEffect(() => {
+    return () => {
+      stopCameraScanner()
+    }
+  }, [])
+
   const updateQty = (barangId: string, mode: "plus" | "minus") => {
     setCart((prev) =>
       prev
         .map((item) => {
           if (item.barangId !== barangId) return item
-
           const nextQty = mode === "plus" ? item.qty + 1 : item.qty - 1
-
           if (nextQty > item.stok) return item
           return { ...item, qty: nextQty }
         })
@@ -689,7 +975,6 @@ export default function TransaksiPage() {
   const kurangBayar = Math.max(0, grandTotal - uangBayarNumber)
 
   const totalItem = useMemo(() => cart.reduce((acc, item) => acc + item.qty, 0), [cart])
-
   const totalJenisBarang = cart.length
 
   const isBisaCheckout =
@@ -700,857 +985,806 @@ export default function TransaksiPage() {
     !submitLoading
 
   const handleProsesTransaksi = async () => {
-  const user = auth.currentUser
+    const user = auth.currentUser
 
-  if (!user) {
-    setError("Sesi login tidak ditemukan")
-    return
-  }
+    if (!user) {
+      setError("Sesi login tidak ditemukan")
+      return
+    }
+    if (!selectedTokoId) {
+      setError("Pilih toko terlebih dahulu")
+      return
+    }
+    if (!selectedMetodeId) {
+      setError("Pilih metode pembayaran terlebih dahulu")
+      return
+    }
+    if (cart.length === 0) {
+      setError("Keranjang masih kosong")
+      return
+    }
+    if (uangBayarNumber < grandTotal) {
+      setError("Uang bayar masih kurang")
+      return
+    }
+    if (!selectedToko) {
+      setError("Data toko tidak ditemukan")
+      return
+    }
+    if (!selectedMetode) {
+      setError("Data metode pembayaran tidak ditemukan")
+      return
+    }
 
-  if (!selectedTokoId) {
-    setError("Pilih toko terlebih dahulu")
-    return
-  }
+    setSubmitLoading(true)
+    setError(null)
+    setSuccessMsg(null)
 
-  if (!selectedMetodeId) {
-    setError("Pilih metode pembayaran terlebih dahulu")
-    return
-  }
+    try {
+      const nowMs = Date.now()
+      const nomorTransaksi = `TRX-${nowMs}`
+      const { tahun, bulan, hari, tanggalKey, bulanKey } = getTanggalParts(nowMs)
 
-  if (cart.length === 0) {
-    setError("Keranjang masih kosong")
-    return
-  }
+      await runTransaction(db, async (transaction) => {
+        const transaksiRef = doc(collection(db, "transaksi"))
+        const laporanHarianRef = doc(db, "laporan_harian", `${tanggalKey}__${selectedToko.id}`)
+        const laporanBulananRef = doc(db, "laporan_bulanan", `${bulanKey}__${selectedToko.id}`)
 
-  if (uangBayarNumber < grandTotal) {
-    setError("Uang bayar masih kurang")
-    return
-  }
+        const itemPayload: any[] = []
 
-  if (!selectedToko) {
-    setError("Data toko tidak ditemukan")
-    return
-  }
+        const barangReads = await Promise.all(
+          cart.map(async (item) => {
+            const barangRef = doc(db, "barang", item.barangId)
+            const barangSnap = await transaction.get(barangRef)
 
-  if (!selectedMetode) {
-    setError("Data metode pembayaran tidak ditemukan")
-    return
-  }
+            if (!barangSnap.exists()) throw new Error(`Barang ${item.nama} tidak ditemukan`)
 
-  setSubmitLoading(true)
-  setError(null)
-  setSuccessMsg(null)
+            const barangDb = barangSnap.data() as any
+            const stokSekarang = Number(barangDb?.stok || 0)
 
-  try {
-    const nowMs = Date.now()
-    const nomorTransaksi = `TRX-${nowMs}`
-    const { tahun, bulan, hari, tanggalKey, bulanKey } = getTanggalParts(nowMs)
+            if (stokSekarang < item.qty) throw new Error(`Stok ${item.nama} tidak cukup`)
 
-    await runTransaction(db, async (transaction) => {
-      const transaksiRef = doc(collection(db, "transaksi"))
-      const laporanHarianRef = doc(db, "laporan_harian", `${tanggalKey}__${selectedToko.id}`)
-      const laporanBulananRef = doc(db, "laporan_bulanan", `${bulanKey}__${selectedToko.id}`)
+            return { item, barangRef, stokSekarang, stokSesudah: stokSekarang - item.qty }
+          })
+        )
 
-      const itemPayload: any[] = []
+        const laporanHarianSnap = await transaction.get(laporanHarianRef)
+        const laporanBulananSnap = await transaction.get(laporanBulananRef)
 
-      // =========================
-      // 1) SEMUA READ DULU
-      // =========================
-      const barangReads = await Promise.all(
-        cart.map(async (item) => {
-          const barangRef = doc(db, "barang", item.barangId)
-          const barangSnap = await transaction.get(barangRef)
+        const laporanHarianData = laporanHarianSnap.exists() ? laporanHarianSnap.data() : null
+        const laporanBulananData = laporanBulananSnap.exists() ? laporanBulananSnap.data() : null
 
-          if (!barangSnap.exists()) {
-            throw new Error(`Barang ${item.nama} tidak ditemukan`)
-          }
+        for (const row of barangReads) {
+          const { item, barangRef, stokSekarang, stokSesudah } = row
 
-          const barangDb = barangSnap.data() as any
-          const stokSekarang = Number(barangDb?.stok || 0)
+          transaction.update(barangRef, {
+            stok: stokSesudah,
+            updatedAt: nowMs,
+            updatedBy: user.uid,
+          })
 
-          if (stokSekarang < item.qty) {
-            throw new Error(`Stok ${item.nama} tidak cukup`)
-          }
+          const subtotalAsliItem = item.hargaAsli * item.qty
+          const subtotalFinalItem = item.hargaSetelahDiskon * item.qty
+          const totalDiskonItem = subtotalAsliItem - subtotalFinalItem
 
-          return {
-            item,
-            barangRef,
-            stokSekarang,
-            stokSesudah: stokSekarang - item.qty,
-          }
-        })
-      )
+          itemPayload.push({
+            barangId: item.barangId,
+            kodeBarang: item.kodeBarang,
+            nama: item.nama,
+            kategoriNama: item.kategoriNama,
+            merk: item.merk,
+            satuan: item.satuan,
+            qty: item.qty,
+            hargaModal: item.hargaModal,
+            hargaAsli: item.hargaAsli,
+            hargaSetelahDiskon: item.hargaSetelahDiskon,
+            subtotalAsli: subtotalAsliItem,
+            subtotalFinal: subtotalFinalItem,
+            totalDiskon: totalDiskonItem,
+            diskonId: item.diskonId || "",
+            diskonNama: item.diskonNama || "",
+            diskonTipe: item.diskonTipe || "",
+            diskonNilai: Number(item.diskonNilai || 0),
+          })
 
-      const laporanHarianSnap = await transaction.get(laporanHarianRef)
-      const laporanBulananSnap = await transaction.get(laporanBulananRef)
+          const mutasiRef = doc(collection(db, "mutasi_stok"))
+          transaction.set(mutasiRef, {
+            id: mutasiRef.id,
+            transaksiId: transaksiRef.id,
+            nomorTransaksi,
+            tipe: "keluar",
+            sumber: "transaksi",
+            tokoId: selectedToko.id,
+            tokoNama: selectedToko.nama,
+            barangId: item.barangId,
+            kodeBarang: item.kodeBarang,
+            namaBarang: item.nama,
+            qty: item.qty,
+            stokSebelum: stokSekarang,
+            stokSesudah,
+            keterangan: `Penjualan kasir ${nomorTransaksi}`,
+            createdAt: serverTimestamp(),
+            createdAtMs: nowMs,
+            createdBy: user.uid,
+          })
+        }
 
-      const laporanHarianData = laporanHarianSnap.exists() ? laporanHarianSnap.data() : null
-      const laporanBulananData = laporanBulananSnap.exists() ? laporanBulananSnap.data() : null
-
-      // =========================
-      // 2) BARU SEMUA WRITE
-      // =========================
-      for (const row of barangReads) {
-        const { item, barangRef, stokSekarang, stokSesudah } = row
-
-        transaction.update(barangRef, {
-          stok: stokSesudah,
-          updatedAt: nowMs,
-          updatedBy: user.uid,
-        })
-
-        const subtotalAsliItem = item.hargaAsli * item.qty
-        const subtotalFinalItem = item.hargaSetelahDiskon * item.qty
-        const totalDiskonItem = subtotalAsliItem - subtotalFinalItem
-
-        itemPayload.push({
-          barangId: item.barangId,
-          kodeBarang: item.kodeBarang,
-          nama: item.nama,
-          kategoriNama: item.kategoriNama,
-          merk: item.merk,
-          satuan: item.satuan,
-          qty: item.qty,
-          hargaModal: item.hargaModal,
-          hargaAsli: item.hargaAsli,
-          hargaSetelahDiskon: item.hargaSetelahDiskon,
-          subtotalAsli: subtotalAsliItem,
-          subtotalFinal: subtotalFinalItem,
-          totalDiskon: totalDiskonItem,
-          diskonId: item.diskonId || "",
-          diskonNama: item.diskonNama || "",
-          diskonTipe: item.diskonTipe || "",
-          diskonNilai: Number(item.diskonNilai || 0),
-        })
-
-        const mutasiRef = doc(collection(db, "mutasi_stok"))
-        transaction.set(mutasiRef, {
-          id: mutasiRef.id,
-          transaksiId: transaksiRef.id,
+        transaction.set(transaksiRef, {
+          id: transaksiRef.id,
           nomorTransaksi,
-          tipe: "keluar",
-          sumber: "transaksi",
           tokoId: selectedToko.id,
           tokoNama: selectedToko.nama,
-          barangId: item.barangId,
-          kodeBarang: item.kodeBarang,
-          namaBarang: item.nama,
-          qty: item.qty,
-          stokSebelum: stokSekarang,
-          stokSesudah,
-          keterangan: `Penjualan kasir ${nomorTransaksi}`,
+          metodePembayaranId: selectedMetode.id,
+          metodePembayaranNama: selectedMetode.nama,
+          metodePembayaranTipe: selectedMetode.tipe,
+          metodePembayaranProvider: selectedMetode.provider || "",
+          biayaAdminPersen: Number(selectedMetode.biayaAdmin || 0),
+          biayaAdminNominal,
+          subtotal,
+          totalDiskon,
+          totalSetelahDiskon,
+          grandTotal,
+          totalModal,
+          estimasiLabaKotor,
+          uangBayar: uangBayarNumber,
+          kembalian,
+          kurangBayar: 0,
+          totalItem,
+          totalJenisBarang,
+          status: "selesai",
+          catatan: catatan.trim(),
+          items: itemPayload,
           createdAt: serverTimestamp(),
           createdAtMs: nowMs,
           createdBy: user.uid,
+          updatedAt: serverTimestamp(),
+          updatedAtMs: nowMs,
         })
-      }
 
-      transaction.set(transaksiRef, {
-        id: transaksiRef.id,
-        nomorTransaksi,
-        tokoId: selectedToko.id,
-        tokoNama: selectedToko.nama,
-        metodePembayaranId: selectedMetode.id,
-        metodePembayaranNama: selectedMetode.nama,
-        metodePembayaranTipe: selectedMetode.tipe,
-        metodePembayaranProvider: selectedMetode.provider || "",
-        biayaAdminPersen: Number(selectedMetode.biayaAdmin || 0),
-        biayaAdminNominal,
-        subtotal,
-        totalDiskon,
-        totalSetelahDiskon,
-        grandTotal,
-        totalModal,
-        estimasiLabaKotor,
-        uangBayar: uangBayarNumber,
-        kembalian,
-        kurangBayar: 0,
-        totalItem,
-        totalJenisBarang,
-        status: "selesai",
-        catatan: catatan.trim(),
-        items: itemPayload,
-        createdAt: serverTimestamp(),
-        createdAtMs: nowMs,
-        createdBy: user.uid,
-        updatedAt: serverTimestamp(),
-        updatedAtMs: nowMs,
+        const sharedLaporanArgs = {
+          tokoId: selectedToko.id,
+          tokoNama: selectedToko.nama,
+          metodeNama: selectedMetode.nama,
+          omzetTambah: grandTotal,
+          subtotalTambah: subtotal,
+          totalDiskonTambah: totalDiskon,
+          totalSetelahDiskonTambah: totalSetelahDiskon,
+          totalBiayaAdminTambah: biayaAdminNominal,
+          totalModalTambah: totalModal,
+          totalLabaKotorTambah: estimasiLabaKotor,
+          totalItemTambah: totalItem,
+          totalJenisBarangTambah: totalJenisBarang,
+          nowMs,
+        }
+
+        const payloadHarian = buildLaporanPayload({
+          existingData: laporanHarianData,
+          id: laporanHarianRef.id,
+          periodeKey: tanggalKey,
+          tahun,
+          bulan,
+          hari,
+          ...sharedLaporanArgs,
+        })
+
+        const payloadBulanan = buildLaporanPayload({
+          existingData: laporanBulananData,
+          id: laporanBulananRef.id,
+          periodeKey: bulanKey,
+          tahun,
+          bulan,
+          ...sharedLaporanArgs,
+        })
+
+        transaction.set(laporanHarianRef, payloadHarian)
+        transaction.set(laporanBulananRef, payloadBulanan)
       })
 
-      const payloadHarian = buildLaporanPayload({
-        existingData: laporanHarianData,
-        id: laporanHarianRef.id,
-        periodeKey: tanggalKey,
-        tahun,
-        bulan,
-        hari,
-        tokoId: selectedToko.id,
-        tokoNama: selectedToko.nama,
-        metodeNama: selectedMetode.nama,
-        omzetTambah: grandTotal,
-        subtotalTambah: subtotal,
-        totalDiskonTambah: totalDiskon,
-        totalSetelahDiskonTambah: totalSetelahDiskon,
-        totalBiayaAdminTambah: biayaAdminNominal,
-        totalModalTambah: totalModal,
-        totalLabaKotorTambah: estimasiLabaKotor,
-        totalItemTambah: totalItem,
-        totalJenisBarangTambah: totalJenisBarang,
-        nowMs,
-      })
+      await fetchBarang()
 
-      const payloadBulanan = buildLaporanPayload({
-        existingData: laporanBulananData,
-        id: laporanBulananRef.id,
-        periodeKey: bulanKey,
-        tahun,
-        bulan,
-        tokoId: selectedToko.id,
-        tokoNama: selectedToko.nama,
-        metodeNama: selectedMetode.nama,
-        omzetTambah: grandTotal,
-        subtotalTambah: subtotal,
-        totalDiskonTambah: totalDiskon,
-        totalSetelahDiskonTambah: totalSetelahDiskon,
-        totalBiayaAdminTambah: biayaAdminNominal,
-        totalModalTambah: totalModal,
-        totalLabaKotorTambah: estimasiLabaKotor,
-        totalItemTambah: totalItem,
-        totalJenisBarangTambah: totalJenisBarang,
-        nowMs,
-      })
-
-      transaction.set(laporanHarianRef, payloadHarian)
-      transaction.set(laporanBulananRef, payloadBulanan)
-    })
-
-    await fetchBarang()
-
-    setCart([])
-    setUangBayar("")
-    setCatatan("")
-    setSelectedMetodeId("")
-    setSuccessMsg("Transaksi berhasil disimpan, stok diperbarui, dan laporan direkap")
-
-    setTimeout(() => setSuccessMsg(null), 3000)
-  } catch (e: any) {
-    console.error(e)
-    setError(e?.message || "Gagal memproses transaksi")
-  } finally {
-    setSubmitLoading(false)
+      setCart([])
+      setUangBayar("")
+      setCatatan("")
+      setSelectedMetodeId("")
+      setSuccessMsg("Transaksi berhasil disimpan, stok diperbarui, dan laporan direkap")
+      setTimeout(() => setSuccessMsg(null), 3000)
+    } catch (e: any) {
+      console.error(e)
+      setError(e?.message || "Gagal memproses transaksi")
+    } finally {
+      setSubmitLoading(false)
+    }
   }
-}
 
   return (
-    <div className="space-y-4 text-slate-900 sm:space-y-5">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-              <ShoppingCart
-                size={24}
-                className="text-white sm:h-7 sm:w-7"
-                strokeWidth={2.5}
-              />
-            </div>
-            <div>
-              <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Transaksi Kasir
-              </h1>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Toko · barang · diskon · pembayaran
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
-            {cart.length > 0 ? (
-              <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-emerald-500 px-2.5 shadow-sm shadow-emerald-200/50">
-                <span className="text-xs font-black text-white">{totalItem}</span>
+    <>
+      <div className="space-y-4 text-slate-900 sm:space-y-5">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
+                <ShoppingCart size={24} className="text-white" strokeWidth={2.5} />
               </div>
-            ) : null}
 
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={fetchAll}
-              disabled={loading || submitLoading}
-              className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50"
-            >
-              <motion.span
-                animate={loading ? { rotate: 360 } : {}}
-                transition={
-                  loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}
-                }
+              <div>
+                <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+                  Transaksi Kasir
+                </h1>
+                <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                  Scan barcode · kamera · diskon · checkout
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={fetchAll}
+                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 <RefreshCw size={14} strokeWidth={2.5} />
-              </motion.span>
-              Refresh
-            </motion.button>
-          </div>
-        </div>
+                Refresh
+              </button>
 
-        <div className="pointer-events-none absolute right-0 top-0 opacity-[0.03]">
-          <Cpu size={140} strokeWidth={1} />
-        </div>
-      </motion.div>
-
-      <AnimatePresence>
-        {error ? (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5"
-          >
-            <AlertCircle size={14} className="text-red-500" strokeWidth={2.5} />
-            <p className="text-[11px] font-bold text-red-600">{error}</p>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {successMsg ? (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
-          >
-            <CheckCircle2 size={14} className="text-emerald-500" strokeWidth={2.5} />
-            <p className="text-[11px] font-bold text-emerald-700">{successMsg}</p>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-7">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <FieldLabel icon={Store} label="Pilih Toko" />
-              <select
-                value={selectedTokoId}
-                onChange={(e) => {
-                  const nextTokoId = e.target.value
-                  setSelectedTokoId(nextTokoId)
-                  setCart([])
-                  setSearchBarang("")
-                  setUangBayar("")
-                  setError(null)
-                  setSuccessMsg(null)
-                }}
-                disabled={submitLoading}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-60"
+              <button
+                type="button"
+                onClick={() => setShowCameraScanner(true)}
+                className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-xs font-black uppercase tracking-wide text-cyan-700 shadow-sm hover:bg-cyan-100"
               >
-                <option value="">Pilih toko</option>
-                {tokoList.map((toko) => (
-                  <option key={toko.id} value={toko.id}>
-                    {toko.nama}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-[11px] font-semibold text-slate-500">
-                {selectedToko
-                  ? `Transaksi aktif di ${selectedToko.nama}`
-                  : "Pilih toko dulu supaya barang dan diskon terfilter"}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <FieldLabel icon={Wallet} label="Metode Pembayaran" />
-              <select
-                value={selectedMetodeId}
-                onChange={(e) => setSelectedMetodeId(e.target.value)}
-                disabled={submitLoading}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-60"
-              >
-                <option value="">Pilih metode pembayaran</option>
-                {metodeList.map((metode) => (
-                  <option key={metode.id} value={metode.id}>
-                    {metode.nama} {metode.tipe === "Non-Tunai" ? `• ${metode.tipe}` : ""}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-[11px] font-semibold text-slate-500">
-                {selectedMetode
-                  ? selectedMetode.tipe === "Non-Tunai"
-                    ? `${selectedMetode.provider || "Provider"} • admin ${formatPercent(
-                        selectedMetode.biayaAdmin || 0
-                      )}`
-                    : "Pembayaran tunai"
-                  : "Pilih metode bayar untuk hitung total akhir"}
-              </p>
+                <Camera size={14} strokeWidth={2.5} />
+                Scan Kamera
+              </button>
             </div>
           </div>
+        </motion.div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <InfoCard
-              icon={Receipt}
-              label="Subtotal"
-              value={formatRupiah(subtotal)}
-              subValue={`${totalJenisBarang} jenis barang`}
-            />
-            <InfoCard
-              icon={Percent}
-              label="Diskon"
-              value={formatRupiah(totalDiskon)}
-              subValue={totalDiskon > 0 ? "Promo aktif terpakai" : "Belum ada promo"}
-            />
-            <InfoCard
-              icon={BadgeDollarSign}
-              label="Admin"
-              value={formatRupiah(biayaAdminNominal)}
-              subValue={
-                selectedMetode?.tipe === "Non-Tunai"
-                  ? `${formatPercent(selectedMetode.biayaAdmin || 0)} dari total`
-                  : "Tidak ada biaya admin"
-              }
-            />
-            <InfoCard
-              icon={CircleDollarSign}
-              label="Grand Total"
-              value={formatRupiah(grandTotal)}
-              subValue={`${totalItem} item`}
-            />
-          </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <InfoCard
+            icon={Boxes}
+            label="Jenis Barang"
+            value={String(barangByToko.length)}
+            subValue={selectedToko?.nama || "Semua toko"}
+          />
+          <InfoCard
+            icon={Layers3}
+            label="Isi Keranjang"
+            value={String(totalItem)}
+            subValue={`${totalJenisBarang} jenis barang`}
+          />
+          <InfoCard
+            icon={Percent}
+            label="Total Diskon"
+            value={formatRupiah(totalDiskon)}
+            subValue="Otomatis dari promo aktif"
+          />
+          <InfoCard
+            icon={CircleDollarSign}
+            label="Grand Total"
+            value={formatRupiah(grandTotal)}
+            subValue={selectedMetode ? selectedMetode.nama : "Pilih metode pembayaran"}
+          />
+        </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div className="w-full">
-                <FieldLabel icon={Search} label="Cari Barang" />
+        <AnimatePresence>
+          {error ? (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {successMsg ? (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
+            >
+              <div className="flex items-start gap-2">
+                <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0" />
+                <span>{successMsg}</span>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className="grid gap-4 xl:grid-cols-12">
+          <div className="space-y-4 xl:col-span-7">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel icon={Store} label="Pilih Toko" />
+                  <select
+                    value={selectedTokoId}
+                    onChange={(e) => setSelectedTokoId(e.target.value)}
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                  >
+                    <option value="">Pilih toko</option>
+                    {tokoList.map((toko) => (
+                      <option key={toko.id} value={toko.id}>
+                        {toko.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <FieldLabel icon={Wallet} label="Metode Pembayaran" />
+                  <select
+                    value={selectedMetodeId}
+                    onChange={(e) => setSelectedMetodeId(e.target.value)}
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                  >
+                    <option value="">Pilih metode pembayaran</option>
+                    {metodeList.map((metode) => (
+                      <option key={metode.id} value={metode.id}>
+                        {metode.nama} {metode.biayaAdmin ? `(${formatPercent(metode.biayaAdmin)})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <FieldLabel icon={Search} label="Cari Barang / Barcode / Merk" />
                 <div className="relative">
                   <Search
-                    size={14}
+                    size={16}
                     className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    strokeWidth={2}
                   />
                   <input
                     value={searchBarang}
                     onChange={(e) => setSearchBarang(e.target.value)}
-                    placeholder="Cari kode barang, nama, merk, kategori..."
-                    disabled={submitLoading}
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-60"
+                    placeholder="Cari nama barang, barcode, merk..."
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
                   />
                 </div>
               </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-cyan-100 px-3 py-1 text-[11px] font-black text-cyan-700">
+                  Scanner keyboard aktif
+                </span>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-black text-emerald-700">
+                  Scan otomatis ke keranjang
+                </span>
+                {!cameraSupported ? (
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black text-amber-700">
+                    Kamera scanner tergantung dukungan browser
+                  </span>
+                ) : null}
+              </div>
             </div>
 
-            {!selectedTokoId ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10">
-                <Store size={30} className="text-slate-300" strokeWidth={1.6} />
-                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                  Pilih toko untuk menampilkan barang
-                </p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+                    Daftar Barang
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Klik tambah atau scan barcode untuk masuk ke keranjang
+                  </p>
+                </div>
+
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+                  {barangByToko.length} barang
+                </span>
               </div>
-            ) : barangByToko.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10">
-                <Boxes size={30} className="text-slate-300" strokeWidth={1.6} />
-                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                  Barang tidak ditemukan
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {barangByToko.map((barang) => {
-                  const diskon = getBestDiskonForBarang(
-                    barang.id,
-                    diskonList.filter((d) => d.tokoId === barang.tokoId && d.isActive)
-                  )
 
-                  const hargaPromo = hitungHargaSetelahDiskon(
-                    barang.hargaJual,
-                    diskon?.tipeDiskon,
-                    diskon?.nilaiDiskon
-                  )
+              {loading ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                  Memuat data barang...
+                </div>
+              ) : barangByToko.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                  Belum ada barang yang cocok
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {barangByToko.map((barang) => {
+                    const diskon = getBestDiskonForBarang(
+                      barang.id,
+                      diskonList.filter((d) => d.tokoId === barang.tokoId && d.isActive)
+                    )
+                    const hargaSetelahDiskon = hitungHargaSetelahDiskon(
+                      barang.hargaJual,
+                      diskon?.tipeDiskon,
+                      diskon?.nilaiDiskon
+                    )
 
-                  const isLowStock = barang.stok <= barang.stokMinimum
-                  const isOutStock = barang.stok <= 0
+                    return (
+                      <div
+                        key={barang.id}
+                        className="rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-cyan-300 hover:shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-black text-slate-800">
+                              {barang.nama}
+                            </h3>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              {barang.kodeBarang}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              {barang.merk || "-"} · {barang.satuan || "-"}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              Stok: {barang.stok}
+                            </p>
+                          </div>
 
-                  return (
-                    <motion.div
-                      key={barang.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-cyan-300 hover:shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-black text-slate-800">
-                            {barang.nama}
-                          </p>
-                          <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {barang.kodeBarang || "-"} · {barang.kategoriNama || "-"}
-                          </p>
+                          <button
+                            type="button"
+                            onClick={() => addToCart(barang)}
+                            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 text-white shadow-sm hover:opacity-95"
+                          >
+                            <Plus size={16} strokeWidth={3} />
+                          </button>
                         </div>
 
-                        <button
-                          onClick={() => addToCart(barang)}
-                          disabled={isOutStock || submitLoading}
-                          className="rounded-xl bg-emerald-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Tambah
-                        </button>
-                      </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">
+                            {barang.kategoriNama || "Tanpa kategori"}
+                          </span>
 
-                      <div className="mt-3 grid grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            Harga
-                          </p>
-                          <p className="mt-1 text-sm font-black text-slate-800">
-                            {formatRupiah(barang.hargaJual)}
-                          </p>
                           {diskon ? (
-                            <p className="mt-1 text-[11px] font-semibold text-emerald-600">
-                              Promo {diskon.namaPromo}
-                            </p>
+                            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+                              {diskon.namaPromo}
+                            </span>
                           ) : null}
                         </div>
 
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            Harga Promo
-                          </p>
-                          <p className="mt-1 text-sm font-black text-emerald-600">
-                            {formatRupiah(hargaPromo)}
-                          </p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            {barang.satuan || "-"}
-                          </p>
+                        <div className="mt-3">
+                          {diskon ? (
+                            <>
+                              <p className="text-xs font-bold text-slate-400 line-through">
+                                {formatRupiah(barang.hargaJual)}
+                              </p>
+                              <p className="text-base font-black text-emerald-600">
+                                {formatRupiah(hargaSetelahDiskon)}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-base font-black text-slate-800">
+                              {formatRupiah(barang.hargaJual)}
+                            </p>
+                          )}
                         </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 xl:col-span-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+                    Keranjang
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Barang hasil klik tambah dan hasil scan masuk ke sini
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={clearCart}
+                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100"
+                >
+                  Kosongkan
+                </button>
+              </div>
+
+              {cart.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                  Keranjang masih kosong
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {cart.map((item) => (
+                    <div
+                      key={item.barangId}
+                      className="rounded-2xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-black text-slate-800">
+                            {item.nama}
+                          </h3>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                            {item.kodeBarang}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                            {item.merk || "-"} · {item.satuan || "-"}
+                          </p>
+
+                          {item.diskonNama ? (
+                            <span className="mt-2 inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+                              {item.diskonNama}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.barangId)}
+                          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                        >
+                          <Trash2 size={15} strokeWidth={2.5} />
+                        </button>
                       </div>
 
                       <div className="mt-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <Package size={14} className="text-slate-400" strokeWidth={2.5} />
-                          <p className="text-[11px] font-semibold text-slate-500">
-                            Stok {barang.stok}
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.barangId, "minus")}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          >
+                            <Minus size={14} strokeWidth={3} />
+                          </button>
+
+                          <div className="min-w-[44px] text-center text-sm font-black text-slate-800">
+                            {item.qty}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.barangId, "plus")}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          >
+                            <Plus size={14} strokeWidth={3} />
+                          </button>
+                        </div>
+
+                        <div className="text-right">
+                          {item.hargaAsli !== item.hargaSetelahDiskon ? (
+                            <p className="text-xs font-bold text-slate-400 line-through">
+                              {formatRupiah(item.hargaAsli * item.qty)}
+                            </p>
+                          ) : null}
+                          <p className="text-sm font-black text-slate-800">
+                            {formatRupiah(item.hargaSetelahDiskon * item.qty)}
                           </p>
                         </div>
-
-                        {isOutStock ? (
-                          <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-red-500">
-                            Habis
-                          </span>
-                        ) : isLowStock ? (
-                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-600">
-                            Menipis
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-600">
-                            Aman
-                          </span>
-                        )}
                       </div>
-                    </motion.div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        <div className="space-y-4 xl:col-span-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                  Keranjang
-                </p>
-                <p className="mt-1 text-sm font-black text-slate-800">
-                  Barang yang akan diproses
-                </p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+                Ringkasan Pembayaran
+              </h2>
+
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                  <span>Subtotal</span>
+                  <span>{formatRupiah(subtotal)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                  <span>Total Diskon</span>
+                  <span className="text-emerald-600">- {formatRupiah(totalDiskon)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                  <span>Setelah Diskon</span>
+                  <span>{formatRupiah(totalSetelahDiskon)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                  <span>Biaya Admin</span>
+                  <span>{formatRupiah(biayaAdminNominal)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-3 text-base font-black text-slate-800">
+                  <span>Grand Total</span>
+                  <span>{formatRupiah(grandTotal)}</span>
+                </div>
               </div>
 
-              {cart.length > 0 ? (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <FieldLabel icon={BadgeDollarSign} label="Uang Bayar" />
+                  <input
+                    value={uangBayar}
+                    onChange={(e) => setUangBayar(formatRibuanInput(e.target.value))}
+                    inputMode="numeric"
+                    placeholder="Masukkan uang bayar"
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel icon={Receipt} label="Catatan" />
+                  <textarea
+                    value={catatan}
+                    onChange={(e) => setCatatan(e.target.value)}
+                    placeholder="Catatan transaksi..."
+                    rows={3}
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                  />
+                </div>
+
+                <div className="grid gap-3 rounded-2xl bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Kembalian</span>
+                    <span className="font-black text-emerald-600">{formatRupiah(kembalian)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Kurang Bayar</span>
+                    <span className="font-black text-red-600">{formatRupiah(kurangBayar)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Estimasi Laba Kotor</span>
+                    <span className="font-black text-slate-800">{formatRupiah(estimasiLabaKotor)}</span>
+                  </div>
+                </div>
+
                 <button
-                  onClick={clearCart}
-                  disabled={submitLoading}
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-600 transition-all hover:bg-red-100 disabled:opacity-40"
+                  type="button"
+                  disabled={!isBisaCheckout}
+                  onClick={handleProsesTransaksi}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 text-sm font-black uppercase tracking-wide text-white shadow-sm transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Kosongkan
+                  {submitLoading ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" strokeWidth={2.5} />
+                      Memproses...
+                    </>
+                  ) : (
+                    <>
+                      <Receipt size={16} strokeWidth={2.5} />
+                      Proses Transaksi
+                    </>
+                  )}
                 </button>
-              ) : null}
-            </div>
-
-            {cart.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10">
-                <ShoppingCart size={30} className="text-slate-300" strokeWidth={1.6} />
-                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                  Keranjang masih kosong
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {cart.map((item) => (
-                  <div
-                    key={item.barangId}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-slate-800">{item.nama}</p>
-                        <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                          {item.kodeBarang} · {item.kategoriNama || "-"}
-                        </p>
-
-                        {item.diskonNama ? (
-                          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-600">
-                            <Tag size={10} strokeWidth={2.5} />
-                            {item.diskonNama}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <button
-                        onClick={() => removeItem(item.barangId)}
-                        disabled={submitLoading}
-                        className="rounded-xl border border-red-200 bg-white p-2 text-red-500 transition-all hover:bg-red-50 disabled:opacity-40"
-                      >
-                        <Trash2 size={14} strokeWidth={2.5} />
-                      </button>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Harga Asli
-                        </p>
-                        <p className="mt-1 text-sm font-black text-slate-800">
-                          {formatRupiah(item.hargaAsli)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Harga Final
-                        </p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">
-                          {formatRupiah(item.hargaSetelahDiskon)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => updateQty(item.barangId, "minus")}
-                          disabled={submitLoading}
-                          className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40"
-                        >
-                          <Minus size={14} strokeWidth={2.8} />
-                        </button>
-
-                        <div className="flex h-8 min-w-[3rem] items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-800">
-                          {item.qty}
-                        </div>
-
-                        <button
-                          onClick={() => updateQty(item.barangId, "plus")}
-                          disabled={submitLoading}
-                          className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40"
-                        >
-                          <Plus size={14} strokeWidth={2.8} />
-                        </button>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Subtotal
-                        </p>
-                        <p className="text-sm font-black text-slate-800">
-                          {formatRupiah(item.hargaSetelahDiskon * item.qty)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              Ringkasan Pembayaran
-            </p>
-
-            <div className="mt-3 space-y-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Subtotal
-                  </p>
-                  <p className="text-sm font-black text-slate-800">{formatRupiah(subtotal)}</p>
-                </div>
-
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Diskon
-                  </p>
-                  <p className="text-sm font-black text-emerald-600">{formatRupiah(totalDiskon)}</p>
-                </div>
-
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Admin
-                  </p>
-                  <p className="text-sm font-black text-slate-800">
-                    {formatRupiah(biayaAdminNominal)}
-                  </p>
-                </div>
-
-                <div className="mt-3 border-t border-slate-200 pt-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                      Grand Total
-                    </p>
-                    <p className="text-base font-black text-cyan-600">{formatRupiah(grandTotal)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel icon={Wallet} label="Uang Bayar" />
-                <input
-                  value={formatRibuanInput(uangBayar)}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, "")
-                    setUangBayar(raw)
-                  }}
-                  inputMode="numeric"
-                  placeholder="Masukkan uang bayar"
-                  disabled={submitLoading}
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-60"
-                />
-              </div>
-
-              <div>
-                <FieldLabel icon={Receipt} label="Catatan" />
-                <textarea
-                  value={catatan}
-                  onChange={(e) => setCatatan(e.target.value)}
-                  rows={3}
-                  disabled={submitLoading}
-                  placeholder="Catatan transaksi..."
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-60"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-emerald-50 px-3 py-2">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">
-                    Kembalian
-                  </p>
-                  <p className="mt-1 text-base font-black text-emerald-600">
-                    {formatRupiah(kembalian)}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-red-50 px-3 py-2">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-red-400">
-                    Kurang Bayar
-                  </p>
-                  <p className="mt-1 text-base font-black text-red-500">
-                    {formatRupiah(kurangBayar)}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={handleProsesTransaksi}
-                disabled={!isBisaCheckout}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 py-3 text-sm font-black uppercase tracking-wide text-white shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ScanBarcode size={16} strokeWidth={2.8} />
-                {submitLoading ? "Memproses..." : "Proses Transaksi"}
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              Info Aktif
-            </p>
-
-            <div className="mt-3 space-y-3">
-              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mt-0.5 text-slate-400">
-                  <Store size={14} strokeWidth={2.5} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Toko
-                  </p>
-                  <p className="truncate text-sm font-black text-slate-800">
-                    {selectedToko?.nama || "Belum dipilih"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mt-0.5 text-slate-400">
-                  <Wallet size={14} strokeWidth={2.5} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Pembayaran
-                  </p>
-                  <p className="truncate text-sm font-black text-slate-800">
-                    {selectedMetode?.nama || "Belum dipilih"}
-                  </p>
-                  {selectedMetode?.provider ? (
-                    <p className="text-[11px] font-semibold text-slate-500">
-                      {selectedMetode.provider}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mt-0.5 text-slate-400">
-                  <Layers3 size={14} strokeWidth={2.5} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Jenis Barang
-                  </p>
-                  <p className="truncate text-sm font-black text-slate-800">{totalJenisBarang}</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mt-0.5 text-slate-400">
-                  <Boxes size={14} strokeWidth={2.5} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Total Item
-                  </p>
-                  <p className="truncate text-sm font-black text-slate-800">{totalItem}</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mt-0.5 text-slate-400">
-                  <BadgeDollarSign size={14} strokeWidth={2.5} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                    Estimasi Laba Kotor
-                  </p>
-                  <p className="truncate text-sm font-black text-emerald-600">
-                    {formatRupiah(estimasiLabaKotor)}
-                  </p>
-                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <AnimatePresence>
+        {showCameraScanner ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-slate-950/70 p-4 backdrop-blur-sm"
+          >
+            <div className="mx-auto flex h-full w-full max-w-3xl items-center justify-center">
+              <motion.div
+                initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.98 }}
+                className="w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-[0.18em] text-white">
+                      Scanner Kamera
+                    </h3>
+                    <p className="mt-1 text-xs font-semibold text-slate-400">
+                      Arahkan barcode ke area scan
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCameraScanner(false)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  >
+                    <X size={18} strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                <div className="p-4">
+                  {!cameraSupported ? (
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm font-semibold text-amber-200">
+                      Browser ini belum mendukung scan barcode kamera.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-black">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="aspect-video w-full object-cover"
+                        />
+
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                          <div className="h-28 w-[78%] rounded-2xl border-2 border-cyan-400/80 shadow-[0_0_0_9999px_rgba(2,6,23,0.42)]" />
+                        </div>
+
+                        {cameraLoading ? (
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/65">
+                            <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-4 py-3 text-sm font-black text-white">
+                              <RefreshCw size={16} className="animate-spin" strokeWidth={2.5} />
+                              Menyalakan kamera...
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Status
+                          </p>
+                          <p className="mt-2 text-sm font-bold text-white">{cameraStatus}</p>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Hasil Terakhir
+                          </p>
+                          <p className="mt-2 break-all text-sm font-bold text-cyan-300">
+                            {lastCameraResult || "-"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Toko Aktif
+                          </p>
+                          <p className="mt-2 text-sm font-bold text-white">
+                            {selectedToko?.nama || "-"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            stopCameraScanner()
+                            void startCameraScanner()
+                          }}
+                          className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-cyan-300 hover:bg-cyan-500/20"
+                        >
+                          Restart Kamera
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowCameraScanner(false)}
+                          className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-200 hover:bg-slate-800"
+                        >
+                          Tutup
+                        </button>
+
+                        <span className="inline-flex items-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-emerald-300">
+                          {cameraActive ? "Kamera aktif" : "Kamera belum aktif"}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </>
   )
 }
