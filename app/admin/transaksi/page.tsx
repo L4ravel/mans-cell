@@ -618,62 +618,50 @@ export default function TransaksiPage() {
     return map
   }, [barangList, selectedTokoId])
 
-  const addToCart = (barang: Barang, mode: AddToCartMode = "manual") => {
-    if (!selectedTokoId) {
-      setError("Pilih toko terlebih dahulu")
-      return { ok: false, reason: "no-store" as const }
-    }
+  type AddToCartResult = {
+  ok: boolean
+  reason?: "no-store" | "out-of-stock"
+  status?: "added" | "exists"
+}
 
-    if (barang.stok <= 0) {
-      setError("Stok barang habis")
-      return { ok: false, reason: "out-of-stock" as const }
-    }
+const addToCart = (
+  barang: Barang,
+  mode: AddToCartMode = "manual"
+): AddToCartResult => {
+  if (!selectedTokoId) {
+    setError("Pilih toko terlebih dahulu")
+    return { ok: false, reason: "no-store" }
+  }
 
-    setError(null)
+  if (barang.stok <= 0) {
+    setError("Stok barang habis")
+    return { ok: false, reason: "out-of-stock" }
+  }
 
-    let status: "added" | "exists" = "added"
+  setError(null)
 
-    setCart((prev) => {
-      const found = prev.find((item) => item.barangId === barang.id)
-      const diskon = getBestDiskonForBarang(
-        barang.id,
-        diskonList.filter((d) => d.tokoId === barang.tokoId && d.isActive)
-      )
-      const hargaSetelahDiskon = hitungHargaSetelahDiskon(
-        barang.hargaJual,
-        diskon?.tipeDiskon,
-        diskon?.nilaiDiskon
-      )
+  let status: "added" | "exists" = "added"
 
-      if (found) {
-        status = "exists"
+  setCart((prev) => {
+    const found = prev.find((item) => item.barangId === barang.id)
+    const diskon = getBestDiskonForBarang(
+      barang.id,
+      diskonList.filter((d) => d.tokoId === barang.tokoId && d.isActive)
+    )
+    const hargaSetelahDiskon = hitungHargaSetelahDiskon(
+      barang.hargaJual,
+      diskon?.tipeDiskon,
+      diskon?.nilaiDiskon
+    )
 
-        if (mode === "scan") {
-          return prev.map((item) =>
-            item.barangId === barang.id
-              ? {
-                  ...item,
-                  stok: barang.stok,
-                  hargaModal: barang.hargaModal,
-                  hargaAsli: barang.hargaJual,
-                  hargaSetelahDiskon,
-                  diskonId: diskon?.id,
-                  diskonNama: diskon?.namaPromo,
-                  diskonTipe: diskon?.tipeDiskon,
-                  diskonNilai: diskon?.nilaiDiskon,
-                }
-              : item
-          )
-        }
+    if (found) {
+      status = "exists"
 
-        const nextQty = found.qty + 1
-        if (nextQty > barang.stok) return prev
-
+      if (mode === "scan") {
         return prev.map((item) =>
           item.barangId === barang.id
             ? {
                 ...item,
-                qty: nextQty,
                 stok: barang.stok,
                 hargaModal: barang.hargaModal,
                 hargaAsli: barang.hargaJual,
@@ -687,74 +675,97 @@ export default function TransaksiPage() {
         )
       }
 
-      return [
-        ...prev,
-        {
-          barangId: barang.id,
-          kodeBarang: barang.kodeBarang,
-          nama: barang.nama,
-          kategoriNama: barang.kategoriNama,
-          merk: barang.merk,
-          satuan: barang.satuan,
-          stok: barang.stok,
-          qty: 1,
-          hargaModal: barang.hargaModal,
-          hargaAsli: barang.hargaJual,
-          hargaSetelahDiskon,
-          diskonId: diskon?.id,
-          diskonNama: diskon?.namaPromo,
-          diskonTipe: diskon?.tipeDiskon,
-          diskonNilai: diskon?.nilaiDiskon,
-        },
-      ]
-    })
+      const nextQty = found.qty + 1
+      if (nextQty > barang.stok) return prev
 
-    return { ok: true, status }
-  }
+      return prev.map((item) =>
+        item.barangId === barang.id
+          ? {
+              ...item,
+              qty: nextQty,
+              stok: barang.stok,
+              hargaModal: barang.hargaModal,
+              hargaAsli: barang.hargaJual,
+              hargaSetelahDiskon,
+              diskonId: diskon?.id,
+              diskonNama: diskon?.namaPromo,
+              diskonTipe: diskon?.tipeDiskon,
+              diskonNilai: diskon?.nilaiDiskon,
+            }
+          : item
+      )
+    }
+
+    return [
+      ...prev,
+      {
+        barangId: barang.id,
+        kodeBarang: barang.kodeBarang,
+        nama: barang.nama,
+        kategoriNama: barang.kategoriNama,
+        merk: barang.merk,
+        satuan: barang.satuan,
+        stok: barang.stok,
+        qty: 1,
+        hargaModal: barang.hargaModal,
+        hargaAsli: barang.hargaJual,
+        hargaSetelahDiskon,
+        diskonId: diskon?.id,
+        diskonNama: diskon?.namaPromo,
+        diskonTipe: diskon?.tipeDiskon,
+        diskonNilai: diskon?.nilaiDiskon,
+      },
+    ]
+  })
+
+  return { ok: true, status }
+}
 
   const commitBarcodeValue = (rawValue: string, source: "scanner" | "camera") => {
-    const kode = normalizeBarcode(rawValue)
-    if (!kode) return { ok: false }
+  const kode = normalizeBarcode(rawValue)
+  if (!kode) return { ok: false }
 
-    if (!selectedTokoId) {
-      setError("Pilih toko terlebih dahulu sebelum scan barcode")
-      setTimeout(() => setError(null), 1800)
-      return { ok: false }
-    }
-
-    const found = barangBarcodeMap.get(kode)
-
-    if (!found) {
-      setError(`Barcode ${kode} tidak ditemukan di toko ini`)
-      setTimeout(() => setError(null), 1800)
-      return { ok: false }
-    }
-
-    if (Number(found.stok || 0) <= 0) {
-      setError(`Stok ${found.nama} habis`)
-      setTimeout(() => setError(null), 1800)
-      return { ok: false }
-    }
-
-    const result = addToCart(found, "scan")
-    if (!result.ok) return { ok: false }
-
-    playSuccessBeep()
-
-    if (result.status === "exists") {
-      setSuccessMsg(
-        `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama} sudah ada di keranjang`
-      )
-    } else {
-      setSuccessMsg(
-        `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama}`
-      )
-    }
-
-    setTimeout(() => setSuccessMsg(null), 1400)
-
-    return { ok: true, status: result.status }
+  if (!selectedTokoId) {
+    setError("Pilih toko terlebih dahulu sebelum scan barcode")
+    setTimeout(() => setError(null), 1800)
+    return { ok: false }
   }
+
+  const found = barangBarcodeMap.get(kode)
+
+  if (!found) {
+    setError(`Barcode ${kode} tidak ditemukan di toko ini`)
+    setTimeout(() => setError(null), 1800)
+    return { ok: false }
+  }
+
+  if (Number(found.stok || 0) <= 0) {
+    setError(`Stok ${found.nama} habis`)
+    setTimeout(() => setError(null), 1800)
+    return { ok: false }
+  }
+
+  const result = addToCart(found, "scan")
+  if (!result.ok) return { ok: false }
+
+  playSuccessBeep()
+
+  const status = result.status ?? "added"
+
+  if (status === "exists") {
+    setSuccessMsg(
+      `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama} sudah ada di keranjang`
+    )
+  } else {
+    setSuccessMsg(
+      `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama}`
+    )
+  }
+
+  setTimeout(() => setSuccessMsg(null), 1400)
+
+  return { ok: true, status }
+}
 
   useEffect(() => {
     const resetScanBuffer = () => {
