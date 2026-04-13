@@ -68,36 +68,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const menuGroups: MenuGroup[] = useMemo(
     () => [
-      // {
-      //   label: "Master Data",
-      //   icon: Database,
-      //   items: [
-      //     { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
-      //     { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
-      //     { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
-      //     { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
-      //     { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
-      //     { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
-      //     { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
-      //     { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
-      //     { href: "/admin/laporan-keuntungan-bersih", icon: BarChart3, label: "Keuntungan Bersih" },
-      //     { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
-      //     { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
-      //   ],
-      // },
-      // {
-      //   label: "Transaksi",
-      //   icon: ShoppingCart,
-      //   items: [
-      //     { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
-      //     { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
-      //     { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
-      //     { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
-      //     { href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
-      //     { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
-      //     { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
-      //   ],
-      // },
+      {
+        label: "Master Data",
+        icon: Database,
+        items: [
+          { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
+          { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
+          { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
+          { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
+          { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
+          { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
+          { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
+          { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
+          { href: "/admin/laporan-keuntungan-bersih", icon: BarChart3, label: "Keuntungan Bersih" },
+          { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
+          { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
+        ],
+      },
+      {
+        label: "Transaksi",
+        icon: ShoppingCart,
+        items: [
+          { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
+          { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
+          { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
+          { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
+          { href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
+          { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
+          { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
+        ],
+      },
       {
         label: "Absensi Karyawan",
         icon: Users,
