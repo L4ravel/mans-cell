@@ -418,44 +418,46 @@ export default function TambahTokoPage() {
         transition={{ duration: 0.4 }}
         className="relative overflow-hidden rounded-xl border-l-4 border-l-blue-500 border-t border-r border-b border-slate-200 bg-white p-4 sm:p-5 shadow-sm"
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-400 to-cyan-500 shadow-lg shadow-blue-200/50">
-              <Store size={24} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
-                Tambah Toko
-              </h1>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">
-                Kode toko · nama toko · pemilik · kota · GPS toko
-              </p>
-            </div>
-          </div>
+       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+  <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+    <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-400 to-cyan-500 shadow-lg shadow-blue-200/50">
+      <Store size={22} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
+    </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-            <motion.button
-              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-              onClick={handleDownloadTemplate}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-xl border border-slate-200 bg-white text-slate-600 text-[10px] font-black uppercase tracking-wide shadow-sm hover:bg-slate-50 transition-all"
-              title="Download Template Excel"
-            >
-              <Download size={13} strokeWidth={2.5} />
-              <span className="hidden sm:inline">Template</span>
-            </motion.button>
+    <div className="min-w-0 self-center sm:self-auto">
+      <h1 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
+        Tambah Toko
+      </h1>
+      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+        Kode toko · nama toko · pemilik · kota · GPS toko
+      </p>
+    </div>
+  </div>
 
-            <motion.button
-              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-              onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-700 text-[10px] font-black uppercase tracking-wide shadow-sm hover:bg-cyan-100 transition-all"
-              title="Import dari Excel"
-            >
-              <Upload size={13} strokeWidth={2.5} />
-              <span className="hidden sm:inline">Import</span>
-            </motion.button>
-          </div>
-        </div>
+  <div className="flex items-center justify-end gap-2 sm:flex-shrink-0 sm:flex-wrap">
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={handleDownloadTemplate}
+      className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-600 shadow-sm transition-all hover:bg-slate-50"
+      title="Download Template Excel"
+    >
+      <Download size={13} strokeWidth={2.5} />
+      <span className="hidden sm:inline">Template</span>
+    </motion.button>
+
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => setShowImportModal(true)}
+      className="flex h-8 items-center gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-[10px] font-black uppercase tracking-wide text-cyan-700 shadow-sm transition-all hover:bg-cyan-100"
+      title="Import dari Excel"
+    >
+      <Upload size={13} strokeWidth={2.5} />
+      <span className="hidden sm:inline">Import</span>
+    </motion.button>
+  </div>
+</div>
 
         <div className="absolute right-0 top-0 opacity-[0.03] pointer-events-none">
           <Cpu size={140} strokeWidth={1} />

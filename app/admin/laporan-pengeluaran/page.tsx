@@ -406,38 +406,39 @@ export default function LaporanPengeluaranPage() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-rose-500 bg-white p-4 shadow-sm sm:p-5"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-400 to-orange-500 shadow-lg shadow-rose-200/50 sm:h-14 sm:w-14">
-              <BarChart3 size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
-            </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+  <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-400 to-orange-500 shadow-lg shadow-rose-200/50 sm:h-14 sm:w-14">
+      <BarChart3 size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+    </div>
 
-            <div>
-              <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Laporan Pengeluaran
-              </h1>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                chart bulanan · kategori · toko
-              </p>
-            </div>
-          </div>
+    <div className="min-w-0 self-center sm:self-auto">
+      <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+        Laporan Pengeluaran
+      </h1>
+      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+        chart bulanan · kategori · toko
+      </p>
+    </div>
+  </div>
 
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={fetchAll}
-            disabled={loading}
-            className="flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50"
-          >
-            <motion.span
-              animate={loading ? { rotate: 360 } : {}}
-              transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-            >
-              <RefreshCw size={14} strokeWidth={2.5} />
-            </motion.span>
-            Refresh
-          </motion.button>
-        </div>
+  <motion.button
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    onClick={fetchAll}
+    disabled={loading}
+    className="flex h-8 items-center justify-center gap-1.5 self-start rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
+  >
+    <motion.span
+      animate={loading ? { rotate: 360 } : {}}
+      transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+    >
+      <RefreshCw size={14} strokeWidth={2.5} />
+    </motion.span>
+    <span className="sm:hidden">Refresh</span>
+    <span className="hidden sm:inline">Refresh</span>
+  </motion.button>
+</div>
       </motion.div>
 
       {error ? (

@@ -1918,42 +1918,48 @@ if (metodeTunai) {
           animate={{ opacity: 1, y: 0 }}
           className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
-                <ShoppingCart size={24} className="text-white" strokeWidth={2.5} />
-              </div>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+  <div className="flex min-w-0 items-center gap-3 sm:gap-4 lg:items-start">
+    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
+      <ShoppingCart size={22} className="text-white" strokeWidth={2.5} />
+    </div>
 
-              <div>
-                <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                  Transaksi Kasir
-                </h1>
-                <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                  Scan barcode · kamera panel · checkout · print struk
-                </p>
-              </div>
-            </div>
+    <div className="min-w-0 self-center lg:self-auto">
+      <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+        Transaksi Kasir
+      </h1>
+      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+        Scan barcode · kamera panel · checkout · print struk
+      </p>
+    </div>
+  </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={fetchAll}
-                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                <RefreshCw size={14} strokeWidth={2.5} />
-                Refresh
-              </button>
+  <div className="flex flex-wrap items-center justify-end gap-2">
+    <button
+      type="button"
+      onClick={fetchAll}
+      className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 sm:h-10 sm:w-auto sm:px-4"
+      title="Refresh"
+    >
+      <RefreshCw size={14} strokeWidth={2.5} />
+      <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
+        Refresh
+      </span>
+    </button>
 
-              <button
-                type="button"
-                onClick={() => setCameraOpen((prev) => !prev)}
-                className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-xs font-black uppercase tracking-wide text-cyan-700 shadow-sm hover:bg-cyan-100"
-              >
-                <Camera size={14} strokeWidth={2.5} />
-                {cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
-              </button>
-            </div>
-          </div>
+    <button
+      type="button"
+      onClick={() => setCameraOpen((prev) => !prev)}
+      className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm hover:bg-cyan-100 sm:h-10 sm:w-auto sm:px-4"
+      title={cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
+    >
+      <Camera size={14} strokeWidth={2.5} />
+      <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
+        {cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
+      </span>
+    </button>
+  </div>
+</div>
         </motion.div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

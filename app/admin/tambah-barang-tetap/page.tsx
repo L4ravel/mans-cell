@@ -508,66 +508,49 @@ export default function TambahBarangTetapPage() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-xl border-l-4 border-l-emerald-500 border-t border-r border-b border-slate-200 bg-white p-4 sm:p-5 shadow-sm"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
-              <Building2 size={24} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
-                Data Barang Tetap
-              </h1>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">
-                Aset toko · kategori · toko · harga
-              </p>
-            </div>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+  <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+    <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
+      <Building2 size={22} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
+    </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-            {filtered.length > 0 && (
-              <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-emerald-500 px-2.5 shadow-sm shadow-emerald-200/50">
-                <span className="text-xs font-black text-white">
-                  {itemsPerPage === 0 ? filtered.length : paged.length}
-                </span>
-              </div>
-            )}
+    <div className="min-w-0 self-center sm:self-auto">
+      <h1 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
+        Data Barang Tetap
+      </h1>
+      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+        Aset toko · kategori · toko · harga
+      </p>
+    </div>
+  </div>
 
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => router.push("/admin/tambah-kategori")}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase tracking-wide shadow-sm hover:bg-slate-50 transition-all"
-            >
-              <Tag size={13} strokeWidth={3} />
-              <span>Kategori</span>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={openAdd}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 text-white text-[10px] font-black uppercase tracking-wide shadow-sm shadow-emerald-200/50 hover:shadow-md transition-all"
-            >
-              <Plus size={13} strokeWidth={3} />
-              <span>Tambah Barang Tetap</span>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={fetchData}
-              disabled={loading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
-            >
-              <motion.span
-                animate={loading ? { rotate: 360 } : {}}
-                transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-              >
-                <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
-              </motion.span>
-            </motion.button>
-          </div>
+  <div className="flex items-center justify-between gap-2 sm:flex-shrink-0 sm:flex-wrap sm:justify-end">
+    <div className="flex items-center gap-2">
+      {filtered.length > 0 && (
+        <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-emerald-500 px-2.5 shadow-sm shadow-emerald-200/50">
+          <span className="text-xs font-black text-white">
+            {itemsPerPage === 0 ? filtered.length : paged.length}
+          </span>
         </div>
+      )}
+    </div>
+
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={fetchData}
+      disabled={loading}
+      className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+    >
+      <motion.span
+        animate={loading ? { rotate: 360 } : {}}
+        transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+      >
+        <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
+      </motion.span>
+    </motion.button>
+  </div>
+</div>
 
         <div className="absolute right-0 top-0 opacity-[0.03] pointer-events-none">
           <Cpu size={140} strokeWidth={1} />

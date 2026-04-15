@@ -815,19 +815,20 @@ export default function LaporanAbsenBulananPage() {
         transition={{ duration: 0.4 }}
         className="relative overflow-hidden rounded-xl border-l-4 border-l-violet-500 border-t border-r border-b border-slate-200 bg-white p-4 sm:p-5 shadow-sm"
       >
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 shadow-lg shadow-violet-200/50">
-            <ClipboardList size={24} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
-              Laporan Absensi Bulanan
-            </h1>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">
-              Rekap kehadiran per individu karyawan
-            </p>
-          </div>
-        </div>
+        <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 shadow-lg shadow-violet-200/50 sm:h-14 sm:w-14">
+    <ClipboardList size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+  </div>
+
+  <div className="min-w-0 self-center sm:self-auto">
+    <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+      Laporan Absensi Bulanan
+    </h1>
+    <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+      Rekap kehadiran per individu karyawan
+    </p>
+  </div>
+</div>
         <div className="absolute right-0 top-0 opacity-[0.03] pointer-events-none">
           <Cpu size={140} strokeWidth={1} />
         </div>
