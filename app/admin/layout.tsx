@@ -1,7 +1,7 @@
 /* 
-  Layout admin dengan ukuran desktop lebih konsisten antar monitor.
-  Mobile tetap seperti sebelumnya, perubahan difokuskan pada wrapper desktop
-  agar tidak melebar berlebihan di layar besar.
+  Layout admin desktop dengan basis lebar 2560px.
+  Jika monitor lebih kecil, desktop otomatis discale agar seluruh area tetap terlihat.
+  Mobile tetap seperti sebelumnya.
 */
 
 "use client"
@@ -54,6 +54,9 @@ type MenuGroup = {
   items: MenuItem[]
 }
 
+const DESKTOP_BASE_WIDTH = 2560
+const DESKTOP_SIDE_PADDING = 40
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -65,6 +68,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [loggingOut, setLoggingOut] = useState(false)
   const [authLoading, setAuthLoading] = useState(true)
   const [isAuthorized, setIsAuthorized] = useState(false)
+  const [desktopZoom, setDesktopZoom] = useState(1)
 
   const menuGroups: MenuGroup[] = useMemo(
     () => [
@@ -244,6 +248,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const handleResize = () => {
       if (window.innerWidth >= 1024) setSidebarOpen(false)
+
+      if (window.innerWidth >= 1024) {
+        const availableWidth = Math.max(window.innerWidth - DESKTOP_SIDE_PADDING, 320)
+        const nextZoom = Math.min(1, availableWidth / DESKTOP_BASE_WIDTH)
+        setDesktopZoom(nextZoom)
+      } else {
+        setDesktopZoom(1)
+      }
     }
 
     handleResize()
@@ -514,87 +526,94 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <NavMenu />
       </aside>
 
-      {/* DESKTOP: dibungkus max width agar ukuran tetap stabil di monitor besar */}
-      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[2560px] gap-4 xl:gap-5">
-        <aside
-          className={`
-            relative hidden flex-col rounded-3xl border border-slate-200 bg-white shadow-xl
-            transition-all duration-300 ease-in-out lg:flex
-            ${sidebarCollapsed ? "w-20" : "w-72"}
-          `}
+      {/* DESKTOP: basis width 2560px lalu auto zoom jika monitor lebih kecil */}
+      <div className="relative z-10 hidden lg:flex justify-center">
+        <div
+          className="w-[2560px]"
+          style={{
+            zoom: desktopZoom,
+          }}
         >
-          <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
-            <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
-              <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
-            </div>
-
-            <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <Store className="text-blue-600" size={20} strokeWidth={2.5} />
-            </div>
-
-            {!sidebarCollapsed && (
-              <div className="relative min-w-0">
-                <div className="text-base font-black leading-none tracking-tight text-slate-800">
-                  Mans-Cell{" "}
-                  <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
-                    Admin
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                  Panel Management
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((prev) => !prev)}
-            className="absolute -right-3 top-[88px] z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition-colors hover:text-slate-700 lg:flex"
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {sidebarCollapsed ? (
-              <ChevronRight size={13} strokeWidth={2.5} />
-            ) : (
-              <ChevronLeft size={13} strokeWidth={2.5} />
-            )}
-          </button>
-
-          <NavMenu />
-        </aside>
-
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:border-l-0">
-          <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4 lg:h-20 lg:px-8">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen((prev) => !prev)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden"
-              aria-label={sidebarOpen ? "Tutup sidebar" : "Buka sidebar"}
+          <div className="relative flex min-h-[calc(100vh-1.5rem)] w-[2560px] gap-4 xl:gap-5">
+            <aside
+              className={`
+                relative hidden flex-col rounded-3xl border border-slate-200 bg-white shadow-xl
+                transition-all duration-300 ease-in-out lg:flex
+                ${sidebarCollapsed ? "w-20" : "w-72"}
+              `}
             >
-              {sidebarOpen ? (
-                <X size={17} strokeWidth={2} />
-              ) : (
-                <Menu size={17} strokeWidth={2} />
-              )}
-            </button>
-
-            <div className="hidden lg:block" />
-
-            <div className="ml-auto flex items-center gap-3">
-              <div className="hidden items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:flex">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
-                  <User size={14} strokeWidth={2.5} />
+              <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
+                <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
+                  <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
                 </div>
-                <span className="text-sm font-bold">Admin</span>
-              </div>
-            </div>
-          </header>
 
-          <main className="flex-1 overflow-auto bg-slate-50/30 p-4 sm:p-6 lg:p-8">
-            <div className="w-full">
-              {children}
+                <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <Store className="text-blue-600" size={20} strokeWidth={2.5} />
+                </div>
+
+                {!sidebarCollapsed && (
+                  <div className="relative min-w-0">
+                    <div className="text-base font-black leading-none tracking-tight text-slate-800">
+                      Mans-Cell{" "}
+                      <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
+                        Admin
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                      Panel Management
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed((prev) => !prev)}
+                className="absolute -right-3 top-[88px] z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition-colors hover:text-slate-700 lg:flex"
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {sidebarCollapsed ? (
+                  <ChevronRight size={13} strokeWidth={2.5} />
+                ) : (
+                  <ChevronLeft size={13} strokeWidth={2.5} />
+                )}
+              </button>
+
+              <NavMenu />
+            </aside>
+
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:border-l-0">
+              <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4 lg:h-20 lg:px-8">
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen((prev) => !prev)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden"
+                  aria-label={sidebarOpen ? "Tutup sidebar" : "Buka sidebar"}
+                >
+                  {sidebarOpen ? (
+                    <X size={17} strokeWidth={2} />
+                  ) : (
+                    <Menu size={17} strokeWidth={2} />
+                  )}
+                </button>
+
+                <div className="hidden lg:block" />
+
+                <div className="ml-auto flex items-center gap-3">
+                  <div className="hidden items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:flex">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+                      <User size={14} strokeWidth={2.5} />
+                    </div>
+                    <span className="text-sm font-bold">Admin</span>
+                  </div>
+                </div>
+              </header>
+
+              <main className="flex-1 overflow-auto bg-slate-50/30 p-4 sm:p-6 lg:p-8">
+                <div className="w-full">{children}</div>
+              </main>
             </div>
-          </main>
+          </div>
         </div>
       </div>
     </div>

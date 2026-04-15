@@ -83,6 +83,9 @@ type Barang = {
   hargaJual: number
   stok: number
   stokMinimum: number
+  pakaiKodeUnik?: boolean
+  jenisKodeUnik?: "imei" | "serial" | "custom" | ""
+  kodeUnik?: string
   createdAt: number
   updatedAt?: number
 }
@@ -135,6 +138,9 @@ type CartItem = {
   hargaModal: number
   hargaAsli: number
   hargaSetelahDiskon: number
+  pakaiKodeUnik?: boolean
+  jenisKodeUnik?: "imei" | "serial" | "custom" | ""
+  kodeUnik?: string
   diskonId?: string
   diskonNama?: string
   diskonTipe?: "persen" | "nominal"
@@ -155,6 +161,9 @@ type StrukItem = {
   subtotalAsli: number
   subtotalFinal: number
   totalDiskon: number
+  pakaiKodeUnik?: boolean
+  jenisKodeUnik?: "imei" | "serial" | "custom" | ""
+  kodeUnik?: string
   diskonId: string
   diskonNama: string
   diskonTipe: string
@@ -192,6 +201,19 @@ type LaporanMetodeBreakdown = {
   jumlahTransaksi: number
   omzet: number
   admin: number
+}
+
+type LaporanKategoriBreakdown = {
+  nama: string
+  jumlahTransaksi: number
+  qtyTerjual: number
+  omzet: number
+  subtotal: number
+  totalDiskon: number
+  totalSetelahDiskon: number
+  totalModal: number
+  totalBiayaAdmin: number
+  labaBersih: number
 }
 
 type AddToCartMode = "manual" | "scan"
@@ -329,6 +351,68 @@ function mergeMetodeBreakdown(
   return list.sort((a, b) => b.omzet - a.omzet)
 }
 
+function mergeKategoriBreakdown(
+  existing: any,
+  incoming: LaporanKategoriBreakdown[]
+): LaporanKategoriBreakdown[] {
+  const map = new Map<string, LaporanKategoriBreakdown>()
+
+  if (Array.isArray(existing)) {
+    for (const item of existing) {
+      const nama = item?.nama || "Tanpa Kategori"
+      map.set(nama, {
+        nama,
+        jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
+        qtyTerjual: Number(item?.qtyTerjual || 0),
+        omzet: Number(item?.omzet || 0),
+        subtotal: Number(item?.subtotal || 0),
+        totalDiskon: Number(item?.totalDiskon || 0),
+        totalSetelahDiskon: Number(item?.totalSetelahDiskon || 0),
+        totalModal: Number(item?.totalModal || 0),
+        totalBiayaAdmin: Number(item?.totalBiayaAdmin || 0),
+        labaBersih: Number(item?.labaBersih || 0),
+      })
+    }
+  }
+
+  for (const item of incoming) {
+    const nama = item?.nama || "Tanpa Kategori"
+    const prev =
+      map.get(nama) || {
+        nama,
+        jumlahTransaksi: 0,
+        qtyTerjual: 0,
+        omzet: 0,
+        subtotal: 0,
+        totalDiskon: 0,
+        totalSetelahDiskon: 0,
+        totalModal: 0,
+        totalBiayaAdmin: 0,
+        labaBersih: 0,
+      }
+
+    map.set(nama, {
+      nama,
+      jumlahTransaksi: Number(prev.jumlahTransaksi || 0) + Number(item?.jumlahTransaksi || 0),
+      qtyTerjual: Number(prev.qtyTerjual || 0) + Number(item?.qtyTerjual || 0),
+      omzet: Number(prev.omzet || 0) + Number(item?.omzet || 0),
+      subtotal: Number(prev.subtotal || 0) + Number(item?.subtotal || 0),
+      totalDiskon: Number(prev.totalDiskon || 0) + Number(item?.totalDiskon || 0),
+      totalSetelahDiskon:
+        Number(prev.totalSetelahDiskon || 0) + Number(item?.totalSetelahDiskon || 0),
+      totalModal: Number(prev.totalModal || 0) + Number(item?.totalModal || 0),
+      totalBiayaAdmin:
+        Number(prev.totalBiayaAdmin || 0) + Number(item?.totalBiayaAdmin || 0),
+      labaBersih: Number(prev.labaBersih || 0) + Number(item?.labaBersih || 0),
+    })
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (b.qtyTerjual !== a.qtyTerjual) return b.qtyTerjual - a.qtyTerjual
+    return b.omzet - a.omzet
+  })
+}
+
 function buildLaporanPayload({
   existingData,
   id,
@@ -348,6 +432,7 @@ function buildLaporanPayload({
   totalLabaKotorTambah,
   totalItemTambah,
   totalJenisBarangTambah,
+  kategoriBreakdownTambah,
   nowMs,
 }: {
   existingData: any
@@ -368,6 +453,7 @@ function buildLaporanPayload({
   totalLabaKotorTambah: number
   totalItemTambah: number
   totalJenisBarangTambah: number
+  kategoriBreakdownTambah: LaporanKategoriBreakdown[]
   nowMs: number
 }) {
   const jumlahTransaksiBaru = Number(existingData?.jumlahTransaksi || 0) + 1
@@ -387,6 +473,8 @@ function buildLaporanPayload({
     Number(existingData?.totalItemTerjual || 0) + Number(totalItemTambah || 0)
   const totalJenisBarangTerjualBaru =
     Number(existingData?.totalJenisBarangTerjual || 0) + Number(totalJenisBarangTambah || 0)
+  const totalKeuntunganBersihBaru =
+    Number(existingData?.totalKeuntunganBersih || 0) + Number(totalLabaKotorTambah || 0)
 
   return {
     id,
@@ -403,6 +491,7 @@ function buildLaporanPayload({
     totalBiayaAdmin: totalBiayaAdminBaru,
     totalModal: totalModalBaru,
     totalLabaKotor: totalLabaKotorBaru,
+    totalKeuntunganBersih: totalKeuntunganBersihBaru,
     totalItemTerjual: totalItemTerjualBaru,
     totalJenisBarangTerjual: totalJenisBarangTerjualBaru,
     rataRataBelanja: jumlahTransaksiBaru > 0 ? Math.round(omzetBaru / jumlahTransaksiBaru) : 0,
@@ -411,6 +500,10 @@ function buildLaporanPayload({
       metodeNama,
       omzetTambah,
       totalBiayaAdminTambah
+    ),
+    kategoriBreakdown: mergeKategoriBreakdown(
+      existingData?.kategoriBreakdown,
+      kategoriBreakdownTambah
     ),
     createdAt: existingData?.createdAt || serverTimestamp(),
     createdAtMs: Number(existingData?.createdAtMs || nowMs),
@@ -472,6 +565,7 @@ function cetakStruk(struk: StrukData) {
     <div style="margin-bottom: 6px;">
       <div class="item-nama">${item.nama}</div>
       <div class="item-detail">${item.kodeBarang} · ${item.satuan}</div>
+      ${item.pakaiKodeUnik && item.kodeUnik ? `<div class="item-detail">${item.jenisKodeUnik === "imei" ? "IMEI" : item.jenisKodeUnik === "serial" ? "Serial" : "Kode Unik"}: ${item.kodeUnik}</div>` : ""}
       ${item.diskonNama ? `<div class="diskon-badge">🏷 ${item.diskonNama}${item.diskonTipe === "persen" ? ` (${item.diskonNilai}%)` : ` (-${new Intl.NumberFormat("id-ID").format(item.diskonNilai)})`}</div>` : ""}
       <div class="row">
         <span class="label">${item.qty} × ${new Intl.NumberFormat("id-ID").format(item.hargaSetelahDiskon)}</span>
@@ -640,9 +734,20 @@ function ModalStruk({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-black text-slate-800">{item.nama}</p>
-                        <p className="text-[10px] font-semibold text-slate-400">
-                          {item.kodeBarang} · {item.satuan}
-                        </p>
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] font-semibold text-slate-400">
+                            {item.kodeBarang} · {item.satuan}
+                          </p>
+                          {item.pakaiKodeUnik && item.kodeUnik ? (
+                            <p className="text-[10px] font-semibold text-cyan-600">
+                              {item.jenisKodeUnik === "imei"
+                                ? "IMEI"
+                                : item.jenisKodeUnik === "serial"
+                                ? "Serial"
+                                : "Kode Unik"}: {item.kodeUnik}
+                            </p>
+                          ) : null}
+                        </div>
                         {item.diskonNama ? (
                           <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">
                             🏷 {item.diskonNama}
@@ -810,6 +915,9 @@ function RiwayatTransaksiPanel() {
                 subtotalAsli: Number(item?.subtotalAsli || 0),
                 subtotalFinal: Number(item?.subtotalFinal || 0),
                 totalDiskon: Number(item?.totalDiskon || 0),
+                pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
+                jenisKodeUnik: item?.jenisKodeUnik || "",
+                kodeUnik: item?.kodeUnik || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
                 diskonTipe: item?.diskonTipe || "",
@@ -1045,6 +1153,9 @@ export default function TransaksiPage() {
           hargaJual: Number(x?.hargaJual || 0),
           stok: Number(x?.stok || 0),
           stokMinimum: Number(x?.stokMinimum || 0),
+          pakaiKodeUnik: Boolean(x?.pakaiKodeUnik),
+          jenisKodeUnik: x?.jenisKodeUnik || "",
+          kodeUnik: x?.kodeUnik || "",
           createdAt: Number(x?.createdAt || Date.now()),
           updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
         }
@@ -1223,6 +1334,9 @@ if (metodeTunai) {
                   hargaModal: barang.hargaModal,
                   hargaAsli: barang.hargaJual,
                   hargaSetelahDiskon,
+                  pakaiKodeUnik: barang.pakaiKodeUnik,
+                  jenisKodeUnik: barang.jenisKodeUnik || "",
+                  kodeUnik: barang.kodeUnik || "",
                   diskonId: diskon?.id,
                   diskonNama: diskon?.namaPromo,
                   diskonTipe: diskon?.tipeDiskon,
@@ -1267,6 +1381,9 @@ if (metodeTunai) {
           hargaModal: barang.hargaModal,
           hargaAsli: barang.hargaJual,
           hargaSetelahDiskon,
+          pakaiKodeUnik: barang.pakaiKodeUnik,
+          jenisKodeUnik: barang.jenisKodeUnik || "",
+          kodeUnik: barang.kodeUnik || "",
           diskonId: diskon?.id,
           diskonNama: diskon?.namaPromo,
           diskonTipe: diskon?.tipeDiskon,
@@ -1680,6 +1797,7 @@ if (metodeTunai) {
 
       let savedTransaksiId = ""
       const itemPayload: any[] = []
+      const kategoriAccumulator = new Map<string, LaporanKategoriBreakdown>()
 
       await runTransaction(db, async (transaction) => {
         const transaksiRef = doc(collection(db, "transaksi"))
@@ -1737,6 +1855,9 @@ if (metodeTunai) {
             subtotalAsli: subtotalAsliItem,
             subtotalFinal: subtotalFinalItem,
             totalDiskon: totalDiskonItem,
+            pakaiKodeUnik: Boolean(item.pakaiKodeUnik),
+            jenisKodeUnik: item.jenisKodeUnik || "",
+            kodeUnik: item.kodeUnik || "",
             diskonId: item.diskonId || "",
             diskonNama: item.diskonNama || "",
             diskonTipe: item.diskonTipe || "",
@@ -1744,6 +1865,29 @@ if (metodeTunai) {
           }
 
           itemPayload.push(itemRow)
+
+          const kategoriNama = item.kategoriNama?.trim() || "Tanpa Kategori"
+          const subtotalItem = subtotalAsliItem
+          const totalSetelahDiskonItem = subtotalFinalItem
+          const totalModalItem = Number(item.hargaModal || 0) * Number(item.qty || 0)
+          const proporsiOmzet = grandTotalSnapshot > 0 ? subtotalFinalItem / grandTotalSnapshot : 0
+          const adminKategori = Math.round(biayaAdminNominalSnapshot * proporsiOmzet)
+          const labaBersihKategori = totalSetelahDiskonItem - totalModalItem - adminKategori
+          const prevKategori = kategoriAccumulator.get(kategoriNama)
+
+          kategoriAccumulator.set(kategoriNama, {
+            nama: kategoriNama,
+            jumlahTransaksi: 1,
+            qtyTerjual: Number(prevKategori?.qtyTerjual || 0) + Number(item.qty || 0),
+            omzet: Number(prevKategori?.omzet || 0) + totalSetelahDiskonItem + adminKategori,
+            subtotal: Number(prevKategori?.subtotal || 0) + subtotalItem,
+            totalDiskon: Number(prevKategori?.totalDiskon || 0) + totalDiskonItem,
+            totalSetelahDiskon:
+              Number(prevKategori?.totalSetelahDiskon || 0) + totalSetelahDiskonItem,
+            totalModal: Number(prevKategori?.totalModal || 0) + totalModalItem,
+            totalBiayaAdmin: Number(prevKategori?.totalBiayaAdmin || 0) + adminKategori,
+            labaBersih: Number(prevKategori?.labaBersih || 0) + labaBersihKategori,
+          })
 
           const mutasiRef = doc(collection(db, "mutasi_stok"))
           transaction.set(mutasiRef, {
@@ -1799,6 +1943,13 @@ if (metodeTunai) {
           updatedAtMs: nowMs,
         })
 
+        const kategoriBreakdownTambah = Array.from(kategoriAccumulator.values()).map(
+          (item) => ({
+            ...item,
+            jumlahTransaksi: 1,
+          })
+        )
+
         const sharedLaporanArgs = {
           tokoId: selectedToko.id,
           tokoNama: selectedToko.nama,
@@ -1812,6 +1963,7 @@ if (metodeTunai) {
           totalLabaKotorTambah: estimasiLabaKotorSnapshot,
           totalItemTambah: totalItemSnapshot,
           totalJenisBarangTambah: totalJenisBarangSnapshot,
+          kategoriBreakdownTambah,
           nowMs,
         }
 
@@ -1879,6 +2031,9 @@ if (metodeTunai) {
                 subtotalAsli: Number(item?.subtotalAsli || 0),
                 subtotalFinal: Number(item?.subtotalFinal || 0),
                 totalDiskon: Number(item?.totalDiskon || 0),
+                pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
+                jenisKodeUnik: item?.jenisKodeUnik || "",
+                kodeUnik: item?.kodeUnik || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
                 diskonTipe: item?.diskonTipe || "",
