@@ -466,56 +466,60 @@ export default function BuatAkunPelangganPage() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-violet-500 bg-white p-4 shadow-sm sm:p-5"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 shadow-lg shadow-violet-200/50 sm:h-14 sm:w-14">
-              <UserPlus size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
-            </div>
-            <div>
-              <h1 className="text-xl font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Akun Pelanggan
-              </h1>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Buat atau sinkronkan akun login pelanggan
-              </p>
-            </div>
-          </div>
+       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+  <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 shadow-lg shadow-violet-200/50 sm:h-14 sm:w-14">
+    <UserPlus size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+  </div>
 
-          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
-            {filtered.length > 0 && (
-              <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-violet-500 px-2.5 shadow-sm shadow-violet-200/50">
-                <span className="text-xs font-black text-white">
-                  {limit === 0 ? filtered.length : paged.length}
-                </span>
-              </div>
-            )}
+  <div className="min-w-0 self-center sm:self-auto">
+    <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+      Akun Pelanggan
+    </h1>
+    <p className="mt-1 hidden max-w-[180px] text-[10px] font-bold uppercase leading-[1.35] tracking-[0.22em] text-slate-400 sm:block sm:max-w-none">
+      Buat atau sinkronkan akun login pelanggan
+    </p>
+  </div>
+</div>
 
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleGenerateAll}
-              className="flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-400 to-purple-500 px-3 text-[10px] font-black uppercase tracking-wide text-white shadow-sm shadow-violet-200/50 transition-all hover:shadow-md"
-            >
-              <Zap size={13} strokeWidth={3} />
-              <span className="hidden sm:inline">Sinkron Semua</span>
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={fetchPelanggan}
-              disabled={loading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
-            >
-              <motion.span
-                animate={loading ? { rotate: 360 } : {}}
-                transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-              >
-                <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
-              </motion.span>
-            </motion.button>
-          </div>
+  <div className="flex items-center justify-between gap-2 sm:flex-shrink-0 sm:flex-wrap sm:justify-end">
+    <div className="flex items-center gap-2">
+      {filtered.length > 0 && (
+        <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-violet-500 px-2.5 shadow-sm shadow-violet-200/50">
+          <span className="text-xs font-black text-white">
+            {limit === 0 ? filtered.length : paged.length}
+          </span>
         </div>
+      )}
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={handleGenerateAll}
+        className="flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-400 to-purple-500 px-3 text-[10px] font-black uppercase tracking-wide text-white shadow-sm shadow-violet-200/50 transition-all hover:shadow-md"
+      >
+        <Zap size={13} strokeWidth={3} />
+        <span className="sm:hidden">Sinkron</span>
+        <span className="hidden sm:inline">Sinkron Semua</span>
+      </motion.button>
+    </div>
+
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={fetchPelanggan}
+      disabled={loading}
+      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+    >
+      <motion.span
+        animate={loading ? { rotate: 360 } : {}}
+        transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+      >
+        <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
+      </motion.span>
+    </motion.button>
+  </div>
+</div>
 
         <div className="pointer-events-none absolute right-0 top-0 opacity-[0.03]">
           <Cpu size={140} strokeWidth={1} />
