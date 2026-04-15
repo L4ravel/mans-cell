@@ -591,7 +591,7 @@ export default function TambahKaryawanPage() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-xl border-l-4 border-l-emerald-500 border-t border-r border-b border-slate-200 bg-white p-4 sm:p-5 shadow-sm"
       >
-       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
   <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
     <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
       <Users size={22} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
@@ -618,20 +618,62 @@ export default function TambahKaryawanPage() {
       )}
     </div>
 
-    <motion.button
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      onClick={fetchData}
-      disabled={loading}
-      className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
-    >
-      <motion.span
-        animate={loading ? { rotate: 360 } : {}}
-        transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={handleDownloadTemplate}
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all hover:bg-slate-50 sm:w-auto sm:px-3"
+        title="Download Template Excel"
       >
-        <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
-      </motion.span>
-    </motion.button>
+        <Download size={13} strokeWidth={2.5} />
+        <span className="hidden sm:inline sm:ml-1.5 text-[10px] font-black uppercase tracking-wide">
+          Template
+        </span>
+      </motion.button>
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setShowImportModal(true)}
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm transition-all hover:bg-cyan-100 sm:w-auto sm:px-3"
+        title="Import dari Excel"
+      >
+        <Upload size={13} strokeWidth={2.5} />
+        <span className="hidden sm:inline sm:ml-1.5 text-[10px] font-black uppercase tracking-wide">
+          Import
+        </span>
+      </motion.button>
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={openAdd}
+        className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 text-white shadow-sm shadow-emerald-200/50 transition-all hover:shadow-md sm:w-auto sm:px-3"
+        title="Tambah"
+      >
+        <Plus size={13} strokeWidth={3} />
+        <span className="hidden sm:inline sm:ml-1.5 text-[10px] font-black uppercase tracking-wide">
+          Tambah
+        </span>
+      </motion.button>
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={fetchData}
+        disabled={loading}
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+        title="Refresh"
+      >
+        <motion.span
+          animate={loading ? { rotate: 360 } : {}}
+          transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+        >
+          <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
+        </motion.span>
+      </motion.button>
+    </div>
   </div>
 </div>
 
