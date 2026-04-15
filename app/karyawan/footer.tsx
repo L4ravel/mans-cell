@@ -15,7 +15,7 @@ import { doc, getDoc } from "firebase/firestore"
 type DaySchedule = {
   enabled: boolean
   jamMasuk: string
-  jamPulang: string
+  jamPulang: string 
 }
 
 const DEFAULT_DAY_SCHEDULE: DaySchedule = {
