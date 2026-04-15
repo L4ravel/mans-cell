@@ -776,7 +776,7 @@ export default function KaryawanPage() {
 
                     <div>
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                        Jam Pulang
+                        Jam Pulang 
                       </p>
                       <p className="text-sm font-bold text-slate-800">
                         {row.jamPulang || <span className="text-slate-300 font-normal">—</span>}
@@ -906,7 +906,7 @@ function RekapItem({
         </div>
       </div>
       <div className="absolute -right-6 -bottom-6 opacity-100">
-        <Icon size={80} className={colors.bgWatermark} strokeWidth={1.5} />
+        <Icon size={80} className={colors.bgWatermark} strokeWidth={1.5} /> 
       </div>
     </motion.div>
   )
