@@ -1,7 +1,7 @@
 /* 
-  Layout admin dengan auth guard yang aman dari hydration mismatch.
-  Mobile: sidebar slide dari kiri, TIDAK full layar (lebar 288px),
-  tanpa overlay gelap — link tetap bisa diklik.
+  Layout admin dengan ukuran desktop lebih konsisten antar monitor.
+  Mobile tetap seperti sebelumnya, perubahan difokuskan pada wrapper desktop
+  agar tidak melebar berlebihan di layar besar.
 */
 
 "use client"
@@ -123,6 +123,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const getGroupsFromPath = (currentPath: string) => {
     const nextOpenGroup: string[] = []
+
     if (
       currentPath.startsWith("/admin/tambah-toko") ||
       currentPath.startsWith("/admin/tambah-karyawan") ||
@@ -134,8 +135,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/transfer-barang") ||
       currentPath.startsWith("/admin/tambah-pelanggan") ||
       currentPath.startsWith("/admin/akun-pelanggan") ||
-      currentPath.startsWith("/admin/buat-akun")
-    ) nextOpenGroup.push("Master Data")
+      currentPath.startsWith("/admin/buat-akun") ||
+      currentPath.startsWith("/admin/pengeluaran") ||
+      currentPath.startsWith("/admin/laporan-pengeluaran") ||
+      currentPath.startsWith("/admin/laporan-keuntungan-bersih")
+    ) {
+      nextOpenGroup.push("Master Data")
+    }
 
     if (
       currentPath.startsWith("/admin/transaksi") ||
@@ -145,7 +151,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/mutasi-stok") ||
       currentPath.startsWith("/admin/laporan-harian") ||
       currentPath.startsWith("/admin/laporan-bulanan")
-    ) nextOpenGroup.push("Transaksi")
+    ) {
+      nextOpenGroup.push("Transaksi")
+    }
 
     if (
       currentPath.startsWith("/admin/dashboard-absensi") ||
@@ -153,12 +161,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tidak-wajib-absensi") ||
       currentPath.startsWith("/admin/laporan-absensi-bulanan") ||
       currentPath.startsWith("/admin/laporan-absensi-karyawan")
-    ) nextOpenGroup.push("Absensi Karyawan")
+    ) {
+      nextOpenGroup.push("Absensi Karyawan")
+    }
 
     return nextOpenGroup
   }
 
-  useEffect(() => { setHasHydrated(true) }, [])
+  useEffect(() => {
+    setHasHydrated(true)
+  }, [])
 
   useEffect(() => {
     if (!hasHydrated) return
@@ -171,29 +183,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const unsub = auth.onAuthStateChanged(async (user) => {
       if (!isMounted) return
+
       if (!user) {
         setIsAuthorized(false)
         setAuthLoading(false)
         router.replace("/login")
         return
       }
+
       try {
         const snap = await getDoc(doc(db, "users", user.uid))
+
         if (!isMounted) return
+
         if (!snap.exists()) {
           setIsAuthorized(false)
           setAuthLoading(false)
           router.replace("/unauthorized")
           return
         }
+
         const data = snap.data()
         const role: string = data?.role || ""
+
         if (role !== "admin") {
           setIsAuthorized(false)
           setAuthLoading(false)
           router.replace("/unauthorized")
           return
         }
+
         setIsAuthorized(true)
       } catch (error) {
         console.error("Gagal validasi user admin:", error)
@@ -204,11 +223,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
     })
 
-    return () => { isMounted = false; unsub() }
+    return () => {
+      isMounted = false
+      unsub()
+    }
   }, [router, hasHydrated])
 
   useEffect(() => {
     if (!hasHydrated) return
+
     const groupsFromPath = getGroupsFromPath(pathname)
     setOpenGroup((prev) => {
       const merged = new Set([...prev, ...groupsFromPath])
@@ -218,11 +241,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!hasHydrated) return
+
     const handleResize = () => {
       if (window.innerWidth >= 1024) setSidebarOpen(false)
     }
+
     handleResize()
     window.addEventListener("resize", handleResize)
+
     return () => window.removeEventListener("resize", handleResize)
   }, [hasHydrated])
 
@@ -235,13 +261,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         pathname === "/admin/tambah-supplier"
       )
     }
+
     if (href === "/admin/dashboard-absensi") return pathname === "/admin/dashboard-absensi"
     if (href === "/admin/transaksi") return pathname === "/admin/transaksi"
+
     return pathname === href
   }
 
   const handleLogout = async () => {
     if (loggingOut) return
+
     try {
       setLoggingOut(true)
       await signOut(auth)
@@ -279,7 +308,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (!isAuthorized) return null
 
-  // ── Isi nav (dipakai di mobile dan desktop) ────────────────────────────────
   const NavMenu = () => (
     <>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
@@ -344,6 +372,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   >
                     <GroupIcon size={15} strokeWidth={2.5} />
                   </div>
+
                   {!sidebarCollapsed && (
                     <span className="truncate text-sm font-bold">{group.label}</span>
                   )}
@@ -397,7 +426,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 strokeWidth={active ? 2.5 : 2}
                                 className="flex-shrink-0"
                               />
-                              <span className={active ? "truncate font-bold" : "truncate font-semibold"}>
+                              <span
+                                className={active ? "truncate font-bold" : "truncate font-semibold"}
+                              >
                                 {item.label}
                               </span>
                             </Link>
@@ -413,7 +444,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         })}
       </nav>
 
-      {/* Logout */}
       <div className="border-t border-slate-200 bg-slate-50/50 p-3">
         <button
           type="button"
@@ -433,20 +463,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div className="relative flex min-h-screen gap-3 overflow-x-hidden bg-slate-100 p-3 sm:gap-4 sm:p-4">
-      {/* Decorative background */}
+    <div className="relative min-h-screen overflow-x-hidden bg-slate-100 p-3 sm:p-4 lg:p-5">
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="absolute left-0 top-1/4 h-72 w-72 rounded-full bg-cyan-200/20 blur-[90px]" />
         <div className="absolute bottom-1/3 right-0 h-72 w-72 rounded-full bg-blue-200/20 blur-[90px]" />
         <div className="absolute left-1/2 top-0 h-56 w-56 -translate-x-1/2 rounded-full bg-indigo-200/15 blur-[80px]" />
       </div>
 
-      {/* ── MOBILE: Sidebar slide dari kiri, lebar 288px, TIDAK full layar ── */}
-      {/*
-        Tidak ada overlay/backdrop sama sekali.
-        Sidebar hanya menutupi sebagian kiri layar, sisi kanan tetap bisa diklik.
-        Tombol burger di header berfungsi sebagai toggle buka/tutup.
-      */}
+      {/* MOBILE: tetap seperti sebelumnya */}
       <aside
         className={`
           fixed top-3 bottom-3 left-3 z-[60] flex w-72 flex-col
@@ -456,7 +480,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)]"}
         `}
       >
-        {/* Header mobile sidebar */}
         <div className="relative flex h-16 items-center gap-3 overflow-hidden rounded-t-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4">
           <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
             <Cpu size={64} strokeWidth={1} className="text-cyan-600" />
@@ -478,7 +501,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
 
-          {/* Tombol X di dalam sidebar */}
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
@@ -492,84 +514,88 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <NavMenu />
       </aside>
 
-      {/* ── DESKTOP: Sidebar statis ── */}
-      <aside
-        className={`
-          relative z-10 hidden flex-col rounded-3xl border border-slate-200 bg-white shadow-xl
-          transition-all duration-300 ease-in-out lg:flex
-          ${sidebarCollapsed ? "w-20" : "w-72"}
-        `}
-      >
-        {/* Header desktop */}
-        <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
-          <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
-            <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
-          </div>
-
-          <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <Store className="text-blue-600" size={20} strokeWidth={2.5} />
-          </div>
-
-          {!sidebarCollapsed && (
-            <div className="relative min-w-0">
-              <div className="text-base font-black leading-none tracking-tight text-slate-800">
-                Mans-Cell{" "}
-                <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
-                  Admin
-                </span>
-              </div>
-              <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Panel Management
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Toggle collapse */}
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed((prev) => !prev)}
-          className="absolute -right-3 top-[88px] z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition-colors hover:text-slate-700 lg:flex"
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+      {/* DESKTOP: dibungkus max width agar ukuran tetap stabil di monitor besar */}
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[2560px] gap-4 xl:gap-5">
+        <aside
+          className={`
+            relative hidden flex-col rounded-3xl border border-slate-200 bg-white shadow-xl
+            transition-all duration-300 ease-in-out lg:flex
+            ${sidebarCollapsed ? "w-20" : "w-72"}
+          `}
         >
-          {sidebarCollapsed ? (
-            <ChevronRight size={13} strokeWidth={2.5} />
-          ) : (
-            <ChevronLeft size={13} strokeWidth={2.5} />
-          )}
-        </button>
+          <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
+            <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
+              <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
+            </div>
 
-        <NavMenu />
-      </aside>
+            <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <Store className="text-blue-600" size={20} strokeWidth={2.5} />
+            </div>
 
-      {/* ── Main content ── */}
-      <div className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:border-l-0">
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4 lg:h-20 lg:px-8">
-          {/* Tombol burger — mobile only, toggle buka/tutup */}
+            {!sidebarCollapsed && (
+              <div className="relative min-w-0">
+                <div className="text-base font-black leading-none tracking-tight text-slate-800">
+                  Mans-Cell{" "}
+                  <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
+                    Admin
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                  Panel Management
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden"
-            aria-label={sidebarOpen ? "Tutup sidebar" : "Buka sidebar"}
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            className="absolute -right-3 top-[88px] z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition-colors hover:text-slate-700 lg:flex"
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarOpen ? <X size={17} strokeWidth={2} /> : <Menu size={17} strokeWidth={2} />}
+            {sidebarCollapsed ? (
+              <ChevronRight size={13} strokeWidth={2.5} />
+            ) : (
+              <ChevronLeft size={13} strokeWidth={2.5} />
+            )}
           </button>
 
-          <div className="hidden lg:block" />
+          <NavMenu />
+        </aside>
 
-          <div className="ml-auto flex items-center gap-3">
-            <div className="hidden items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:flex">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
-                <User size={14} strokeWidth={2.5} />
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:border-l-0">
+          <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4 lg:h-20 lg:px-8">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden"
+              aria-label={sidebarOpen ? "Tutup sidebar" : "Buka sidebar"}
+            >
+              {sidebarOpen ? (
+                <X size={17} strokeWidth={2} />
+              ) : (
+                <Menu size={17} strokeWidth={2} />
+              )}
+            </button>
+
+            <div className="hidden lg:block" />
+
+            <div className="ml-auto flex items-center gap-3">
+              <div className="hidden items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:flex">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+                  <User size={14} strokeWidth={2.5} />
+                </div>
+                <span className="text-sm font-bold">Admin</span>
               </div>
-              <span className="text-sm font-bold">Admin</span>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <main className="flex-1 overflow-auto bg-slate-50/30 p-4 sm:p-6 lg:p-8">
-          {children}
-        </main>
+          <main className="flex-1 overflow-auto bg-slate-50/30 p-4 sm:p-6 lg:p-8">
+            <div className="w-full">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   )
