@@ -84,7 +84,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
           { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
           { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
-          { href: "/admin/laporan-keuntungan-bersih", icon: BarChart3, label: "Keuntungan Bersih" },
+          { href: "/admin/laporan-keuntungan-bulanan", icon: BarChart3, label: "Laporan Keuntungan Bulanan" },
+          { href: "/admin/laporan-keuntungan-harian", icon: BarChart3, label: "Laporan Keuntungan Harian" },
+          { href: "/admin/laporan-setelah-modal-tetap", icon: BarChart3, label: "Laporan Setelah Modal Tetap" },
           { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
           { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
         ],
@@ -142,7 +144,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/buat-akun") ||
       currentPath.startsWith("/admin/pengeluaran") ||
       currentPath.startsWith("/admin/laporan-pengeluaran") ||
-      currentPath.startsWith("/admin/laporan-keuntungan-bersih")
+      currentPath.startsWith("/admin/laporan-keuntungan-bulanan") ||
+      currentPath.startsWith("/admin/laporan-setelah-modal-tetap") ||
+      currentPath.startsWith("/admin/laporan-keuntungan-harian")
+      
     ) {
       nextOpenGroup.push("Master Data")
     }
