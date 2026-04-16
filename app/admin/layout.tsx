@@ -78,6 +78,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         items: [
           { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
           { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
+          { href: "/admin/tambah-saldo", icon: Wallet, label: "Tambah Saldo" },
           { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
           { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
@@ -133,6 +134,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (
       currentPath.startsWith("/admin/tambah-toko") ||
       currentPath.startsWith("/admin/tambah-karyawan") ||
+      currentPath.startsWith("/admin/tambah-saldo") ||
       currentPath.startsWith("/admin/tambah-barang") ||
       currentPath.startsWith("/admin/tambah-kategori") ||
       currentPath.startsWith("/admin/tambah-satuan") ||
@@ -276,6 +278,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         pathname === "/admin/tambah-kategori" ||
         pathname === "/admin/tambah-satuan" ||
         pathname === "/admin/tambah-supplier"
+      )
+    }
+
+    if (href === "/admin/tambah-saldo") {
+      return (
+        pathname === "/admin/tambah-saldo" ||
+        pathname === "/admin/tambah-provider"        
       )
     }
 

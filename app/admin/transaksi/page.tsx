@@ -55,995 +55,52 @@ import {
   X,
   Clock,
   History,
+  Smartphone,
+  Wifi,
+  Zap,
+  Ticket,
+  Gamepad2,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
+import {
+  type Toko,
+  type Barang,
+  type Diskon,
+  type MetodePembayaran,
+  type CartItem,
+  type StrukData,
+  type StrukItem,
+  type LaporanKategoriBreakdown,
+  type MasterSaldoDigital,
+  type DigitalSaldoUsage,
+  type AddToCartMode,
+  formatRupiah,
+  formatRibuanInput,
+  formatPercent,
+  formatTanggalStruk,
+  normalizeBarcode,
+  hitungHargaSetelahDiskon,
+  getBestDiskonForBarang,
+  getTanggalParts,
+  buildLaporanPayload,
+  formatJenisBarangLabel,
+  formatSubJenisDigitalLabel,
+  getDigitalIcon,
+  digitalButuhTujuan,
+  getTujuanLabel,
+  buildDigitalSaldoUsage,
+  validateDigitalSaldoUsage,
+  buildDigitalSaldoRingkasan,
+  InfoCard,
+  FieldLabel,
+  ModalStruk,
+  RiwayatTransaksiPanel,
+} from "@/lib/transaksi/route"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Toko = {
-  id: string
-  nama: string
-  kode?: string
-  pemilik?: string
-  aktif?: boolean
-}
-
-type Barang = {
-  id: string
-  kodeBarang: string
-  nama: string
-  kategoriId: string
-  kategoriNama: string
-  tokoId: string
-  tokoNama: string
-  merk: string
-  supplier: string
-  satuan: string
-  hargaModal: number
-  hargaJual: number
-  stok: number
-  stokMinimum: number
-  pakaiKodeUnik?: boolean
-  jenisKodeUnik?: "imei" | "serial" | "custom" | ""
-  kodeUnik?: string
-  createdAt: number
-  updatedAt?: number
-}
-
-type DiskonBarangRingkas = {
-  id: string
-  nama: string
-  kodeBarang: string
-  hargaJual: number
-}
-
-type Diskon = {
-  id: string
-  namaPromo: string
-  tokoId: string
-  tokoNama: string
-  tipeDiskon: "persen" | "nominal"
-  nilaiDiskon: number
-  barangIds: string[]
-  barangRingkas: DiskonBarangRingkas[]
-  isActive: boolean
-  createdAt: number
-  updatedAt?: number
-}
-
-type MetodePembayaran = {
-  id: string
-  nama: string
-  tipe: "Tunai" | "Non-Tunai"
-  provider?: string
-  biayaAdmin?: number
-  nomorRekening?: string
-  namaRekening?: string
-  aktif: boolean
-  createdAt: number
-  createdBy: string
-  updatedAt?: number
-  updatedBy?: string
-}
-
-type CartItem = {
-  barangId: string
-  kodeBarang: string
-  nama: string
-  kategoriNama: string
-  merk: string
-  satuan: string
-  stok: number
-  qty: number
-  hargaModal: number
-  hargaAsli: number
-  hargaSetelahDiskon: number
-  pakaiKodeUnik?: boolean
-  jenisKodeUnik?: "imei" | "serial" | "custom" | ""
-  kodeUnik?: string
-  diskonId?: string
-  diskonNama?: string
-  diskonTipe?: "persen" | "nominal"
-  diskonNilai?: number
-}
-
-type StrukItem = {
-  barangId: string
-  kodeBarang: string
-  nama: string
-  kategoriNama: string
-  merk: string
-  satuan: string
-  qty: number
-  hargaModal: number
-  hargaAsli: number
-  hargaSetelahDiskon: number
-  subtotalAsli: number
-  subtotalFinal: number
-  totalDiskon: number
-  pakaiKodeUnik?: boolean
-  jenisKodeUnik?: "imei" | "serial" | "custom" | ""
-  kodeUnik?: string
-  diskonId: string
-  diskonNama: string
-  diskonTipe: string
-  diskonNilai: number
-}
-
-type StrukData = {
-  id: string
-  nomorTransaksi: string
-  tokoId: string
-  tokoNama: string
-  metodePembayaranNama: string
-  metodePembayaranTipe: string
-  metodePembayaranProvider: string
-  biayaAdminPersen: number
-  biayaAdminNominal: number
-  subtotal: number
-  totalDiskon: number
-  totalSetelahDiskon: number
-  grandTotal: number
-  totalModal: number
-  estimasiLabaKotor: number
-  uangBayar: number
-  kembalian: number
-  totalItem: number
-  totalJenisBarang: number
-  status: string
-  catatan: string
-  items: StrukItem[]
-  createdAtMs: number
-}
-
-type LaporanMetodeBreakdown = {
-  nama: string
-  jumlahTransaksi: number
-  omzet: number
-  admin: number
-}
-
-type LaporanKategoriBreakdown = {
-  nama: string
-  jumlahTransaksi: number
-  qtyTerjual: number
-  omzet: number
-  subtotal: number
-  totalDiskon: number
-  totalSetelahDiskon: number
-  totalModal: number
-  totalBiayaAdmin: number
-  labaBersih: number
-}
-
-type AddToCartMode = "manual" | "scan"
-
-declare global {
-  interface Window {
-    BarcodeDetector?: {
-      new (options?: { formats?: string[] }): {
-        detect: (
-          source: HTMLVideoElement | HTMLCanvasElement | ImageBitmapSource
-        ) => Promise<Array<{ rawValue?: string; format?: string }>>
-      }
-      getSupportedFormats?: () => Promise<string[]>
-    }
-    webkitAudioContext?: typeof AudioContext
-  }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatRupiah(value: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0))
-}
-
-function formatRibuanInput(value: string) {
-  if (!value) return ""
-  const angka = Number(value.replace(/\D/g, "") || 0)
-  if (!angka) return ""
-  return new Intl.NumberFormat("id-ID").format(angka)
-}
-
-function formatPercent(value: number) {
-  return `${Number(value || 0)}%`
-}
-
-function formatTanggalStruk(ms: number) {
-  const date = new Date(ms)
-  return date.toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  })
-}
-
-function normalizeBarcode(value: string) {
-  return String(value || "").trim().replace(/\s+/g, "").toUpperCase()
-}
-
-function hitungHargaSetelahDiskon(
-  hargaJual: number,
-  tipeDiskon?: "persen" | "nominal",
-  nilaiDiskon?: number
-) {
-  const harga = Number(hargaJual || 0)
-  const nilai = Number(nilaiDiskon || 0)
-
-  if (!tipeDiskon || nilai <= 0) return harga
-
-  if (tipeDiskon === "persen") {
-    const hasil = harga - harga * (nilai / 100)
-    return Math.max(0, Math.round(hasil))
-  }
-
-  return Math.max(0, harga - nilai)
-}
-
-function getBestDiskonForBarang(barangId: string, diskonList: Diskon[]) {
-  const cocok = diskonList.filter(
-    (d) => d.isActive && Array.isArray(d.barangIds) && d.barangIds.includes(barangId)
-  )
-
-  if (!cocok.length) return null
-
-  return cocok.sort((a, b) => Number(b.nilaiDiskon || 0) - Number(a.nilaiDiskon || 0))[0]
-}
-
-function getTanggalParts(nowMs: number) {
-  const date = new Date(nowMs)
-  const tahun = date.getFullYear()
-  const bulan = date.getMonth() + 1
-  const hari = date.getDate()
-
-  const mm = `${bulan}`.padStart(2, "0")
-  const dd = `${hari}`.padStart(2, "0")
-
-  return {
-    tahun,
-    bulan,
-    hari,
-    tanggalKey: `${tahun}-${mm}-${dd}`,
-    bulanKey: `${tahun}-${mm}`,
-  }
-}
-
-function mergeMetodeBreakdown(
-  existing: any,
-  metodeNama: string,
-  omzetTambah: number,
-  adminTambah: number
-): LaporanMetodeBreakdown[] {
-  const list: LaporanMetodeBreakdown[] = Array.isArray(existing)
-    ? existing.map((item: any) => ({
-        nama: item?.nama || "Tanpa Nama",
-        jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-        omzet: Number(item?.omzet || 0),
-        admin: Number(item?.admin || 0),
-      }))
-    : []
-
-  const index = list.findIndex((item) => item.nama === metodeNama)
-
-  if (index >= 0) {
-    list[index] = {
-      ...list[index],
-      jumlahTransaksi: Number(list[index].jumlahTransaksi || 0) + 1,
-      omzet: Number(list[index].omzet || 0) + Number(omzetTambah || 0),
-      admin: Number(list[index].admin || 0) + Number(adminTambah || 0),
-    }
-  } else {
-    list.push({
-      nama: metodeNama || "Tanpa Nama",
-      jumlahTransaksi: 1,
-      omzet: Number(omzetTambah || 0),
-      admin: Number(adminTambah || 0),
-    })
-  }
-
-  return list.sort((a, b) => b.omzet - a.omzet)
-}
-
-function mergeKategoriBreakdown(
-  existing: any,
-  incoming: LaporanKategoriBreakdown[]
-): LaporanKategoriBreakdown[] {
-  const map = new Map<string, LaporanKategoriBreakdown>()
-
-  if (Array.isArray(existing)) {
-    for (const item of existing) {
-      const nama = item?.nama || "Tanpa Kategori"
-      map.set(nama, {
-        nama,
-        jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-        qtyTerjual: Number(item?.qtyTerjual || 0),
-        omzet: Number(item?.omzet || 0),
-        subtotal: Number(item?.subtotal || 0),
-        totalDiskon: Number(item?.totalDiskon || 0),
-        totalSetelahDiskon: Number(item?.totalSetelahDiskon || 0),
-        totalModal: Number(item?.totalModal || 0),
-        totalBiayaAdmin: Number(item?.totalBiayaAdmin || 0),
-        labaBersih: Number(item?.labaBersih || 0),
-      })
-    }
-  }
-
-  for (const item of incoming) {
-    const nama = item?.nama || "Tanpa Kategori"
-    const prev =
-      map.get(nama) || {
-        nama,
-        jumlahTransaksi: 0,
-        qtyTerjual: 0,
-        omzet: 0,
-        subtotal: 0,
-        totalDiskon: 0,
-        totalSetelahDiskon: 0,
-        totalModal: 0,
-        totalBiayaAdmin: 0,
-        labaBersih: 0,
-      }
-
-    map.set(nama, {
-      nama,
-      jumlahTransaksi: Number(prev.jumlahTransaksi || 0) + Number(item?.jumlahTransaksi || 0),
-      qtyTerjual: Number(prev.qtyTerjual || 0) + Number(item?.qtyTerjual || 0),
-      omzet: Number(prev.omzet || 0) + Number(item?.omzet || 0),
-      subtotal: Number(prev.subtotal || 0) + Number(item?.subtotal || 0),
-      totalDiskon: Number(prev.totalDiskon || 0) + Number(item?.totalDiskon || 0),
-      totalSetelahDiskon:
-        Number(prev.totalSetelahDiskon || 0) + Number(item?.totalSetelahDiskon || 0),
-      totalModal: Number(prev.totalModal || 0) + Number(item?.totalModal || 0),
-      totalBiayaAdmin:
-        Number(prev.totalBiayaAdmin || 0) + Number(item?.totalBiayaAdmin || 0),
-      labaBersih: Number(prev.labaBersih || 0) + Number(item?.labaBersih || 0),
-    })
-  }
-
-  return Array.from(map.values()).sort((a, b) => {
-    if (b.qtyTerjual !== a.qtyTerjual) return b.qtyTerjual - a.qtyTerjual
-    return b.omzet - a.omzet
-  })
-}
-
-function buildLaporanPayload({
-  existingData,
-  id,
-  periodeKey,
-  tahun,
-  bulan,
-  hari,
-  tokoId,
-  tokoNama,
-  metodeNama,
-  omzetTambah,
-  subtotalTambah,
-  totalDiskonTambah,
-  totalSetelahDiskonTambah,
-  totalBiayaAdminTambah,
-  totalModalTambah,
-  totalLabaKotorTambah,
-  totalItemTambah,
-  totalJenisBarangTambah,
-  kategoriBreakdownTambah,
-  nowMs,
-}: {
-  existingData: any
-  id: string
-  periodeKey: string
-  tahun: number
-  bulan: number
-  hari?: number
-  tokoId: string
-  tokoNama: string
-  metodeNama: string
-  omzetTambah: number
-  subtotalTambah: number
-  totalDiskonTambah: number
-  totalSetelahDiskonTambah: number
-  totalBiayaAdminTambah: number
-  totalModalTambah: number
-  totalLabaKotorTambah: number
-  totalItemTambah: number
-  totalJenisBarangTambah: number
-  kategoriBreakdownTambah: LaporanKategoriBreakdown[]
-  nowMs: number
-}) {
-  const jumlahTransaksiBaru = Number(existingData?.jumlahTransaksi || 0) + 1
-  const omzetBaru = Number(existingData?.omzet || 0) + Number(omzetTambah || 0)
-  const subtotalBaru = Number(existingData?.subtotal || 0) + Number(subtotalTambah || 0)
-  const totalDiskonBaru =
-    Number(existingData?.totalDiskon || 0) + Number(totalDiskonTambah || 0)
-  const totalSetelahDiskonBaru =
-    Number(existingData?.totalSetelahDiskon || 0) + Number(totalSetelahDiskonTambah || 0)
-  const totalBiayaAdminBaru =
-    Number(existingData?.totalBiayaAdmin || 0) + Number(totalBiayaAdminTambah || 0)
-  const totalModalBaru =
-    Number(existingData?.totalModal || 0) + Number(totalModalTambah || 0)
-  const totalLabaKotorBaru =
-    Number(existingData?.totalLabaKotor || 0) + Number(totalLabaKotorTambah || 0)
-  const totalItemTerjualBaru =
-    Number(existingData?.totalItemTerjual || 0) + Number(totalItemTambah || 0)
-  const totalJenisBarangTerjualBaru =
-    Number(existingData?.totalJenisBarangTerjual || 0) + Number(totalJenisBarangTambah || 0)
-  const totalKeuntunganBersihBaru =
-    Number(existingData?.totalKeuntunganBersih || 0) + Number(totalLabaKotorTambah || 0)
-
-  return {
-    id,
-    ...(hari
-      ? { tanggalKey: periodeKey, tahun, bulan, hari }
-      : { bulanKey: periodeKey, tahun, bulan }),
-    tokoId,
-    tokoNama,
-    jumlahTransaksi: jumlahTransaksiBaru,
-    omzet: omzetBaru,
-    subtotal: subtotalBaru,
-    totalDiskon: totalDiskonBaru,
-    totalSetelahDiskon: totalSetelahDiskonBaru,
-    totalBiayaAdmin: totalBiayaAdminBaru,
-    totalModal: totalModalBaru,
-    totalLabaKotor: totalLabaKotorBaru,
-    totalKeuntunganBersih: totalKeuntunganBersihBaru,
-    totalItemTerjual: totalItemTerjualBaru,
-    totalJenisBarangTerjual: totalJenisBarangTerjualBaru,
-    rataRataBelanja: jumlahTransaksiBaru > 0 ? Math.round(omzetBaru / jumlahTransaksiBaru) : 0,
-    metodePembayaranBreakdown: mergeMetodeBreakdown(
-      existingData?.metodePembayaranBreakdown,
-      metodeNama,
-      omzetTambah,
-      totalBiayaAdminTambah
-    ),
-    kategoriBreakdown: mergeKategoriBreakdown(
-      existingData?.kategoriBreakdown,
-      kategoriBreakdownTambah
-    ),
-    createdAt: existingData?.createdAt || serverTimestamp(),
-    createdAtMs: Number(existingData?.createdAtMs || nowMs),
-    updatedAt: serverTimestamp(),
-    updatedAtMs: nowMs,
-  }
-}
-
-// ─── Print Helper ─────────────────────────────────────────────────────────────
-
-function cetakStruk(struk: StrukData) {
-  const html = `
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8" />
-  <title>Struk ${struk.nomorTransaksi}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 12px;
-      width: 80mm;
-      max-width: 80mm;
-      padding: 8px 6px;
-      color: #000;
-      background: #fff;
-    }
-    .center { text-align: center; }
-    .bold { font-weight: bold; }
-    .divider { border-top: 1px dashed #000; margin: 6px 0; }
-    .divider-solid { border-top: 1px solid #000; margin: 6px 0; }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; }
-    .row .label { flex: 1; }
-    .row .value { text-align: right; white-space: nowrap; margin-left: 8px; }
-    .item-nama { font-weight: bold; margin-bottom: 2px; }
-    .item-detail { color: #444; font-size: 11px; }
-    .diskon-badge { font-size: 10px; color: #444; }
-    .total-row { font-size: 13px; font-weight: bold; }
-    .grand-total { font-size: 15px; font-weight: bold; }
-    .footer { text-align: center; margin-top: 6px; font-size: 10px; color: #555; }
-    .logo { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
-    .nomor { font-size: 10px; color: #555; margin-top: 2px; }
-    .kembalian-row { font-size: 13px; font-weight: bold; color: #000; }
-  </style>
-</head>
-<body>
-  <div class="center">
-    <div class="logo">${struk.tokoNama}</div>
-    <div class="nomor">${struk.nomorTransaksi}</div>
-    <div class="nomor">${formatTanggalStruk(struk.createdAtMs)}</div>
-  </div>
-
-  <div class="divider-solid"></div>
-
-  ${struk.items
-    .map(
-      (item) => `
-    <div style="margin-bottom: 6px;">
-      <div class="item-nama">${item.nama}</div>
-      <div class="item-detail">${item.kodeBarang} · ${item.satuan}</div>
-      ${item.pakaiKodeUnik && item.kodeUnik ? `<div class="item-detail">${item.jenisKodeUnik === "imei" ? "IMEI" : item.jenisKodeUnik === "serial" ? "Serial" : "Kode Unik"}: ${item.kodeUnik}</div>` : ""}
-      ${item.diskonNama ? `<div class="diskon-badge">🏷 ${item.diskonNama}${item.diskonTipe === "persen" ? ` (${item.diskonNilai}%)` : ` (-${new Intl.NumberFormat("id-ID").format(item.diskonNilai)})`}</div>` : ""}
-      <div class="row">
-        <span class="label">${item.qty} × ${new Intl.NumberFormat("id-ID").format(item.hargaSetelahDiskon)}</span>
-        <span class="value">${new Intl.NumberFormat("id-ID").format(item.subtotalFinal)}</span>
-      </div>
-      ${item.totalDiskon > 0 ? `<div class="row diskon-badge"><span class="label">Hemat</span><span class="value">-${new Intl.NumberFormat("id-ID").format(item.totalDiskon)}</span></div>` : ""}
-    </div>
-  `
-    )
-    .join("")}
-
-  <div class="divider"></div>
-
-  <div class="row"><span class="label">Subtotal</span><span class="value">${new Intl.NumberFormat("id-ID").format(struk.subtotal)}</span></div>
-  ${struk.totalDiskon > 0 ? `<div class="row"><span class="label">Total Diskon</span><span class="value">-${new Intl.NumberFormat("id-ID").format(struk.totalDiskon)}</span></div>` : ""}
-  ${struk.totalDiskon > 0 ? `<div class="row"><span class="label">Setelah Diskon</span><span class="value">${new Intl.NumberFormat("id-ID").format(struk.totalSetelahDiskon)}</span></div>` : ""}
-  ${struk.biayaAdminNominal > 0 ? `<div class="row"><span class="label">Biaya Admin (${struk.biayaAdminPersen}%)</span><span class="value">${new Intl.NumberFormat("id-ID").format(struk.biayaAdminNominal)}</span></div>` : ""}
-
-  <div class="divider-solid"></div>
-
-  <div class="row grand-total"><span class="label">TOTAL</span><span class="value">Rp ${new Intl.NumberFormat("id-ID").format(struk.grandTotal)}</span></div>
-
-  <div class="divider"></div>
-
-  <div class="row"><span class="label">Metode</span><span class="value">${struk.metodePembayaranNama}${struk.metodePembayaranProvider ? " · " + struk.metodePembayaranProvider : ""}</span></div>
-  <div class="row"><span class="label">Uang Bayar</span><span class="value">${new Intl.NumberFormat("id-ID").format(struk.uangBayar)}</span></div>
-  <div class="row kembalian-row"><span class="label">Kembalian</span><span class="value">Rp ${new Intl.NumberFormat("id-ID").format(struk.kembalian)}</span></div>
-
-  ${struk.catatan ? `<div class="divider"></div><div style="font-size:11px;">Catatan: ${struk.catatan}</div>` : ""}
-
-  <div class="divider"></div>
-
-  <div class="footer">
-    <div>${struk.totalItem} item · ${struk.totalJenisBarang} jenis barang</div>
-    <div style="margin-top:6px;">Terima kasih sudah berbelanja!</div>
-    <div>Barang yang sudah dibeli</div>
-    <div>tidak dapat dikembalikan</div>
-  </div>
-</body>
-</html>
-`
-
-  const win = window.open("", "_blank", "width=400,height=600,scrollbars=yes")
-  if (!win) {
-    alert("Popup diblokir browser. Izinkan popup untuk mencetak struk.")
-    return
-  }
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => {
-    win.print()
-  }, 400)
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function InfoCard({
-  icon: Icon,
-  label,
-  value,
-  subValue,
-}: {
-  icon: any
-  label: string
-  value: string
-  subValue?: string
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-white shadow-sm">
-          <Icon size={18} strokeWidth={2.5} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
-            {label}
-          </p>
-          <p className="mt-1 truncate text-lg font-black text-slate-800">{value}</p>
-          {subValue ? (
-            <p className="mt-1 text-[11px] font-semibold text-slate-500">{subValue}</p>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FieldLabel({ icon: Icon, label }: { icon?: any; label: string }) {
-  return (
-    <label className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-      {Icon ? <Icon size={11} strokeWidth={2.5} /> : null}
-      {label}
-    </label>
-  )
-}
-
-// ─── Modal Struk ──────────────────────────────────────────────────────────────
-
-function ModalStruk({
-  struk,
-  onClose,
-}: {
-  struk: StrukData | null
-  onClose: () => void
-}) {
-  if (!struk) return null
-
-  return (
-    <AnimatePresence>
-      {struk && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(15,23,42,0.65)", backdropFilter: "blur(4px)" }}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.92, y: 24 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 24 }}
-            transition={{ type: "spring", stiffness: 320, damping: 28 }}
-            className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 text-white">
-                  <Receipt size={18} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100">
-                    Transaksi Berhasil
-                  </p>
-                  <p className="text-sm font-black text-white">{struk.nomorTransaksi}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white hover:bg-white/30 transition-colors"
-              >
-                <X size={16} strokeWidth={2.5} />
-              </button>
-            </div>
-
-            {/* Body Struk */}
-            <div className="max-h-[60vh] overflow-y-auto p-5">
-              {/* Toko & waktu */}
-              <div className="mb-4 text-center">
-                <p className="text-base font-black text-slate-800">{struk.tokoNama}</p>
-                <div className="mt-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-400">
-                  <Clock size={11} strokeWidth={2.5} />
-                  {formatTanggalStruk(struk.createdAtMs)}
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="mb-4 border-t-2 border-dashed border-slate-200" />
-
-              {/* Items */}
-              <div className="space-y-3">
-                {struk.items.map((item, i) => (
-                  <div key={i} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-800">{item.nama}</p>
-                        <div className="space-y-0.5">
-                          <p className="text-[10px] font-semibold text-slate-400">
-                            {item.kodeBarang} · {item.satuan}
-                          </p>
-                          {item.pakaiKodeUnik && item.kodeUnik ? (
-                            <p className="text-[10px] font-semibold text-cyan-600">
-                              {item.jenisKodeUnik === "imei"
-                                ? "IMEI"
-                                : item.jenisKodeUnik === "serial"
-                                ? "Serial"
-                                : "Kode Unik"}: {item.kodeUnik}
-                            </p>
-                          ) : null}
-                        </div>
-                        {item.diskonNama ? (
-                          <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">
-                            🏷 {item.diskonNama}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        {item.totalDiskon > 0 ? (
-                          <p className="text-[10px] font-semibold text-slate-400 line-through">
-                            {formatRupiah(item.subtotalAsli)}
-                          </p>
-                        ) : null}
-                        <p className="text-sm font-black text-slate-800">
-                          {formatRupiah(item.subtotalFinal)}
-                        </p>
-                        <p className="text-[10px] font-semibold text-slate-400">
-                          {item.qty} × {formatRupiah(item.hargaSetelahDiskon)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Divider */}
-              <div className="my-4 border-t-2 border-dashed border-slate-200" />
-
-              {/* Ringkasan */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
-                  <span>Subtotal</span>
-                  <span>{formatRupiah(struk.subtotal)}</span>
-                </div>
-                {struk.totalDiskon > 0 && (
-                  <div className="flex items-center justify-between text-sm font-semibold text-emerald-600">
-                    <span>Total Diskon</span>
-                    <span>- {formatRupiah(struk.totalDiskon)}</span>
-                  </div>
-                )}
-                {struk.totalDiskon > 0 && (
-                  <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
-                    <span>Setelah Diskon</span>
-                    <span>{formatRupiah(struk.totalSetelahDiskon)}</span>
-                  </div>
-                )}
-                {struk.biayaAdminNominal > 0 && (
-                  <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
-                    <span>
-                      Biaya Admin ({struk.biayaAdminPersen}%)
-                    </span>
-                    <span>{formatRupiah(struk.biayaAdminNominal)}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-base font-black text-slate-800">
-                  <span>Grand Total</span>
-                  <span>{formatRupiah(struk.grandTotal)}</span>
-                </div>
-
-                <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
-                  <span>Metode</span>
-                  <span>
-                    {struk.metodePembayaranNama}
-                    {struk.metodePembayaranProvider
-                      ? ` · ${struk.metodePembayaranProvider}`
-                      : ""}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
-                  <span>Uang Bayar</span>
-                  <span>{formatRupiah(struk.uangBayar)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm font-black text-emerald-600">
-                  <span>Kembalian</span>
-                  <span>{formatRupiah(struk.kembalian)}</span>
-                </div>
-              </div>
-
-              {struk.catatan ? (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-700">
-                  Catatan: {struk.catatan}
-                </div>
-              ) : null}
-
-              <div className="mt-4 text-center text-xs font-semibold text-slate-400">
-                {struk.totalItem} item · {struk.totalJenisBarang} jenis barang
-              </div>
-            </div>
-
-            {/* Footer Actions */}
-            <div className="flex gap-3 border-t border-slate-100 p-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 rounded-xl border-2 border-slate-200 bg-white py-3 text-sm font-black text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                Tutup
-              </button>
-              <button
-                type="button"
-                onClick={() => cetakStruk(struk)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 py-3 text-sm font-black text-white shadow-sm hover:opacity-95 transition-opacity"
-              >
-                <Printer size={16} strokeWidth={2.5} />
-                Print Struk
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
-// ─── Riwayat Transaksi (mini panel) ──────────────────────────────────────────
-
-function RiwayatTransaksiPanel() {
-  const [riwayat, setRiwayat] = useState<StrukData[]>([])
-  const [loading, setLoading] = useState(false)
-  const [open, setOpen] = useState(false)
-  const [selectedStruk, setSelectedStruk] = useState<StrukData | null>(null)
-
-  const fetchRiwayat = async () => {
-    setLoading(true)
-    try {
-      const snap = await getDocs(
-        query(collection(db, "transaksi"), orderBy("createdAtMs", "desc"))
-      )
-      const list: StrukData[] = snap.docs.slice(0, 20).map((d) => {
-        const x = d.data() as any
-        return {
-          id: d.id,
-          nomorTransaksi: x?.nomorTransaksi || "",
-          tokoId: x?.tokoId || "",
-          tokoNama: x?.tokoNama || "",
-          metodePembayaranNama: x?.metodePembayaranNama || "",
-          metodePembayaranTipe: x?.metodePembayaranTipe || "",
-          metodePembayaranProvider: x?.metodePembayaranProvider || "",
-          biayaAdminPersen: Number(x?.biayaAdminPersen || 0),
-          biayaAdminNominal: Number(x?.biayaAdminNominal || 0),
-          subtotal: Number(x?.subtotal || 0),
-          totalDiskon: Number(x?.totalDiskon || 0),
-          totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
-          grandTotal: Number(x?.grandTotal || 0),
-          totalModal: Number(x?.totalModal || 0),
-          estimasiLabaKotor: Number(x?.estimasiLabaKotor || 0),
-          uangBayar: Number(x?.uangBayar || 0),
-          kembalian: Number(x?.kembalian || 0),
-          totalItem: Number(x?.totalItem || 0),
-          totalJenisBarang: Number(x?.totalJenisBarang || 0),
-          status: x?.status || "",
-          catatan: x?.catatan || "",
-          items: Array.isArray(x?.items)
-            ? x.items.map((item: any) => ({
-                barangId: item?.barangId || "",
-                kodeBarang: item?.kodeBarang || "",
-                nama: item?.nama || "",
-                kategoriNama: item?.kategoriNama || "",
-                merk: item?.merk || "",
-                satuan: item?.satuan || "",
-                qty: Number(item?.qty || 0),
-                hargaModal: Number(item?.hargaModal || 0),
-                hargaAsli: Number(item?.hargaAsli || 0),
-                hargaSetelahDiskon: Number(item?.hargaSetelahDiskon || 0),
-                subtotalAsli: Number(item?.subtotalAsli || 0),
-                subtotalFinal: Number(item?.subtotalFinal || 0),
-                totalDiskon: Number(item?.totalDiskon || 0),
-                pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
-                jenisKodeUnik: item?.jenisKodeUnik || "",
-                kodeUnik: item?.kodeUnik || "",
-                diskonId: item?.diskonId || "",
-                diskonNama: item?.diskonNama || "",
-                diskonTipe: item?.diskonTipe || "",
-                diskonNilai: Number(item?.diskonNilai || 0),
-              }))
-            : [],
-          createdAtMs: Number(x?.createdAtMs || 0),
-        }
-      })
-      setRiwayat(list)
-    } catch (e) {
-      console.error("Gagal memuat riwayat:", e)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (open) void fetchRiwayat()
-  }, [open])
-
-  return (
-    <>
-      {selectedStruk && (
-        <ModalStruk struk={selectedStruk} onClose={() => setSelectedStruk(null)} />
-      )}
-
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <button
-          type="button"
-          onClick={() => setOpen((p) => !p)}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl p-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-indigo-500 text-white shadow-sm">
-              <History size={16} strokeWidth={2.5} />
-            </div>
-            <div className="text-left">
-              <p className="text-sm font-black text-slate-800">Riwayat Transaksi</p>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                20 transaksi terakhir · klik untuk print ulang
-              </p>
-            </div>
-          </div>
-          <div className="text-xs font-black text-slate-400">
-            {open ? "Tutup ▲" : "Buka ▼"}
-          </div>
-        </button>
-
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="overflow-hidden"
-            >
-              <div className="border-t border-slate-100 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs font-semibold text-slate-500">
-                    Klik transaksi untuk lihat struk & print ulang
-                  </p>
-                  <button
-                    type="button"
-                    onClick={fetchRiwayat}
-                    className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-50"
-                  >
-                    <RefreshCw size={12} strokeWidth={2.5} className={loading ? "animate-spin" : ""} />
-                    Refresh
-                  </button>
-                </div>
-
-                {loading ? (
-                  <div className="py-6 text-center text-sm font-semibold text-slate-400">
-                    Memuat riwayat...
-                  </div>
-                ) : riwayat.length === 0 ? (
-                  <div className="py-6 text-center text-sm font-semibold text-slate-400">
-                    Belum ada riwayat transaksi
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                    {riwayat.map((trx) => (
-                      <button
-                        key={trx.id}
-                        type="button"
-                        onClick={() => setSelectedStruk(trx)}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left hover:border-cyan-300 hover:bg-cyan-50 transition-all"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs font-black text-slate-800 truncate">
-                            {trx.nomorTransaksi}
-                          </p>
-                          <p className="text-[10px] font-semibold text-slate-400">
-                            {trx.tokoNama} · {formatTanggalStruk(trx.createdAtMs)}
-                          </p>
-                          <p className="text-[10px] font-semibold text-slate-500">
-                            {trx.totalItem} item · {trx.metodePembayaranNama}
-                          </p>
-                        </div>
-                        <div className="flex-shrink-0 text-right">
-                          <p className="text-sm font-black text-slate-800">
-                            {formatRupiah(trx.grandTotal)}
-                          </p>
-                          <div className="mt-1 flex items-center justify-end gap-1 text-cyan-600">
-                            <Printer size={11} strokeWidth={2.5} />
-                            <span className="text-[10px] font-black">Print</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </>
-  )
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TransaksiPage() {
+  // ── State ──────────────────────────────────────────────────────────────────
+
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
 
@@ -1051,26 +108,30 @@ export default function TransaksiPage() {
   const [barangList, setBarangList] = useState<Barang[]>([])
   const [diskonList, setDiskonList] = useState<Diskon[]>([])
   const [metodeList, setMetodeList] = useState<MetodePembayaran[]>([])
+  const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([])
 
   const [selectedTokoId, setSelectedTokoId] = useState("")
   const [selectedMetodeId, setSelectedMetodeId] = useState("")
   const [searchBarang, setSearchBarang] = useState("")
   const [uangBayar, setUangBayar] = useState("")
   const [catatan, setCatatan] = useState("")
-  const [cart, setCart] = useState<CartItem[]>([])
+  const [activeTab, setActiveTab] = useState<"fisik" | "digital">("fisik")
+  const [cartFisik, setCartFisik] = useState<CartItem[]>([])
+  const [cartDigital, setCartDigital] = useState<CartItem[]>([])
 
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
-
-  // ─ Modal struk
   const [strukModal, setStrukModal] = useState<StrukData | null>(null)
 
+  // Camera state
   const [cameraSupported, setCameraSupported] = useState(true)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraLoading, setCameraLoading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraStatus, setCameraStatus] = useState("Arahkan barcode ke area scan")
   const [lastCameraResult, setLastCameraResult] = useState("")
+
+  // ── Refs ───────────────────────────────────────────────────────────────────
 
   const scanBufferRef = useRef("")
   const scanLastTimeRef = useRef(0)
@@ -1086,35 +147,33 @@ export default function TransaksiPage() {
 
   const beepAudioContextRef = useRef<AudioContext | null>(null)
 
+
+  // ── Audio ──────────────────────────────────────────────────────────────────
+
   const playSuccessBeep = () => {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext
       if (!AudioCtx) return
-
-      if (!beepAudioContextRef.current) {
-        beepAudioContextRef.current = new AudioCtx()
-      }
-
+      if (!beepAudioContextRef.current) beepAudioContextRef.current = new AudioCtx()
       const ctx = beepAudioContextRef.current
       const oscillator = ctx.createOscillator()
       const gain = ctx.createGain()
-
       oscillator.type = "sine"
       oscillator.frequency.setValueAtTime(1046, ctx.currentTime)
-
       gain.gain.setValueAtTime(0.0001, ctx.currentTime)
       gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01)
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.11)
-
       oscillator.connect(gain)
       gain.connect(ctx.destination)
-
       oscillator.start(ctx.currentTime)
       oscillator.stop(ctx.currentTime + 0.12)
     } catch (e) {
       console.error("Gagal memainkan bunyi scan:", e)
     }
   }
+
+
+  // ── Fetch Functions ────────────────────────────────────────────────────────
 
   const fetchToko = async () => {
     const snap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
@@ -1156,6 +215,14 @@ export default function TransaksiPage() {
           pakaiKodeUnik: Boolean(x?.pakaiKodeUnik),
           jenisKodeUnik: x?.jenisKodeUnik || "",
           kodeUnik: x?.kodeUnik || "",
+          jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
+          subJenisDigital: x?.subJenisDigital || "",
+          providerId: x?.providerId || "",
+          provider: x?.provider || "",
+          saldoSourceId: x?.saldoSourceId || "",
+          saldoSourceNama: x?.saldoSourceNama || "",
+          nominalProduk: Number(x?.nominalProduk || 0),
+          aktif: x?.aktif !== false,
           createdAt: Number(x?.createdAt || Date.now()),
           updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
         }
@@ -1214,20 +281,41 @@ export default function TransaksiPage() {
       })
       .filter((item) => item.nama && item.aktif)
     setMetodeList(list)
-
     const metodeTunai = list.find((item) => item.tipe === "Tunai")
-if (metodeTunai) {
-  setSelectedMetodeId(metodeTunai.id)
-}
+    if (metodeTunai) setSelectedMetodeId((prev) => prev || metodeTunai.id)
   }
 
-  
+
+  const fetchSaldo = async () => {
+    const snap = await getDocs(query(collection(db, "master_saldo_digital"), orderBy("namaSaldo")))
+    const list: MasterSaldoDigital[] = snap.docs
+      .map((d) => {
+        const x = d.data() as any
+        return {
+          id: d.id,
+          namaSaldo: x?.namaSaldo || "",
+          jumlahSaldo: Number(x?.jumlahSaldo || 0),
+          aktif: x?.aktif !== false,
+          keterangan: x?.keterangan || "",
+          createdAt:
+            typeof x?.createdAt?.toMillis === "function"
+              ? x.createdAt.toMillis()
+              : Number(x?.createdAt || 0),
+          updatedAt:
+            typeof x?.updatedAt?.toMillis === "function"
+              ? x.updatedAt.toMillis()
+              : Number(x?.updatedAt || 0),
+        }
+      })
+      .filter((item) => item.namaSaldo)
+    setSaldoList(list)
+  }
 
   const fetchAll = async () => {
     setLoading(true)
     setError(null)
     try {
-      await Promise.all([fetchToko(), fetchBarang(), fetchDiskon(), fetchMetode()])
+      await Promise.all([fetchToko(), fetchBarang(), fetchDiskon(), fetchMetode(), fetchSaldo()])
     } catch (e) {
       console.error(e)
       setError("Gagal memuat data transaksi")
@@ -1235,6 +323,9 @@ if (metodeTunai) {
       setLoading(false)
     }
   }
+
+
+  // ── Effects ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
@@ -1248,43 +339,59 @@ if (metodeTunai) {
       typeof window !== "undefined" &&
       !!window.BarcodeDetector &&
       !!navigator.mediaDevices?.getUserMedia
-
     setCameraSupported(supported)
   }, [])
+
+
+  // ── Derived / Memos ────────────────────────────────────────────────────────
 
   const selectedToko = useMemo(
     () => tokoList.find((t) => t.id === selectedTokoId) || null,
     [tokoList, selectedTokoId]
   )
-
   const selectedMetode = useMemo(
     () => metodeList.find((m) => m.id === selectedMetodeId) || null,
     [metodeList, selectedMetodeId]
   )
+  const metodeTunaiDefault = useMemo(
+    () => metodeList.find((m) => m.tipe === "Tunai") || null,
+    [metodeList]
+  )
+
+  const cart = activeTab === "fisik" ? cartFisik : cartDigital
+  const setCart = activeTab === "fisik" ? setCartFisik : setCartDigital
 
   const barangByToko = useMemo(() => {
     const q = searchBarang.toLowerCase().trim()
     return barangList.filter((item) => {
       const sameToko = !selectedTokoId || item.tokoId === selectedTokoId
+      const sameJenis = (item.jenisBarang || "fisik") === activeTab
       const matchSearch =
         !q ||
         item.nama.toLowerCase().includes(q) ||
         item.kodeBarang.toLowerCase().includes(q) ||
         item.merk.toLowerCase().includes(q) ||
-        item.kategoriNama.toLowerCase().includes(q)
-      return sameToko && matchSearch
+        item.kategoriNama.toLowerCase().includes(q) ||
+        String(item.provider || "").toLowerCase().includes(q)
+      if (!sameToko || !sameJenis || !matchSearch) return false
+      if (activeTab === "digital") return item.aktif !== false
+      return true
     })
-  }, [barangList, selectedTokoId, searchBarang])
+  }, [barangList, selectedTokoId, searchBarang, activeTab])
 
   const barangBarcodeMap = useMemo(() => {
     const map = new Map<string, Barang>()
     for (const item of barangList) {
       if (!item?.id || !item?.kodeBarang) continue
+      if ((item.jenisBarang || "fisik") !== "fisik") continue
       if (selectedTokoId && item.tokoId !== selectedTokoId) continue
       map.set(normalizeBarcode(item.kodeBarang), item)
     }
     return map
   }, [barangList, selectedTokoId])
+
+
+  // ── Cart Actions ───────────────────────────────────────────────────────────
 
   type AddToCartResult = {
     ok: boolean
@@ -1292,25 +399,23 @@ if (metodeTunai) {
     status?: "added" | "exists"
   }
 
-  const addToCart = (
-    barang: Barang,
-    mode: AddToCartMode = "manual"
-  ): AddToCartResult => {
+  const addToCart = (barang: Barang, mode: AddToCartMode = "manual"): AddToCartResult => {
     if (!selectedTokoId) {
       setError("Pilih toko terlebih dahulu")
       return { ok: false, reason: "no-store" }
     }
 
-    if (barang.stok <= 0) {
+    const jenisBarang = (barang.jenisBarang || "fisik") as "fisik" | "digital"
+    if (jenisBarang === "fisik" && barang.stok <= 0) {
       setError("Stok barang habis")
       return { ok: false, reason: "out-of-stock" }
     }
 
     setError(null)
-
     let status: "added" | "exists" = "added"
+    const targetSetter = jenisBarang === "fisik" ? setCartFisik : setCartDigital
 
-    setCart((prev) => {
+    targetSetter((prev) => {
       const found = prev.find((item) => item.barangId === barang.id)
       const diskon = getBestDiskonForBarang(
         barang.id,
@@ -1324,7 +429,6 @@ if (metodeTunai) {
 
       if (found) {
         status = "exists"
-
         if (mode === "scan") {
           return prev.map((item) =>
             item.barangId === barang.id
@@ -1337,6 +441,11 @@ if (metodeTunai) {
                   pakaiKodeUnik: barang.pakaiKodeUnik,
                   jenisKodeUnik: barang.jenisKodeUnik || "",
                   kodeUnik: barang.kodeUnik || "",
+                  providerId: barang.providerId || "",
+                  provider: barang.provider || "",
+                  saldoSourceId: barang.saldoSourceId || "",
+                  saldoSourceNama: barang.saldoSourceNama || "",
+                  nominalProduk: Number(barang.nominalProduk || 0),
                   diskonId: diskon?.id,
                   diskonNama: diskon?.namaPromo,
                   diskonTipe: diskon?.tipeDiskon,
@@ -1345,10 +454,8 @@ if (metodeTunai) {
               : item
           )
         }
-
         const nextQty = found.qty + 1
-        if (nextQty > barang.stok) return prev
-
+        if (jenisBarang === "fisik" && nextQty > barang.stok) return prev
         return prev.map((item) =>
           item.barangId === barang.id
             ? {
@@ -1358,6 +465,11 @@ if (metodeTunai) {
                 hargaModal: barang.hargaModal,
                 hargaAsli: barang.hargaJual,
                 hargaSetelahDiskon,
+                providerId: barang.providerId || "",
+                provider: barang.provider || "",
+                saldoSourceId: barang.saldoSourceId || "",
+                saldoSourceNama: barang.saldoSourceNama || "",
+                nominalProduk: Number(barang.nominalProduk || 0),
                 diskonId: diskon?.id,
                 diskonNama: diskon?.namaPromo,
                 diskonTipe: diskon?.tipeDiskon,
@@ -1384,6 +496,14 @@ if (metodeTunai) {
           pakaiKodeUnik: barang.pakaiKodeUnik,
           jenisKodeUnik: barang.jenisKodeUnik || "",
           kodeUnik: barang.kodeUnik || "",
+          jenisBarang,
+          subJenisDigital: barang.subJenisDigital || "",
+          providerId: barang.providerId || "",
+          provider: barang.provider || "",
+          saldoSourceId: barang.saldoSourceId || "",
+          saldoSourceNama: barang.saldoSourceNama || "",
+          nominalProduk: Number(barang.nominalProduk || 0),
+          tujuan: "",
           diskonId: diskon?.id,
           diskonNama: diskon?.namaPromo,
           diskonTipe: diskon?.tipeDiskon,
@@ -1406,7 +526,6 @@ if (metodeTunai) {
     }
 
     const found = barangBarcodeMap.get(kode)
-
     if (!found) {
       setError(`Barcode ${kode} tidak ditemukan di toko ini`)
       setTimeout(() => setError(null), 1800)
@@ -1423,23 +542,19 @@ if (metodeTunai) {
     if (!result.ok) return { ok: false }
 
     playSuccessBeep()
-
     const status = result.status ?? "added"
-
-    if (status === "exists") {
-      setSuccessMsg(
-        `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama} sudah ada di keranjang`
-      )
-    } else {
-      setSuccessMsg(
-        `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${found.nama}`
-      )
-    }
-
+    setActiveTab("fisik")
+    setSuccessMsg(
+      `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${
+        status === "exists" ? `${found.nama} sudah ada di keranjang` : found.nama
+      }`
+    )
     setTimeout(() => setSuccessMsg(null), 1400)
-
     return { ok: true, status }
   }
+
+
+  // ── Barcode Scanner (keyboard/gun) ─────────────────────────────────────────
 
   useEffect(() => {
     const resetScanBuffer = () => {
@@ -1459,14 +574,11 @@ if (metodeTunai) {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return
+      if (activeTab !== "fisik") return
 
       const now = Date.now()
       const diff = now - scanLastTimeRef.current
-
-      if (diff > 120) {
-        scanBufferRef.current = ""
-      }
-
+      if (diff > 120) scanBufferRef.current = ""
       scanLastTimeRef.current = now
 
       if (e.key === "Enter") {
@@ -1480,6 +592,7 @@ if (metodeTunai) {
       }
 
       if (e.key === "Shift" || e.key === "CapsLock" || e.key === "Tab") return
+
       if (e.key === "Backspace") {
         scanBufferRef.current = scanBufferRef.current.slice(0, -1)
         return
@@ -1487,15 +600,10 @@ if (metodeTunai) {
 
       if (e.key.length === 1) {
         scanBufferRef.current += e.key
-
         if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current)
-
         scanTimeoutRef.current = setTimeout(() => {
-          if (scanBufferRef.current.length >= 6) {
-            commitScan()
-          } else {
-            resetScanBuffer()
-          }
+          if (scanBufferRef.current.length >= 6) commitScan()
+          else resetScanBuffer()
         }, 80)
       }
     }
@@ -1505,24 +613,24 @@ if (metodeTunai) {
       window.removeEventListener("keydown", onKeyDown)
       resetScanBuffer()
     }
-  }, [barangBarcodeMap, selectedTokoId])
+  }, [barangBarcodeMap, selectedTokoId, activeTab])
+
+
+  // ── Camera Scanner ─────────────────────────────────────────────────────────
 
   const stopCameraScanner = () => {
     if (cameraRafRef.current) {
       cancelAnimationFrame(cameraRafRef.current)
       cameraRafRef.current = null
     }
-
     if (cameraStreamRef.current) {
       cameraStreamRef.current.getTracks().forEach((track) => track.stop())
       cameraStreamRef.current = null
     }
-
     if (videoRef.current) {
       videoRef.current.pause()
       videoRef.current.srcObject = null
     }
-
     cameraDetectorRef.current = null
     cameraDetectingRef.current = false
     setCameraActive(false)
@@ -1533,36 +641,29 @@ if (metodeTunai) {
   const startCameraLoop = () => {
     const loop = async () => {
       const video = videoRef.current
-
       if (!video || !cameraDetectorRef.current || !cameraStreamRef.current) return
 
       const now = Date.now()
-
-      if (
+      const isReady =
         !cameraDetectingRef.current &&
         now - cameraLastDetectAtRef.current >= 220 &&
         now >= cameraCooldownUntilRef.current &&
         video.readyState >= 2
-      ) {
+
+      if (isReady) {
         cameraDetectingRef.current = true
         cameraLastDetectAtRef.current = now
-
         try {
           const results = await cameraDetectorRef.current.detect(video)
-
           if (Array.isArray(results) && results.length > 0) {
             const rawValue = normalizeBarcode(results[0]?.rawValue || "")
-
             if (rawValue) {
               setLastCameraResult(rawValue)
               setCameraStatus(`Terdeteksi: ${rawValue}`)
-
               const result = commitBarcodeValue(rawValue, "camera")
               if (result.ok) {
                 cameraCooldownUntilRef.current = Date.now() + 1200
-                if ("vibrate" in navigator) {
-                  navigator.vibrate?.(100)
-                }
+                if ("vibrate" in navigator) navigator.vibrate?.(100)
               }
             }
           }
@@ -1572,10 +673,8 @@ if (metodeTunai) {
           cameraDetectingRef.current = false
         }
       }
-
       cameraRafRef.current = requestAnimationFrame(loop)
     }
-
     cameraRafRef.current = requestAnimationFrame(loop)
   }
 
@@ -1584,7 +683,6 @@ if (metodeTunai) {
       setError("Pilih toko terlebih dahulu sebelum membuka kamera")
       return
     }
-
     if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
       setCameraSupported(false)
       setError("Browser ini belum mendukung scan barcode kamera")
@@ -1599,18 +697,10 @@ if (metodeTunai) {
       const supportedFormats = window.BarcodeDetector.getSupportedFormats
         ? await window.BarcodeDetector.getSupportedFormats()
         : []
-
       const preferredFormats = [
-        "code_128",
-        "ean_13",
-        "ean_8",
-        "upc_a",
-        "upc_e",
-        "code_39",
-        "codabar",
-        "itf",
+        "code_128", "ean_13", "ean_8", "upc_a", "upc_e",
+        "code_39", "codabar", "itf",
       ]
-
       const finalFormats =
         supportedFormats.length > 0
           ? preferredFormats.filter((item) => supportedFormats.includes(item))
@@ -1628,7 +718,6 @@ if (metodeTunai) {
           height: { ideal: 720 },
         },
       })
-
       cameraStreamRef.current = stream
 
       if (videoRef.current) {
@@ -1649,16 +738,10 @@ if (metodeTunai) {
   }
 
   useEffect(() => {
-    if (cameraOpen) {
-      void startCameraScanner()
-    } else {
-      stopCameraScanner()
-    }
-
-    return () => {
-      stopCameraScanner()
-    }
-  }, [cameraOpen])
+    if (cameraOpen && activeTab === "fisik") void startCameraScanner()
+    else stopCameraScanner()
+    return () => { stopCameraScanner() }
+  }, [cameraOpen, activeTab])
 
   useEffect(() => {
     return () => {
@@ -1667,41 +750,51 @@ if (metodeTunai) {
     }
   }, [])
 
+
+  // ── Cart Mutation Helpers ──────────────────────────────────────────────────
+
   const updateQty = (barangId: string, mode: "plus" | "minus") => {
     setCart((prev) =>
       prev
         .map((item) => {
           if (item.barangId !== barangId) return item
           const nextQty = mode === "plus" ? item.qty + 1 : item.qty - 1
-          if (nextQty > item.stok) return item
+          if (item.jenisBarang === "fisik" && nextQty > item.stok) return item
           return { ...item, qty: nextQty }
         })
         .filter((item) => item.qty > 0)
     )
   }
 
-  const removeItem = (barangId: string) => {
-    setCart((prev) => prev.filter((item) => item.barangId !== barangId))
+  const updateTujuan = (barangId: string, value: string) => {
+    setCart((prev) =>
+      prev.map((item) => (item.barangId === barangId ? { ...item, tujuan: value } : item))
+    )
   }
 
+  const removeItem = (barangId: string) =>
+    setCart((prev) => prev.filter((item) => item.barangId !== barangId))
+
   const clearCart = () => {
-    setCart([])
+    if (activeTab === "fisik") setCartFisik([])
+    else setCartDigital([])
     setUangBayar("")
     setCatatan("")
     setSuccessMsg("Keranjang dikosongkan")
     setTimeout(() => setSuccessMsg(null), 2000)
   }
 
+
+  // ── Kalkulasi ──────────────────────────────────────────────────────────────
+
   const subtotal = useMemo(
     () => cart.reduce((acc, item) => acc + item.hargaAsli * item.qty, 0),
     [cart]
   )
-
   const totalSetelahDiskon = useMemo(
     () => cart.reduce((acc, item) => acc + item.hargaSetelahDiskon * item.qty, 0),
     [cart]
   )
-
   const totalDiskon = useMemo(() => subtotal - totalSetelahDiskon, [subtotal, totalSetelahDiskon])
 
   const biayaAdminNominal = useMemo(() => {
@@ -1714,12 +807,10 @@ if (metodeTunai) {
     () => totalSetelahDiskon + biayaAdminNominal,
     [totalSetelahDiskon, biayaAdminNominal]
   )
-
   const totalModal = useMemo(
     () => cart.reduce((acc, item) => acc + item.hargaModal * item.qty, 0),
     [cart]
   )
-
   const estimasiLabaKotor = useMemo(
     () => totalSetelahDiskon - totalModal - biayaAdminNominal,
     [totalSetelahDiskon, totalModal, biayaAdminNominal]
@@ -1728,7 +819,6 @@ if (metodeTunai) {
   const uangBayarNumber = Number(uangBayar.replace(/\D/g, "") || 0)
   const kembalian = Math.max(0, uangBayarNumber - grandTotal)
   const kurangBayar = Math.max(0, grandTotal - uangBayarNumber)
-
   const totalItem = useMemo(() => cart.reduce((acc, item) => acc + item.qty, 0), [cart])
   const totalJenisBarang = cart.length
 
@@ -1739,36 +829,50 @@ if (metodeTunai) {
     uangBayarNumber >= grandTotal &&
     !submitLoading
 
+  const fisikCount = useMemo(
+    () => cartFisik.reduce((acc, item) => acc + item.qty, 0),
+    [cartFisik]
+  )
+  const digitalCount = useMemo(
+    () => cartDigital.reduce((acc, item) => acc + item.qty, 0),
+    [cartDigital]
+  )
+
+  const digitalSaldoUsage = useMemo<DigitalSaldoUsage[]>(
+    () => buildDigitalSaldoUsage(cartDigital),
+    [cartDigital]
+  )
+
+  const digitalSaldoRingkasan = useMemo(
+    () => buildDigitalSaldoRingkasan(cartDigital),
+    [cartDigital]
+  )
+
+
+  // ── Submit Transaksi ───────────────────────────────────────────────────────
+
   const handleProsesTransaksi = async () => {
     const user = auth.currentUser
+    if (!user) return void setError("Sesi login tidak ditemukan")
+    if (!selectedTokoId) return void setError("Pilih toko terlebih dahulu")
+    if (!selectedMetodeId) return void setError("Pilih metode pembayaran terlebih dahulu")
+    if (cart.length === 0) return void setError("Keranjang masih kosong")
+    if (uangBayarNumber < grandTotal) return void setError("Uang bayar masih kurang")
+    if (!selectedToko) return void setError("Data toko tidak ditemukan")
+    if (!selectedMetode) return void setError("Data metode pembayaran tidak ditemukan")
 
-    if (!user) {
-      setError("Sesi login tidak ditemukan")
-      return
-    }
-    if (!selectedTokoId) {
-      setError("Pilih toko terlebih dahulu")
-      return
-    }
-    if (!selectedMetodeId) {
-      setError("Pilih metode pembayaran terlebih dahulu")
-      return
-    }
-    if (cart.length === 0) {
-      setError("Keranjang masih kosong")
-      return
-    }
-    if (uangBayarNumber < grandTotal) {
-      setError("Uang bayar masih kurang")
-      return
-    }
-    if (!selectedToko) {
-      setError("Data toko tidak ditemukan")
-      return
-    }
-    if (!selectedMetode) {
-      setError("Data metode pembayaran tidak ditemukan")
-      return
+    if (activeTab === "digital") {
+      const invalidTarget = cart.some(
+        (item) =>
+          item.jenisBarang === "digital" &&
+          digitalButuhTujuan(item.subJenisDigital) &&
+          !String(item.tujuan || "").trim()
+      )
+      if (invalidTarget)
+        return void setError("Isi tujuan untuk semua barang digital yang memerlukan tujuan")
+
+      const digitalSaldoError = validateDigitalSaldoUsage(cart)
+      if (digitalSaldoError) return void setError(digitalSaldoError)
     }
 
     setSubmitLoading(true)
@@ -1780,7 +884,7 @@ if (metodeTunai) {
       const nomorTransaksi = `TRX-${nowMs}`
       const { tahun, bulan, hari, tanggalKey, bulanKey } = getTanggalParts(nowMs)
 
-      // Simpan snapshot keranjang sebelum di-clear
+      // Snapshot semua nilai sebelum async
       const cartSnapshot = [...cart]
       const grandTotalSnapshot = grandTotal
       const subtotalSnapshot = subtotal
@@ -1794,6 +898,7 @@ if (metodeTunai) {
       const totalItemSnapshot = totalItem
       const totalJenisBarangSnapshot = totalJenisBarang
       const catatanSnapshot = catatan.trim()
+      const digitalSaldoUsageSnapshot = buildDigitalSaldoUsage(cartSnapshot)
 
       let savedTransaksiId = ""
       const itemPayload: any[] = []
@@ -1806,37 +911,77 @@ if (metodeTunai) {
         const laporanHarianRef = doc(db, "laporan_harian", `${tanggalKey}__${selectedToko.id}`)
         const laporanBulananRef = doc(db, "laporan_bulanan", `${bulanKey}__${selectedToko.id}`)
 
+        // Read stok barang fisik
+        const barangFisik = cartSnapshot.filter((item) => item.jenisBarang === "fisik")
         const barangReads = await Promise.all(
-          cartSnapshot.map(async (item) => {
+          barangFisik.map(async (item) => {
             const barangRef = doc(db, "barang", item.barangId)
             const barangSnap = await transaction.get(barangRef)
-
             if (!barangSnap.exists()) throw new Error(`Barang ${item.nama} tidak ditemukan`)
-
             const barangDb = barangSnap.data() as any
             const stokSekarang = Number(barangDb?.stok || 0)
-
             if (stokSekarang < item.qty) throw new Error(`Stok ${item.nama} tidak cukup`)
-
             return { item, barangRef, stokSekarang, stokSesudah: stokSekarang - item.qty }
+          })
+        )
+
+        const saldoReads = await Promise.all(
+          digitalSaldoUsageSnapshot.map(async (usage) => {
+            const saldoRef = doc(db, "master_saldo_digital", usage.saldoSourceId)
+            const saldoSnap = await transaction.get(saldoRef)
+            if (!saldoSnap.exists()) {
+              throw new Error(`Sumber saldo ${usage.saldoSourceNama} tidak ditemukan`)
+            }
+            const saldoDb = saldoSnap.data() as any
+            const aktif = saldoDb?.aktif !== false
+            const jumlahSaldo = Number(saldoDb?.jumlahSaldo || 0)
+            if (!aktif) {
+              throw new Error(`Sumber saldo ${usage.saldoSourceNama} sedang nonaktif`)
+            }
+            if (jumlahSaldo < usage.totalPotong) {
+              throw new Error(
+                `Saldo ${usage.saldoSourceNama} tidak mencukupi. Butuh ${formatRupiah(usage.totalPotong)}, tersedia ${formatRupiah(jumlahSaldo)}`
+              )
+            }
+            return {
+              usage,
+              saldoRef,
+              jumlahSaldo,
+              jumlahSesudah: jumlahSaldo - usage.totalPotong,
+            }
           })
         )
 
         const laporanHarianSnap = await transaction.get(laporanHarianRef)
         const laporanBulananSnap = await transaction.get(laporanBulananRef)
-
         const laporanHarianData = laporanHarianSnap.exists() ? laporanHarianSnap.data() : null
         const laporanBulananData = laporanBulananSnap.exists() ? laporanBulananSnap.data() : null
 
-        for (const row of barangReads) {
-          const { item, barangRef, stokSekarang, stokSesudah } = row
-
+        // Update stok
+        for (const { barangRef, stokSesudah } of barangReads) {
           transaction.update(barangRef, {
             stok: stokSesudah,
             updatedAt: nowMs,
             updatedBy: user.uid,
           })
+        }
 
+        for (const { usage, saldoRef, jumlahSesudah } of saldoReads) {
+          transaction.update(saldoRef, {
+            jumlahSaldo: jumlahSesudah,
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+            lastTransaksiId: transaksiRef.id,
+            lastNomorTransaksi: nomorTransaksi,
+            lastPotongNominal: usage.totalPotong,
+            lastPotongQty: usage.totalQty,
+            lastPotongItem: usage.totalItem,
+            updatedAtMs: nowMs,
+          })
+        }
+
+        // Build item payload & kategori accumulator
+        for (const item of cartSnapshot) {
           const subtotalAsliItem = item.hargaAsli * item.qty
           const subtotalFinalItem = item.hargaSetelahDiskon * item.qty
           const totalDiskonItem = subtotalAsliItem - subtotalFinalItem
@@ -1858,37 +1003,45 @@ if (metodeTunai) {
             pakaiKodeUnik: Boolean(item.pakaiKodeUnik),
             jenisKodeUnik: item.jenisKodeUnik || "",
             kodeUnik: item.kodeUnik || "",
+            jenisBarang: item.jenisBarang,
+            subJenisDigital: item.subJenisDigital || "",
+            providerId: item.providerId || "",
+            provider: item.provider || "",
+            saldoSourceId: item.saldoSourceId || "",
+            saldoSourceNama: item.saldoSourceNama || "",
+            nominalProduk: Number(item.nominalProduk || 0),
+            tujuan: item.tujuan || "",
             diskonId: item.diskonId || "",
             diskonNama: item.diskonNama || "",
             diskonTipe: item.diskonTipe || "",
             diskonNilai: Number(item.diskonNilai || 0),
           }
-
           itemPayload.push(itemRow)
 
           const kategoriNama = item.kategoriNama?.trim() || "Tanpa Kategori"
-          const subtotalItem = subtotalAsliItem
-          const totalSetelahDiskonItem = subtotalFinalItem
           const totalModalItem = Number(item.hargaModal || 0) * Number(item.qty || 0)
-          const proporsiOmzet = grandTotalSnapshot > 0 ? subtotalFinalItem / grandTotalSnapshot : 0
+          const proporsiOmzet =
+            grandTotalSnapshot > 0 ? subtotalFinalItem / grandTotalSnapshot : 0
           const adminKategori = Math.round(biayaAdminNominalSnapshot * proporsiOmzet)
-          const labaBersihKategori = totalSetelahDiskonItem - totalModalItem - adminKategori
-          const prevKategori = kategoriAccumulator.get(kategoriNama)
+          const labaBersihKategori = subtotalFinalItem - totalModalItem - adminKategori
 
+          const prevKategori = kategoriAccumulator.get(kategoriNama)
           kategoriAccumulator.set(kategoriNama, {
             nama: kategoriNama,
             jumlahTransaksi: 1,
             qtyTerjual: Number(prevKategori?.qtyTerjual || 0) + Number(item.qty || 0),
-            omzet: Number(prevKategori?.omzet || 0) + totalSetelahDiskonItem + adminKategori,
-            subtotal: Number(prevKategori?.subtotal || 0) + subtotalItem,
+            omzet: Number(prevKategori?.omzet || 0) + subtotalFinalItem + adminKategori,
+            subtotal: Number(prevKategori?.subtotal || 0) + subtotalAsliItem,
             totalDiskon: Number(prevKategori?.totalDiskon || 0) + totalDiskonItem,
-            totalSetelahDiskon:
-              Number(prevKategori?.totalSetelahDiskon || 0) + totalSetelahDiskonItem,
+            totalSetelahDiskon: Number(prevKategori?.totalSetelahDiskon || 0) + subtotalFinalItem,
             totalModal: Number(prevKategori?.totalModal || 0) + totalModalItem,
             totalBiayaAdmin: Number(prevKategori?.totalBiayaAdmin || 0) + adminKategori,
             labaBersih: Number(prevKategori?.labaBersih || 0) + labaBersihKategori,
           })
+        }
 
+        // Tulis mutasi stok
+        for (const { item, stokSekarang, stokSesudah } of barangReads) {
           const mutasiRef = doc(collection(db, "mutasi_stok"))
           transaction.set(mutasiRef, {
             id: mutasiRef.id,
@@ -1911,6 +1064,7 @@ if (metodeTunai) {
           })
         }
 
+        // Tulis transaksi
         transaction.set(transaksiRef, {
           id: transaksiRef.id,
           nomorTransaksi,
@@ -1935,6 +1089,9 @@ if (metodeTunai) {
           totalJenisBarang: totalJenisBarangSnapshot,
           status: "selesai",
           catatan: catatanSnapshot,
+          jenisTransaksi: activeTab,
+          digitalSaldoUsage: digitalSaldoUsageSnapshot,
+          digitalSaldoRingkasan: buildDigitalSaldoRingkasan(cartSnapshot),
           items: itemPayload,
           createdAt: serverTimestamp(),
           createdAtMs: nowMs,
@@ -1943,13 +1100,10 @@ if (metodeTunai) {
           updatedAtMs: nowMs,
         })
 
+        // Tulis laporan
         const kategoriBreakdownTambah = Array.from(kategoriAccumulator.values()).map(
-          (item) => ({
-            ...item,
-            jumlahTransaksi: 1,
-          })
+          (item) => ({ ...item, jumlahTransaksi: 1 })
         )
-
         const sharedLaporanArgs = {
           tokoId: selectedToko.id,
           tokoNama: selectedToko.nama,
@@ -1967,30 +1121,32 @@ if (metodeTunai) {
           nowMs,
         }
 
-        const payloadHarian = buildLaporanPayload({
-          existingData: laporanHarianData,
-          id: laporanHarianRef.id,
-          periodeKey: tanggalKey,
-          tahun,
-          bulan,
-          hari,
-          ...sharedLaporanArgs,
-        })
-
-        const payloadBulanan = buildLaporanPayload({
-          existingData: laporanBulananData,
-          id: laporanBulananRef.id,
-          periodeKey: bulanKey,
-          tahun,
-          bulan,
-          ...sharedLaporanArgs,
-        })
-
-        transaction.set(laporanHarianRef, payloadHarian)
-        transaction.set(laporanBulananRef, payloadBulanan)
+        transaction.set(
+          laporanHarianRef,
+          buildLaporanPayload({
+            existingData: laporanHarianData,
+            id: laporanHarianRef.id,
+            periodeKey: tanggalKey,
+            tahun,
+            bulan,
+            hari,
+            ...sharedLaporanArgs,
+          })
+        )
+        transaction.set(
+          laporanBulananRef,
+          buildLaporanPayload({
+            existingData: laporanBulananData,
+            id: laporanBulananRef.id,
+            periodeKey: bulanKey,
+            tahun,
+            bulan,
+            ...sharedLaporanArgs,
+          })
+        )
       })
 
-      // Ambil data transaksi dari Firestore (bukan dari keranjang aktif)
+      // Baca struk dari Firestore untuk modal
       const savedSnap = await getDoc(doc(db, "transaksi", savedTransaksiId))
       if (savedSnap.exists()) {
         const x = savedSnap.data() as any
@@ -2016,6 +1172,7 @@ if (metodeTunai) {
           totalJenisBarang: Number(x?.totalJenisBarang || 0),
           status: x?.status || "",
           catatan: x?.catatan || "",
+          jenisTransaksi: (x?.jenisTransaksi || activeTab) as "fisik" | "digital",
           items: Array.isArray(x?.items)
             ? x.items.map((item: any) => ({
                 barangId: item?.barangId || "",
@@ -2034,6 +1191,14 @@ if (metodeTunai) {
                 pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
                 jenisKodeUnik: item?.jenisKodeUnik || "",
                 kodeUnik: item?.kodeUnik || "",
+                jenisBarang: (item?.jenisBarang || "fisik") as "fisik" | "digital",
+                subJenisDigital: item?.subJenisDigital || "",
+                providerId: item?.providerId || "",
+                provider: item?.provider || "",
+                saldoSourceId: item?.saldoSourceId || "",
+                saldoSourceNama: item?.saldoSourceNama || "",
+                nominalProduk: Number(item?.nominalProduk || 0),
+                tujuan: item?.tujuan || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
                 diskonTipe: item?.diskonTipe || "",
@@ -2042,17 +1207,16 @@ if (metodeTunai) {
             : itemPayload,
           createdAtMs: Number(x?.createdAtMs || nowMs),
         }
-
         setStrukModal(strukFromFirestore)
       }
 
       await fetchBarang()
-
-      setCart([])
+      if (activeTab === "fisik") setCartFisik([])
+      else setCartDigital([])
       setUangBayar("")
       setCatatan("")
-      setSelectedMetodeId("")
-      setSuccessMsg("Transaksi berhasil! Struk siap dicetak.")
+      setSelectedMetodeId(metodeTunaiDefault?.id || "")
+      setSuccessMsg(`Transaksi ${activeTab} berhasil! Struk siap dicetak.`)
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e: any) {
       console.error(e)
@@ -2062,67 +1226,93 @@ if (metodeTunai) {
     }
   }
 
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <>
-      {/* Modal Struk otomatis */}
       <ModalStruk struk={strukModal} onClose={() => setStrukModal(null)} />
 
       <div className="space-y-4 text-slate-900 sm:space-y-5">
+
+        {/* ── Page Header ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
         >
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-  <div className="flex min-w-0 items-center gap-3 sm:gap-4 lg:items-start">
-    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
-      <ShoppingCart size={22} className="text-white" strokeWidth={2.5} />
-    </div>
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4 lg:items-start">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50">
+                <ShoppingCart size={22} className="text-white" strokeWidth={2.5} />
+              </div>
+              <div className="min-w-0 self-center lg:self-auto">
+                <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+                  Transaksi Kasir
+                </h1>
+                <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+                  Scan barcode · kamera panel · checkout · print struk
+                </p>
+              </div>
+            </div>
 
-    <div className="min-w-0 self-center lg:self-auto">
-      <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-        Transaksi Kasir
-      </h1>
-      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-        Scan barcode · kamera panel · checkout · print struk
-      </p>
-    </div>
-  </div>
-
-  <div className="flex flex-wrap items-center justify-end gap-2">
-    <button
-      type="button"
-      onClick={fetchAll}
-      className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 sm:h-10 sm:w-auto sm:px-4"
-      title="Refresh"
-    >
-      <RefreshCw size={14} strokeWidth={2.5} />
-      <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
-        Refresh
-      </span>
-    </button>
-
-    <button
-      type="button"
-      onClick={() => setCameraOpen((prev) => !prev)}
-      className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm hover:bg-cyan-100 sm:h-10 sm:w-auto sm:px-4"
-      title={cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
-    >
-      <Camera size={14} strokeWidth={2.5} />
-      <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
-        {cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
-      </span>
-    </button>
-  </div>
-</div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("fisik")}
+                className={`flex h-10 items-center rounded-xl px-4 text-xs font-black uppercase tracking-wide ${
+                  activeTab === "fisik"
+                    ? "bg-slate-900 text-white"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Fisik ({fisikCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab("digital"); setCameraOpen(false) }}
+                className={`flex h-10 items-center rounded-xl px-4 text-xs font-black uppercase tracking-wide ${
+                  activeTab === "digital"
+                    ? "bg-cyan-600 text-white"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Digital ({digitalCount})
+              </button>
+              <button
+                type="button"
+                onClick={fetchAll}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 sm:h-10 sm:w-auto sm:px-4"
+                title="Refresh"
+              >
+                <RefreshCw size={14} strokeWidth={2.5} />
+                <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
+                  Refresh
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => activeTab === "fisik" && setCameraOpen((prev) => !prev)}
+                disabled={activeTab !== "fisik"}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-40 sm:h-10 sm:w-auto sm:px-4"
+                title={cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
+              >
+                <Camera size={14} strokeWidth={2.5} />
+                <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
+                  {cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
+                </span>
+              </button>
+            </div>
+          </div>
         </motion.div>
 
+        {/* ── Info Cards ── */}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <InfoCard
             icon={Boxes}
             label="Jenis Barang"
             value={String(barangByToko.length)}
-            subValue={selectedToko?.nama || "Semua toko"}
+            subValue={`${activeTab === "fisik" ? "Fisik" : "Digital"} · ${selectedToko?.nama || "Semua toko"}`}
           />
           <InfoCard
             icon={Layers3}
@@ -2144,8 +1334,9 @@ if (metodeTunai) {
           />
         </div>
 
+        {/* ── Notifikasi ── */}
         <AnimatePresence>
-          {error ? (
+          {error && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2157,11 +1348,10 @@ if (metodeTunai) {
                 <span>{error}</span>
               </div>
             </motion.div>
-          ) : null}
+          )}
         </AnimatePresence>
-
         <AnimatePresence>
-          {successMsg ? (
+          {successMsg && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2173,11 +1363,16 @@ if (metodeTunai) {
                 <span>{successMsg}</span>
               </div>
             </motion.div>
-          ) : null}
+          )}
         </AnimatePresence>
 
+        {/* ── Main Grid ── */}
         <div className="grid gap-4 xl:grid-cols-12">
+
+          {/* ─ Kolom Kiri: Daftar Barang + Scanner ─ */}
           <div className="space-y-4 xl:col-span-7">
+
+            {/* Filter: Toko, Metode, Search */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
@@ -2189,13 +1384,10 @@ if (metodeTunai) {
                   >
                     <option value="">Pilih toko</option>
                     {tokoList.map((toko) => (
-                      <option key={toko.id} value={toko.id}>
-                        {toko.nama}
-                      </option>
+                      <option key={toko.id} value={toko.id}>{toko.nama}</option>
                     ))}
                   </select>
                 </div>
-
                 <div>
                   <FieldLabel icon={Wallet} label="Metode Pembayaran" />
                   <select
@@ -2206,16 +1398,21 @@ if (metodeTunai) {
                     <option value="">Pilih metode pembayaran</option>
                     {metodeList.map((metode) => (
                       <option key={metode.id} value={metode.id}>
-                        {metode.nama}{" "}
-                        {metode.biayaAdmin ? `(${formatPercent(metode.biayaAdmin)})` : ""}
+                        {metode.nama}{metode.biayaAdmin ? ` (${formatPercent(metode.biayaAdmin)})` : ""}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
-
               <div className="mt-4">
-                <FieldLabel icon={Search} label="Cari Barang / Barcode / Merk" />
+                <FieldLabel
+                  icon={Search}
+                  label={
+                    activeTab === "fisik"
+                      ? "Cari Barang / Barcode / Merk"
+                      : "Cari Digital / Provider / Merk"
+                  }
+                />
                 <div className="relative">
                   <Search
                     size={16}
@@ -2224,128 +1421,138 @@ if (metodeTunai) {
                   <input
                     value={searchBarang}
                     onChange={(e) => setSearchBarang(e.target.value)}
-                    placeholder="Cari nama barang, barcode, merk..."
+                    placeholder={
+                      activeTab === "fisik"
+                        ? "Cari nama barang, barcode, merk..."
+                        : "Cari nama digital, provider, kategori..."
+                    }
                     className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
                   />
                 </div>
               </div>
             </div>
 
-            {cameraOpen ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
-                      Panel Scanner Kamera
-                    </h2>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">
-                      Kamera tetap tampil di halaman, tidak menutupi keranjang
-                    </p>
+            {/* Camera Panel / Placeholder */}
+            {activeTab === "fisik" ? (
+              cameraOpen ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+                        Panel Scanner Kamera
+                      </h2>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        Kamera tetap tampil di halaman, tidak menutupi keranjang
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCameraOpen(false)}
+                        className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50"
+                      >
+                        <PauseCircle size={15} strokeWidth={2.5} />
+                        Tutup
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { stopCameraScanner(); void startCameraScanner() }}
+                        className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black uppercase tracking-wide text-cyan-700 hover:bg-cyan-100"
+                      >
+                        <RotateCcw size={15} strokeWidth={2.5} />
+                        Restart
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setCameraOpen(false)}
-                      className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50"
-                    >
-                      <PauseCircle size={15} strokeWidth={2.5} />
-                      Tutup
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        stopCameraScanner()
-                        void startCameraScanner()
-                      }}
-                      className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black uppercase tracking-wide text-cyan-700 hover:bg-cyan-100"
-                    >
-                      <RotateCcw size={15} strokeWidth={2.5} />
-                      Restart
-                    </button>
-                  </div>
-                </div>
-
-                {!cameraSupported ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
-                    Browser ini belum mendukung scan barcode kamera.
-                  </div>
-                ) : (
-                  <>
-                    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-black">
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="aspect-video w-full object-cover"
-                      />
-
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                        <div className="h-24 w-[78%] rounded-2xl border-2 border-cyan-400/90 shadow-[0_0_0_9999px_rgba(15,23,42,0.28)]" />
-                      </div>
-
-                      {cameraLoading ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/55">
-                          <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-4 py-3 text-sm font-black text-white">
-                            <RefreshCw size={16} className="animate-spin" strokeWidth={2.5} />
-                            Menyalakan kamera...
-                          </div>
+                  {!cameraSupported ? (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
+                      Browser ini belum mendukung scan barcode kamera.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-black">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="aspect-video w-full object-cover"
+                        />
+                        {/* Scan area overlay */}
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                          <div className="h-24 w-[78%] rounded-2xl border-2 border-cyan-400/90 shadow-[0_0_0_9999px_rgba(15,23,42,0.28)]" />
                         </div>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                          Status
-                        </p>
-                        <p className="mt-2 text-sm font-bold text-slate-800">{cameraStatus}</p>
+                        {cameraLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/55">
+                            <div className="flex items-center gap-2 rounded-xl bg-slate-900/90 px-4 py-3 text-sm font-black text-white">
+                              <RefreshCw size={16} className="animate-spin" strokeWidth={2.5} />
+                              Menyalakan kamera...
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                          Hasil Terakhir
-                        </p>
-                        <p className="mt-2 break-all text-sm font-bold text-cyan-700">
-                          {lastCameraResult || "-"}
-                        </p>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                            Status
+                          </p>
+                          <p className="mt-2 text-sm font-bold text-slate-800">{cameraStatus}</p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                            Hasil Terakhir
+                          </p>
+                          <p className="mt-2 break-all text-sm font-bold text-cyan-700">
+                            {lastCameraResult || "-"}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                            Kamera
+                          </p>
+                          <p className="mt-2 text-sm font-bold text-slate-800">
+                            {cameraActive ? "Aktif" : "Tidak aktif"}
+                          </p>
+                        </div>
                       </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                          Kamera
-                        </p>
-                        <p className="mt-2 text-sm font-bold text-slate-800">
-                          {cameraActive ? "Aktif" : "Tidak aktif"}
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-black text-slate-700">
                       Scanner kamera belum dibuka
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => setCameraOpen(true)}
+                      className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-xs font-black uppercase tracking-wide text-cyan-700 hover:bg-cyan-100"
+                    >
+                      <PlayCircle size={15} strokeWidth={2.5} />
+                      Aktifkan Kamera
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setCameraOpen(true)}
-                    className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-xs font-black uppercase tracking-wide text-cyan-700 hover:bg-cyan-100"
-                  >
+                </div>
+              )
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-black text-slate-700">
+                    Tab digital aktif. Scanner barcode dan kamera non-aktifkan.
+                  </p>
+                  {/* invisible spacer untuk alignment */}
+                  <div className="flex h-10 items-center gap-2 rounded-xl border border-transparent px-4 text-xs font-black uppercase tracking-wide opacity-0 select-none">
                     <PlayCircle size={15} strokeWidth={2.5} />
                     Aktifkan Kamera
-                  </button>
+                  </div>
                 </div>
               </div>
             )}
 
+            {/* Daftar Barang */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -2353,10 +1560,11 @@ if (metodeTunai) {
                     Daftar Barang
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    Klik tambah atau scan barcode untuk masuk ke keranjang
+                    {activeTab === "fisik"
+                      ? "Klik tambah atau scan barcode untuk masuk ke keranjang"
+                      : "Klik tambah untuk masuk ke keranjang digital"}
                   </p>
                 </div>
-
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
                   {barangByToko.length} barang
                 </span>
@@ -2386,7 +1594,9 @@ if (metodeTunai) {
                       diskon?.tipeDiskon,
                       diskon?.nilaiDiskon
                     )
-                    const isOutStock = barang.stok <= 0
+                    const isOutStock =
+                      (barang.jenisBarang || "fisik") === "fisik" && barang.stok <= 0
+                    const DigitalIcon = getDigitalIcon(barang.subJenisDigital)
 
                     return (
                       <motion.div
@@ -2397,17 +1607,43 @@ if (metodeTunai) {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-black text-slate-800">
-                              {barang.nama}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-black text-slate-800">
+                                {barang.nama}
+                              </p>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+                                  activeTab === "fisik"
+                                    ? "bg-slate-900 text-white"
+                                    : "bg-cyan-600 text-white"
+                                }`}
+                              >
+                                {activeTab === "fisik" ? "FISIK" : "DIGITAL"}
+                              </span>
+                            </div>
                             <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
                               {barang.kodeBarang || "-"} · {barang.kategoriNama || "-"}
                             </p>
-                            <p className="mt-1 text-xs font-semibold text-slate-500">
-                              {barang.merk || "-"} · stok {barang.stok}
-                            </p>
+                            {activeTab === "fisik" ? (
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                {barang.merk || "-"} · stok {barang.stok}
+                              </p>
+                            ) : (
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                                <span className="inline-flex items-center gap-1">
+                                  <DigitalIcon size={12} strokeWidth={2.5} />
+                                  {formatSubJenisDigitalLabel(barang.subJenisDigital)}
+                                </span>
+                                <span>{barang.provider || "-"}</span>
+                                {barang.nominalProduk ? (
+                                  <span>{formatRupiah(barang.nominalProduk)}</span>
+                                ) : null}
+                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700">
+                                  {barang.saldoSourceNama || "Tanpa Saldo"}
+                                </span>
+                              </div>
+                            )}
                           </div>
-
                           <button
                             type="button"
                             onClick={() => addToCart(barang, "manual")}
@@ -2442,7 +1678,10 @@ if (metodeTunai) {
             </div>
           </div>
 
+          {/* ─ Kolom Kanan: Keranjang + Pembayaran ─ */}
           <div className="space-y-4 xl:col-span-5">
+
+            {/* Keranjang */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -2450,10 +1689,11 @@ if (metodeTunai) {
                     Keranjang
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    Scan yang sama tidak akan menambah qty otomatis
+                    {activeTab === "fisik"
+                      ? "Scan untuk menambahkan barang secara otomatis"
+                      : "Barang digital dipisah dari fisik"}
                   </p>
                 </div>
-
                 <button
                   type="button"
                   onClick={clearCart}
@@ -2469,79 +1709,117 @@ if (metodeTunai) {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {cart.map((item) => (
-                    <div
-                      key={item.barangId}
-                      className="rounded-2xl border border-slate-200 bg-white p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-black text-slate-800">
-                            {item.nama}
-                          </h3>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">
-                            {item.kodeBarang}
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">
-                            {item.merk || "-"} · {item.satuan || "-"}
-                          </p>
-
-                          {item.diskonNama ? (
-                            <span className="mt-2 inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-700">
-                              {item.diskonNama}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.barangId)}
-                          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
-                        >
-                          <Trash2 size={15} strokeWidth={2.5} />
-                        </button>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => updateQty(item.barangId, "minus")}
-                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                          >
-                            <Minus size={14} strokeWidth={3} />
-                          </button>
-
-                          <div className="min-w-[44px] text-center text-sm font-black text-slate-800">
-                            {item.qty}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => updateQty(item.barangId, "plus")}
-                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                          >
-                            <Plus size={14} strokeWidth={3} />
-                          </button>
-                        </div>
-
-                        <div className="text-right">
-                          {item.hargaAsli !== item.hargaSetelahDiskon ? (
-                            <p className="text-xs font-bold text-slate-400 line-through">
-                              {formatRupiah(item.hargaAsli * item.qty)}
+                  {cart.map((item) => {
+                    const DigitalIcon = getDigitalIcon(item.subJenisDigital)
+                    return (
+                      <div
+                        key={item.barangId}
+                        className="rounded-2xl border border-slate-200 bg-white p-3"
+                      >
+                        {/* Item header */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate text-sm font-black text-slate-800">
+                                {item.nama}
+                              </h3>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+                                  item.jenisBarang === "fisik"
+                                    ? "bg-slate-900 text-white"
+                                    : "bg-cyan-600 text-white"
+                                }`}
+                              >
+                                {formatJenisBarangLabel(item.jenisBarang)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              {item.kodeBarang}
                             </p>
-                          ) : null}
-                          <p className="text-sm font-black text-slate-800">
-                            {formatRupiah(item.hargaSetelahDiskon * item.qty)}
-                          </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              {item.merk || "-"} · {item.satuan || "-"}
+                            </p>
+                            {item.jenisBarang === "digital" && (
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                                <span className="inline-flex items-center gap-1">
+                                  <DigitalIcon size={12} strokeWidth={2.5} />
+                                  {formatSubJenisDigitalLabel(item.subJenisDigital)}
+                                </span>
+                                <span>{item.provider || "-"}</span>
+                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700">
+                                  {item.saldoSourceNama || "Tanpa Saldo"}
+                                </span>
+                              </div>
+                            )}
+                            {item.diskonNama && (
+                              <span className="mt-2 inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+                                {item.diskonNama}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.barangId)}
+                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                          >
+                            <Trash2 size={15} strokeWidth={2.5} />
+                          </button>
+                        </div>
+
+                        {/* Input tujuan (digital) */}
+                        {item.jenisBarang === "digital" &&
+                          digitalButuhTujuan(item.subJenisDigital) && (
+                            <div className="mt-3">
+                              <FieldLabel label={getTujuanLabel(item.subJenisDigital)} />
+                              <input
+                                value={item.tujuan || ""}
+                                onChange={(e) => updateTujuan(item.barangId, e.target.value)}
+                                placeholder={`Isi ${getTujuanLabel(item.subJenisDigital).toLowerCase()}...`}
+                                className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                              />
+                            </div>
+                          )}
+
+                        {/* Qty + Subtotal */}
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateQty(item.barangId, "minus")}
+                              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            >
+                              <Minus size={14} strokeWidth={3} />
+                            </button>
+                            <div className="min-w-[44px] text-center text-sm font-black text-slate-800">
+                              {item.qty}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateQty(item.barangId, "plus")}
+                              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            >
+                              <Plus size={14} strokeWidth={3} />
+                            </button>
+                          </div>
+                          <div className="text-right">
+                            {item.hargaAsli !== item.hargaSetelahDiskon && (
+                              <p className="text-xs font-bold text-slate-400 line-through">
+                                {formatRupiah(item.hargaAsli * item.qty)}
+                              </p>
+                            )}
+                            <p className="text-sm font-black text-slate-800">
+                              {formatRupiah(item.hargaSetelahDiskon * item.qty)}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
 
+            {/* Ringkasan Pembayaran */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
                 Ringkasan Pembayaran
@@ -2581,7 +1859,6 @@ if (metodeTunai) {
                     className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
                   />
                 </div>
-
                 <div>
                   <FieldLabel icon={Receipt} label="Catatan" />
                   <textarea
@@ -2593,6 +1870,7 @@ if (metodeTunai) {
                   />
                 </div>
 
+                {/* Kembalian / Kurang Bayar / Laba */}
                 <div className="grid gap-3 rounded-2xl bg-slate-50 p-3">
                   <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
                     <span>Kembalian</span>
@@ -2604,12 +1882,11 @@ if (metodeTunai) {
                   </div>
                   <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
                     <span>Estimasi Laba Kotor</span>
-                    <span className="font-black text-slate-800">
-                      {formatRupiah(estimasiLabaKotor)}
-                    </span>
+                    <span className="font-black text-slate-800">{formatRupiah(estimasiLabaKotor)}</span>
                   </div>
                 </div>
 
+                {/* Tombol Proses */}
                 <button
                   type="button"
                   disabled={!isBisaCheckout}
@@ -2624,14 +1901,14 @@ if (metodeTunai) {
                   ) : (
                     <>
                       <Receipt size={16} strokeWidth={2.5} />
-                      Proses Transaksi
+                      Proses Transaksi {activeTab === "digital" ? "Digital" : "Fisik"}
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Panel Riwayat & Print Ulang */}
+            {/* Riwayat Transaksi */}
             <RiwayatTransaksiPanel />
           </div>
         </div>
