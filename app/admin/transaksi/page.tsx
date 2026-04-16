@@ -481,10 +481,11 @@ export default function TransaksiPage() {
 
       return [
         ...prev,
-        {
+                {
           barangId: barang.id,
           kodeBarang: barang.kodeBarang,
           nama: barang.nama,
+          kategoriId: barang.kategoriId || "",
           kategoriNama: barang.kategoriNama,
           merk: barang.merk,
           satuan: barang.satuan,
@@ -902,7 +903,7 @@ export default function TransaksiPage() {
 
       let savedTransaksiId = ""
       const itemPayload: any[] = []
-      const kategoriAccumulator = new Map<string, LaporanKategoriBreakdown>()
+            const kategoriAccumulator = new Map<string, LaporanKategoriBreakdown & { kategoriId: string }>()
 
       await runTransaction(db, async (transaction) => {
         const transaksiRef = doc(collection(db, "transaksi"))
@@ -986,10 +987,11 @@ export default function TransaksiPage() {
           const subtotalFinalItem = item.hargaSetelahDiskon * item.qty
           const totalDiskonItem = subtotalAsliItem - subtotalFinalItem
 
-          const itemRow = {
+                   const itemRow = {
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
             nama: item.nama,
+            kategoriId: item.kategoriId || "",
             kategoriNama: item.kategoriNama,
             merk: item.merk,
             satuan: item.satuan,
@@ -1018,6 +1020,7 @@ export default function TransaksiPage() {
           }
           itemPayload.push(itemRow)
 
+          const kategoriId = item.kategoriId?.trim() || "tanpa-kategori"
           const kategoriNama = item.kategoriNama?.trim() || "Tanpa Kategori"
           const totalModalItem = Number(item.hargaModal || 0) * Number(item.qty || 0)
           const proporsiOmzet =
@@ -1025,8 +1028,9 @@ export default function TransaksiPage() {
           const adminKategori = Math.round(biayaAdminNominalSnapshot * proporsiOmzet)
           const labaBersihKategori = subtotalFinalItem - totalModalItem - adminKategori
 
-          const prevKategori = kategoriAccumulator.get(kategoriNama)
-          kategoriAccumulator.set(kategoriNama, {
+          const prevKategori = kategoriAccumulator.get(kategoriId)
+          kategoriAccumulator.set(kategoriId, {
+            kategoriId,
             nama: kategoriNama,
             jumlahTransaksi: 1,
             qtyTerjual: Number(prevKategori?.qtyTerjual || 0) + Number(item.qty || 0),

@@ -146,6 +146,7 @@ export type CartItem = {
   barangId: string
   kodeBarang: string
   nama: string
+  kategoriId: string
   kategoriNama: string
   merk: string
   satuan: string
@@ -175,6 +176,7 @@ export type StrukItem = {
   barangId: string
   kodeBarang: string
   nama: string
+  kategoriId: string
   kategoriNama: string
   merk: string
   satuan: string
@@ -237,6 +239,7 @@ export type LaporanMetodeBreakdown = {
 }
 
 export type LaporanKategoriBreakdown = {
+  kategoriId: string
   nama: string
   jumlahTransaksi: number
   qtyTerjual: number
@@ -417,8 +420,10 @@ export function mergeKategoriBreakdown(
 
   if (Array.isArray(existing)) {
     for (const item of existing) {
+      const kategoriId = String(item?.kategoriId || "").trim() || "tanpa-kategori"
       const nama = item?.nama || "Tanpa Kategori"
-      map.set(nama, {
+      map.set(kategoriId, {
+        kategoriId,
         nama,
         jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
         qtyTerjual: Number(item?.qtyTerjual || 0),
@@ -434,8 +439,10 @@ export function mergeKategoriBreakdown(
   }
 
   for (const item of incoming) {
+    const kategoriId = String(item?.kategoriId || "").trim() || "tanpa-kategori"
     const nama = item?.nama || "Tanpa Kategori"
-    const prev = map.get(nama) || {
+    const prev = map.get(kategoriId) || {
+      kategoriId,
       nama,
       jumlahTransaksi: 0,
       qtyTerjual: 0,
@@ -448,7 +455,8 @@ export function mergeKategoriBreakdown(
       labaBersih: 0,
     }
 
-    map.set(nama, {
+    map.set(kategoriId, {
+      kategoriId,
       nama,
       jumlahTransaksi: Number(prev.jumlahTransaksi || 0) + Number(item?.jumlahTransaksi || 0),
       qtyTerjual: Number(prev.qtyTerjual || 0) + Number(item?.qtyTerjual || 0),

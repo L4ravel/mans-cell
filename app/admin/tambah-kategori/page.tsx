@@ -222,16 +222,35 @@ export default function KategoriBarangPage() {
     try {
       const nama = form.nama.trim()
 
-      if (isEdit && editId) {
+            if (isEdit && editId) {
+        const updatedAt = Date.now()
         const updatedItem: Partial<KategoriBarang> = {
           nama,
-          updatedAt: Date.now(),
+          updatedAt,
         }
 
         await updateDoc(doc(db, "kategori_barang", editId), {
           ...updatedItem,
           updatedBy: user.uid,
         })
+
+        const response = await fetch("/api/sinkron-kategori", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            kategoriId: editId,
+            kategoriNama: nama,
+            adminUid: user.uid,
+          }),
+        })
+
+        const result = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error(result?.message || "Kategori berhasil diperbarui")
+        }
 
         setData((prev) =>
           [...prev]
@@ -240,14 +259,20 @@ export default function KategoriBarangPage() {
                 ? {
                     ...item,
                     nama,
-                    updatedAt: updatedItem.updatedAt,
+                    updatedAt,
                   }
                 : item
             )
             .sort((a, b) => a.nama.localeCompare(b.nama))
         )
 
-        setSuccessMsg("Kategori berhasil diperbarui")
+        const totalBarang = Number(result?.updatedCount || 0)
+
+        setSuccessMsg(
+          totalBarang > 0
+            ? `Kategori berhasil diperbarui`
+            : "Kategori berhasil diperbarui"
+        )
       } else {
         const newRef = doc(collection(db, "kategori_barang"))
         const newItem: KategoriBarang = {
