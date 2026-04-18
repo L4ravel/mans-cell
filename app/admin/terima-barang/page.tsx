@@ -1,12 +1,13 @@
 /* 
-  Halaman admin transfer barang antar toko.
-  Mendukung draft transfer banyak barang sekaligus, pencarian barang, kirim, terima,
-  batal, detail transfer, filter riwayat, serta simpan nama & email user dari koleksi users.
+  Halaman admin terima barang.
+  Fokus untuk menerima transfer barang yang sudah dikirim,
+  melihat detail transfer, filter riwayat penerimaan,
+  dan menyimpan nama & email user penerima dari koleksi users.
 */
 
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { auth, db } from "@/lib/firebase"
 import {
   collection,
@@ -17,11 +18,9 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  setDoc,
 } from "firebase/firestore"
 import {
-  ArrowLeftRight,
-  Boxes,
+  ArrowDownToLine,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -37,7 +36,6 @@ import {
   Search,
   Store,
   Truck,
-  Undo2,
   User2,
   X,
 } from "lucide-react"
@@ -48,25 +46,6 @@ type Toko = {
   nama: string
   kode?: string
   aktif?: boolean
-}
-
-type Barang = {
-  id: string
-  kodeBarang: string
-  nama: string
-  kategoriId: string
-  kategoriNama: string
-  tokoId: string
-  tokoNama: string
-  merk: string
-  supplier: string
-  satuan: string
-  hargaModal: number
-  hargaJual: number
-  stok: number
-  stokMinimum: number
-  createdAt?: any
-  updatedAt?: any
 }
 
 type TransferStatus = "DRAFT" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN"
@@ -129,17 +108,6 @@ type TransferBarang = {
   cancelledAt?: any
 }
 
-type TransferForm = {
-  tokoAsalId: string
-  tokoTujuanId: string
-  catatan: string
-}
-
-type SelectedTransferItem = {
-  barangId: string
-  qty: string
-}
-
 type ReceiveForm = {
   catatanPenerimaan: string
 }
@@ -150,12 +118,6 @@ const ITEMS_OPTIONS = [
   { value: 50, label: "50" },
   { value: 0, label: "Semua" },
 ]
-
-const EMPTY_FORM: TransferForm = {
-  tokoAsalId: "",
-  tokoTujuanId: "",
-  catatan: "",
-}
 
 const EMPTY_RECEIVE_FORM: ReceiveForm = {
   catatanPenerimaan: "",
@@ -203,40 +165,6 @@ function FormTextArea({
         {...props}
         className="min-h-[96px] w-full resize-y rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
       />
-    </div>
-  )
-}
-
-function FormSelect({
-  label,
-  required,
-  children,
-  ...props
-}: {
-  label: string
-  required?: boolean
-  children: ReactNode
-  [k: string]: any
-}) {
-  return (
-    <div>
-      <label className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-        {label}
-        {required && <span className="ml-0.5 text-red-400">*</span>}
-      </label>
-      <div className="relative">
-        <select
-          {...props}
-          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-        >
-          {children}
-        </select>
-        <ChevronDown
-          size={13}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-          strokeWidth={2.5}
-        />
-      </div>
     </div>
   )
 }
@@ -395,11 +323,6 @@ const getDefaultDateRange = () => {
   }
 }
 
-const buildKodeTransfer = () => {
-  const time = Date.now().toString().slice(-8)
-  return `TRF-${time}`
-}
-
 const getStatusMeta = (status: TransferStatus) => {
   if (status === "DRAFT") {
     return {
@@ -432,26 +355,22 @@ const getStatusMeta = (status: TransferStatus) => {
   }
 }
 
-export default function TransferBarangPage() {
+export default function TerimaBarangPage() {
   const defaultRange = getDefaultDateRange()
 
-  const [barangList, setBarangList] = useState<Barang[]>([])
   const [tokoList, setTokoList] = useState<Toko[]>([])
   const [transferList, setTransferList] = useState<TransferBarang[]>([])
 
   const [loading, setLoading] = useState(false)
-  const [submitLoading, setSubmitLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  const [form, setForm] = useState<TransferForm>(EMPTY_FORM)
-  const [selectedItems, setSelectedItems] = useState<SelectedTransferItem[]>([])
   const [receiveForm, setReceiveForm] = useState<ReceiveForm>(EMPTY_RECEIVE_FORM)
 
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   const [search, setSearch] = useState("")
-  const [filterStatus, setFilterStatus] = useState("")
+  const [filterStatus, setFilterStatus] = useState<TransferStatus | "">("DIKIRIM")
   const [filterAsal, setFilterAsal] = useState("")
   const [filterTujuan, setFilterTujuan] = useState("")
   const [filterStartDate, setFilterStartDate] = useState(defaultRange.startDate)
@@ -461,20 +380,6 @@ export default function TransferBarangPage() {
 
   const [selectedDetail, setSelectedDetail] = useState<TransferBarang | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<TransferBarang | null>(null)
-  const [cancelTarget, setCancelTarget] = useState<TransferBarang | null>(null)
-
-  const [barangModalOpen, setBarangModalOpen] = useState(false)
-  const [barangModalSearch, setBarangModalSearch] = useState("")
-
-  const setField =
-    (key: keyof TransferForm) =>
-    (value: string) =>
-      setForm((prev) => ({ ...prev, [key]: value }))
-
-  const setReceiveField =
-    (key: keyof ReceiveForm) =>
-    (value: string) =>
-      setReceiveForm((prev) => ({ ...prev, [key]: value }))
 
   const getUserProfile = async (uid: string, emailFallback?: string | null): Promise<UserActor> => {
     try {
@@ -520,43 +425,12 @@ export default function TransferBarangPage() {
     }
   }
 
-  const fetchBarang = async () => {
-    try {
-      const snap = await getDocs(query(collection(db, "barang"), orderBy("nama")))
-      const list: Barang[] = snap.docs.map((item) => {
-        const x = item.data() as any
-        return {
-          id: item.id,
-          kodeBarang: x?.kodeBarang || "",
-          nama: x?.nama || "",
-          kategoriId: x?.kategoriId || "",
-          kategoriNama: x?.kategoriNama || "",
-          tokoId: x?.tokoId || "",
-          tokoNama: x?.tokoNama || "",
-          merk: x?.merk || "",
-          supplier: x?.supplier || "",
-          satuan: x?.satuan || "Pcs",
-          hargaModal: Number(x?.hargaModal || 0),
-          hargaJual: Number(x?.hargaJual || 0),
-          stok: Number(x?.stok || 0),
-          stokMinimum: Number(x?.stokMinimum || 0),
-          createdAt: x?.createdAt,
-          updatedAt: x?.updatedAt,
-        }
-      })
-
-      setBarangList(list)
-    } catch (e) {
-      console.error(e)
-      setBarangList([])
-    }
-  }
-
   const fetchTransfer = async () => {
     try {
       const snap = await getDocs(
         query(collection(db, "transfer_barang"), orderBy("createdAt", "desc"))
       )
+
       const list: TransferBarang[] = snap.docs.map((item) => {
         const x = item.data() as any
         return {
@@ -622,7 +496,7 @@ export default function TransferBarangPage() {
   const fetchAll = async () => {
     setLoading(true)
     try {
-      await Promise.all([fetchToko(), fetchBarang(), fetchTransfer()])
+      await Promise.all([fetchToko(), fetchTransfer()])
     } finally {
       setLoading(false)
     }
@@ -634,36 +508,6 @@ export default function TransferBarangPage() {
     })
     return () => unsub()
   }, [])
-
-  const barangTokoAsal = useMemo(() => {
-    return barangList
-      .filter((item) => item.tokoId === form.tokoAsalId)
-      .sort((a, b) => a.nama.localeCompare(b.nama))
-  }, [barangList, form.tokoAsalId])
-
-  const barangModalFiltered = useMemo(() => {
-    const q = barangModalSearch.toLowerCase().trim()
-
-    return barangTokoAsal.filter((item) => {
-      if (!q) return true
-      return (
-        item.nama.toLowerCase().includes(q) ||
-        item.kodeBarang.toLowerCase().includes(q) ||
-        item.kategoriNama.toLowerCase().includes(q) ||
-        item.merk.toLowerCase().includes(q)
-      )
-    })
-  }, [barangTokoAsal, barangModalSearch])
-
-  const selectedBarangDetail = useMemo(() => {
-    return selectedItems
-      .map((item) => {
-        const barang = barangList.find((x) => x.id === item.barangId)
-        if (!barang) return null
-        return { ...item, barang }
-      })
-      .filter(Boolean) as Array<SelectedTransferItem & { barang: Barang }>
-  }, [selectedItems, barangList])
 
   const filteredTransfer = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -679,19 +523,17 @@ export default function TransferBarangPage() {
         item.tokoAsalNama.toLowerCase().includes(q) ||
         item.tokoTujuanNama.toLowerCase().includes(q) ||
         item.supplier.toLowerCase().includes(q) ||
-        item.createdByNama.toLowerCase().includes(q) ||
         item.sentByNama.toLowerCase().includes(q) ||
-        item.receivedByNama.toLowerCase().includes(q) ||
-        item.cancelledByNama.toLowerCase().includes(q)
+        item.receivedByNama.toLowerCase().includes(q)
 
       const matchStatus = !filterStatus || item.status === filterStatus
       const matchAsal = !filterAsal || item.tokoAsalId === filterAsal
       const matchTujuan = !filterTujuan || item.tokoTujuanId === filterTujuan
 
-      const createdMillis = toMillis(item.createdAt)
+      const compareMillis = toMillis(item.sentAt || item.createdAt)
       const matchDate =
-        (!startMillis || createdMillis >= startMillis) &&
-        (!endMillis || createdMillis <= endMillis)
+        (!startMillis || compareMillis >= startMillis) &&
+        (!endMillis || compareMillis <= endMillis)
 
       return matchSearch && matchStatus && matchAsal && matchTujuan && matchDate
     })
@@ -715,237 +557,11 @@ export default function TransferBarangPage() {
 
   const goPage = (value: number) => setPage(Math.max(1, Math.min(totalPages, value)))
 
-  const resetForm = () => {
-    setForm(EMPTY_FORM)
-    setSelectedItems([])
-    setBarangModalSearch("")
-    setBarangModalOpen(false)
-    setError(null)
-  }
-
   const resetDateFilter = () => {
     const range = getDefaultDateRange()
     setFilterStartDate(range.startDate)
     setFilterEndDate(range.endDate)
     setPage(1)
-  }
-
-  const toggleBarangSelection = (barangId: string) => {
-    setSelectedItems((prev) => {
-      const exists = prev.some((item) => item.barangId === barangId)
-      if (exists) return prev.filter((item) => item.barangId !== barangId)
-      return [...prev, { barangId, qty: "1" }]
-    })
-  }
-
-  const setQtySelectedBarang = (barangId: string, qty: string) => {
-    setSelectedItems((prev) =>
-      prev.map((item) => (item.barangId === barangId ? { ...item, qty } : item))
-    )
-  }
-
-  const removeSelectedBarang = (barangId: string) => {
-    setSelectedItems((prev) => prev.filter((item) => item.barangId !== barangId))
-  }
-
-  const validateForm = () => {
-    if (!form.tokoAsalId) return "Toko asal wajib dipilih"
-    if (!form.tokoTujuanId) return "Toko tujuan wajib dipilih"
-    if (form.tokoAsalId === form.tokoTujuanId) {
-      return "Toko asal dan toko tujuan tidak boleh sama"
-    }
-    if (selectedItems.length === 0) return "Pilih minimal 1 barang"
-
-    const seenBarang = new Set<string>()
-
-    for (const item of selectedItems) {
-      if (!item.barangId) return "Ada barang yang belum valid"
-      if (seenBarang.has(item.barangId)) return "Ada barang ganda di daftar transfer"
-      seenBarang.add(item.barangId)
-
-      const qty = Number(item.qty)
-      if (!item.qty.trim()) return "Qty barang wajib diisi"
-      if (Number.isNaN(qty) || qty <= 0) return "Qty barang tidak valid"
-
-      const barang = barangList.find((x) => x.id === item.barangId)
-      if (!barang) return "Ada barang yang tidak ditemukan"
-      if (barang.tokoId !== form.tokoAsalId) return "Ada barang yang tidak cocok dengan toko asal"
-      if (qty > barang.stok) return `Stok ${barang.nama} tidak mencukupi`
-    }
-
-    return null
-  }
-
-  const handleCreateTransfer = async (e: FormEvent) => {
-    e.preventDefault()
-
-    const user = auth.currentUser
-    if (!user) return
-
-    const validationError = validateForm()
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-
-    const tokoAsal = tokoList.find((item) => item.id === form.tokoAsalId)
-    const tokoTujuan = tokoList.find((item) => item.id === form.tokoTujuanId)
-
-    if (!tokoAsal || !tokoTujuan) {
-      setError("Data toko tidak ditemukan")
-      return
-    }
-
-    setSubmitLoading(true)
-    setError(null)
-
-    try {
-      const actor = await getUserProfile(user.uid, user.email)
-      const kodeBatch = buildKodeTransfer()
-
-      await Promise.all(
-        selectedItems.map(async (selected, index) => {
-          const barang = barangList.find((item) => item.id === selected.barangId)
-          if (!barang) throw new Error("Barang tidak ditemukan")
-
-          const qty = Number(selected.qty)
-          const existingTarget = barangList.find(
-            (item) =>
-              item.tokoId === tokoTujuan.id &&
-              item.kodeBarang.trim().toLowerCase() === barang.kodeBarang.trim().toLowerCase()
-          )
-
-          const newTransferRef = doc(collection(db, "transfer_barang"))
-          const targetBarangRef = existingTarget
-            ? doc(db, "barang", existingTarget.id)
-            : doc(collection(db, "barang"))
-
-          await setDoc(newTransferRef, {
-            kodeTransfer: `${kodeBatch}-${String(index + 1).padStart(2, "0")}`,
-            status: "DRAFT",
-            barangId: barang.id,
-            barangTujuanId: targetBarangRef.id,
-            kodeBarang: barang.kodeBarang,
-            namaBarang: barang.nama,
-            kategoriId: barang.kategoriId,
-            kategoriNama: barang.kategoriNama,
-            merk: barang.merk,
-            supplier: barang.supplier,
-            satuan: barang.satuan,
-            hargaModal: barang.hargaModal,
-            hargaJual: barang.hargaJual,
-            qty,
-            stokMinimum: barang.stokMinimum,
-            tokoAsalId: tokoAsal.id,
-            tokoAsalNama: tokoAsal.nama,
-            tokoTujuanId: tokoTujuan.id,
-            tokoTujuanNama: tokoTujuan.nama,
-            catatan: form.catatan.trim(),
-            catatanPenerimaan: "",
-            alasanBatal: "",
-            stokAsalSebelum: barang.stok,
-            stokAsalSesudah: 0,
-            stokTujuanSebelum: existingTarget?.stok || 0,
-            stokTujuanSesudah: 0,
-
-            createdBy: actor.uid,
-            createdByNama: actor.nama,
-            createdByEmail: actor.email,
-
-            sentBy: "",
-            sentByNama: "",
-            sentByEmail: "",
-
-            receivedBy: "",
-            receivedByNama: "",
-            receivedByEmail: "",
-
-            cancelledBy: "",
-            cancelledByNama: "",
-            cancelledByEmail: "",
-
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            sentAt: null,
-            receivedAt: null,
-            cancelledAt: null,
-          })
-        })
-      )
-
-      await fetchAll()
-      resetForm()
-      setSuccessMsg("Draft transfer barang berhasil dibuat")
-      setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e: any) {
-      console.error(e)
-      setError(e?.message || "Gagal membuat draft transfer")
-    } finally {
-      setSubmitLoading(false)
-    }
-  }
-
-  const handleSendTransfer = async (item: TransferBarang) => {
-    const user = auth.currentUser
-    if (!user) return
-
-    setActionLoading(item.id)
-    setError(null)
-
-    try {
-      const actor = await getUserProfile(user.uid, user.email)
-
-      await runTransaction(db, async (transaction) => {
-        const transferRef = doc(db, "transfer_barang", item.id)
-        const sourceRef = doc(db, "barang", item.barangId)
-
-        const [transferSnap, sourceSnap] = await Promise.all([
-          transaction.get(transferRef),
-          transaction.get(sourceRef),
-        ])
-
-        if (!transferSnap.exists()) throw new Error("Transfer tidak ditemukan")
-        if (!sourceSnap.exists()) throw new Error("Barang asal tidak ditemukan")
-
-        const latestTransfer = transferSnap.data() as any
-        const latestSource = sourceSnap.data() as any
-        const latestStatus = (latestTransfer?.status || "DRAFT") as TransferStatus
-        const latestStock = Number(latestSource?.stok || 0)
-        const qty = Number(latestTransfer?.qty || 0)
-
-        if (latestStatus !== "DRAFT") {
-          throw new Error("Transfer hanya bisa dikirim dari status draft")
-        }
-        if (qty <= 0) throw new Error("Qty transfer tidak valid")
-        if (latestStock < qty) throw new Error("Stok toko asal tidak mencukupi")
-
-        transaction.update(sourceRef, {
-          stok: latestStock - qty,
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-        })
-
-        transaction.update(transferRef, {
-          status: "DIKIRIM",
-          stokAsalSebelum: latestStock,
-          stokAsalSesudah: latestStock - qty,
-          sentBy: actor.uid,
-          sentByNama: actor.nama,
-          sentByEmail: actor.email,
-          sentAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-      })
-
-      await fetchAll()
-      setSuccessMsg("Transfer berhasil dikirim")
-      setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e: any) {
-      console.error(e)
-      setError(e?.message || "Gagal mengirim transfer")
-    } finally {
-      setActionLoading(null)
-    }
   }
 
   const handleReceiveTransfer = async () => {
@@ -1045,76 +661,6 @@ export default function TransferBarangPage() {
     }
   }
 
-  const handleCancelTransfer = async () => {
-    const user = auth.currentUser
-    if (!user || !cancelTarget) return
-
-    setActionLoading(cancelTarget.id)
-    setError(null)
-
-    try {
-      const reason = window.prompt(
-        "Alasan pembatalan transfer:",
-        cancelTarget.alasanBatal || ""
-      )
-      if (reason === null) {
-        setActionLoading(null)
-        return
-      }
-
-      const actor = await getUserProfile(user.uid, user.email)
-
-      await runTransaction(db, async (transaction) => {
-        const transferRef = doc(db, "transfer_barang", cancelTarget.id)
-        const transferSnap = await transaction.get(transferRef)
-        if (!transferSnap.exists()) throw new Error("Transfer tidak ditemukan")
-
-        const latestTransfer = transferSnap.data() as any
-        const latestStatus = (latestTransfer?.status || "DRAFT") as TransferStatus
-        const qty = Number(latestTransfer?.qty || 0)
-
-        if (!["DRAFT", "DIKIRIM"].includes(latestStatus)) {
-          throw new Error("Transfer ini sudah final dan tidak bisa dibatalkan")
-        }
-
-        if (latestStatus === "DIKIRIM") {
-          const sourceRef = doc(db, "barang", latestTransfer?.barangId || "")
-          const sourceSnap = await transaction.get(sourceRef)
-          if (!sourceSnap.exists()) throw new Error("Barang asal tidak ditemukan")
-
-          const sourceData = sourceSnap.data() as any
-          const currentStock = Number(sourceData?.stok || 0)
-
-          transaction.update(sourceRef, {
-            stok: currentStock + qty,
-            updatedAt: serverTimestamp(),
-            updatedBy: user.uid,
-          })
-        }
-
-        transaction.update(transferRef, {
-          status: "DIBATALKAN",
-          alasanBatal: reason.trim(),
-          cancelledBy: actor.uid,
-          cancelledByNama: actor.nama,
-          cancelledByEmail: actor.email,
-          cancelledAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-      })
-
-      setCancelTarget(null)
-      await fetchAll()
-      setSuccessMsg("Transfer berhasil dibatalkan")
-      setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e: any) {
-      console.error(e)
-      setError(e?.message || "Gagal membatalkan transfer")
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
   const detailData =
     selectedDetail
       ? transferList.find((item) => item.id === selectedDetail.id) || selectedDetail
@@ -1125,20 +671,20 @@ export default function TransferBarangPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border border-slate-200 border-l-4 border-l-cyan-500 bg-white p-4 shadow-sm sm:p-5"
+        className="relative overflow-hidden rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-200/50 sm:h-14 sm:w-14">
-              <ArrowLeftRight size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
+              <ArrowDownToLine size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
             </div>
 
             <div className="min-w-0 self-center sm:self-auto">
               <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Transfer Barang
+                Terima Barang
               </h1>
               <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Multi barang · popup cari barang · draft · kirim · terima · batal
+                Khusus penerimaan transfer barang antar toko
               </p>
             </div>
           </div>
@@ -1146,7 +692,7 @@ export default function TransferBarangPage() {
           <div className="flex items-center justify-between gap-2 sm:flex-shrink-0 sm:flex-wrap sm:justify-end">
             <div className="flex items-center gap-2">
               {filteredTransfer.length > 0 && (
-                <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-cyan-500 px-2.5 shadow-sm shadow-cyan-200/50">
+                <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-emerald-500 px-2.5 shadow-sm shadow-emerald-200/50">
                   <span className="text-xs font-black text-white">
                     {itemsPerPage === 0 ? filteredTransfer.length : pagedTransfer.length}
                   </span>
@@ -1208,177 +754,6 @@ export default function TransferBarangPage() {
         )}
       </AnimatePresence>
 
-      <motion.form
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.06 }}
-        onSubmit={handleCreateTransfer}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-black text-slate-800 sm:text-base">Buat Draft Transfer</h2>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Stok asal berkurang saat dikirim, stok tujuan bertambah saat diterima
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={resetForm}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
-          >
-            Reset Form
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <FormSelect
-            label="Toko Asal"
-            required
-            value={form.tokoAsalId}
-            onChange={(e: any) => {
-              const value = e.target.value
-              setForm((prev) => ({ ...prev, tokoAsalId: value }))
-              setSelectedItems([])
-              setBarangModalSearch("")
-            }}
-          >
-            <option value="">Pilih toko asal</option>
-            {tokoList.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nama}
-              </option>
-            ))}
-          </FormSelect>
-
-          <FormSelect
-            label="Toko Tujuan"
-            required
-            value={form.tokoTujuanId}
-            onChange={(e: any) => setField("tokoTujuanId")(e.target.value)}
-          >
-            <option value="">Pilih toko tujuan</option>
-            {tokoList
-              .filter((item) => item.id !== form.tokoAsalId)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nama}
-                </option>
-              ))}
-          </FormSelect>
-
-          <div className="md:col-span-2">
-            <label className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Barang
-              <span className="ml-0.5 text-red-400">*</span>
-            </label>
-
-            <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/70 p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-black text-slate-800">
-                    {selectedItems.length > 0
-                      ? `${selectedItems.length} barang dipilih`
-                      : "Belum ada barang dipilih"}
-                  </p>
-                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                    Pilih banyak barang dari toko asal, lalu isi qty masing-masing
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  disabled={!form.tokoAsalId}
-                  onClick={() => setBarangModalOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Boxes size={16} />
-                  Pilih Barang
-                </button>
-              </div>
-
-              {selectedBarangDetail.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  {selectedBarangDetail.map(({ barang, qty }) => (
-                    <div
-                      key={barang.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-3"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-black text-slate-800">
-                            {barang.kodeBarang} · {barang.nama}
-                          </p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            Stok {barang.stok} • {barang.kategoriNama || "Tanpa Kategori"} •{" "}
-                            {barang.merk || "Tanpa Merk"}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <div className="w-full sm:w-36">
-                            <FormInput
-                              label="Qty"
-                              value={qty}
-                              inputMode="numeric"
-                              onChange={(e: any) =>
-                                setQtySelectedBarang(
-                                  barang.id,
-                                  String(e.target.value).replace(/[^\d]/g, "")
-                                )
-                              }
-                              placeholder="Qty"
-                            />
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => removeSelectedBarang(barang.id)}
-                            className="inline-flex h-[42px] items-center justify-center rounded-xl border border-red-200 bg-white px-3 text-[11px] font-black text-red-600 transition-all hover:bg-red-50"
-                          >
-                            Hapus
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
-            <FormTextArea
-              label="Catatan"
-              value={form.catatan}
-              onChange={(e: any) => setField("catatan")(e.target.value)}
-              placeholder="Contoh: transfer stok untuk kebutuhan cabang"
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={submitLoading}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitLoading ? <RefreshCw size={16} className="animate-spin" /> : <Package size={16} />}
-            Simpan Draft Transfer
-          </button>
-
-          <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-bold text-cyan-700 ring-1 ring-cyan-200">
-              Barang: {selectedItems.length}
-            </span>
-            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
-              Total Qty: {selectedItems.reduce((acc, item) => acc + Number(item.qty || 0), 0)}
-            </span>
-          </div>
-        </div>
-      </motion.form>
-
       <motion.div
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1386,9 +761,9 @@ export default function TransferBarangPage() {
         className="rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white p-4 shadow-sm sm:p-5"
       >
         <div className="mb-4">
-          <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Riwayat</h2>
+          <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Penerimaan</h2>
           <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Cari transfer berdasarkan status, toko, dan rentang waktu
+            Fokus untuk barang yang akan atau sudah diterima
           </p>
         </div>
 
@@ -1407,15 +782,13 @@ export default function TransferBarangPage() {
             label="Status"
             value={filterStatus}
             onChange={(v) => {
-              setFilterStatus(v)
+              setFilterStatus(v as TransferStatus | "")
               setPage(1)
             }}
           >
             <option value="">Semua status</option>
-            <option value="DRAFT">Draft</option>
             <option value="DIKIRIM">Terkirim</option>
             <option value="DITERIMA">Diterima</option>
-            <option value="DIBATALKAN">Dibatalkan</option>
           </FilterSelect>
 
           <FilterSelect
@@ -1484,7 +857,7 @@ export default function TransferBarangPage() {
             type="button"
             onClick={() => {
               setSearch("")
-              setFilterStatus("")
+              setFilterStatus("DIKIRIM")
               setFilterAsal("")
               setFilterTujuan("")
               resetDateFilter()
@@ -1504,7 +877,7 @@ export default function TransferBarangPage() {
       >
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-black text-slate-800 sm:text-base">Riwayat Transfer</h2>
+            <h2 className="text-sm font-black text-slate-800 sm:text-base">Daftar Penerimaan</h2>
             <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               Total {filteredTransfer.length} transfer
             </p>
@@ -1530,7 +903,7 @@ export default function TransferBarangPage() {
 
         {pagedTransfer.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-            Belum ada data transfer
+            Belum ada data penerimaan
           </div>
         ) : (
           <div className="space-y-3">
@@ -1562,13 +935,14 @@ export default function TransferBarangPage() {
                         {item.kodeBarang} · {item.namaBarang}
                       </p>
                       <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                        {item.tokoAsalNama} → {item.tokoTujuanNama} • Qty {item.qty} • {item.satuan}
+                        {item.tokoAsalNama} → {item.tokoTujuanNama} • Qty {item.qty} •{" "}
+                        {item.satuan}
                       </p>
                       <p className="mt-1 text-[11px] font-semibold text-slate-400">
-                        Dibuat {formatDateTime(item.createdAt)}
+                        Dikirim {formatDateTime(item.sentAt || item.createdAt)}
                       </p>
                       <p className="mt-1 text-[11px] font-semibold text-cyan-700">
-                        Oleh {item.createdByNama || "-"}
+                        Pengirim {item.sentByNama || item.createdByNama || "-"}
                       </p>
                     </div>
 
@@ -1582,22 +956,6 @@ export default function TransferBarangPage() {
                         Detail
                       </button>
 
-                      {item.status === "DRAFT" && (
-                        <button
-                          type="button"
-                          onClick={() => handleSendTransfer(item)}
-                          disabled={actionLoading === item.id}
-                          className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-amber-600 disabled:opacity-60"
-                        >
-                          {actionLoading === item.id ? (
-                            <RefreshCw size={14} className="animate-spin" />
-                          ) : (
-                            <Truck size={14} />
-                          )}
-                          Kirim
-                        </button>
-                      )}
-
                       {item.status === "DIKIRIM" && (
                         <button
                           type="button"
@@ -1609,19 +967,7 @@ export default function TransferBarangPage() {
                           className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
                         >
                           <CircleCheckBig size={14} />
-                          Sudah Diterima
-                        </button>
-                      )}
-
-                      {(item.status === "DRAFT" || item.status === "DIKIRIM") && (
-                        <button
-                          type="button"
-                          onClick={() => setCancelTarget(item)}
-                          disabled={actionLoading === item.id}
-                          className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-[11px] font-black text-red-600 transition-all hover:bg-red-50 disabled:opacity-60"
-                        >
-                          <Undo2 size={14} />
-                          Batalkan
+                          Konfirmasi Diterima
                         </button>
                       )}
                     </div>
@@ -1662,143 +1008,6 @@ export default function TransferBarangPage() {
       </motion.div>
 
       <Modal
-        open={barangModalOpen}
-        onClose={() => setBarangModalOpen(false)}
-        title="Pilih Barang Transfer"
-        subtitle="Bisa pilih banyak barang sekaligus dan cari nama barang"
-      >
-        {!form.tokoAsalId ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-            Pilih toko asal dulu
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <FormInput
-                  label="Cari Barang"
-                  value={barangModalSearch}
-                  onChange={(e: any) => setBarangModalSearch(e.target.value)}
-                  placeholder="Nama barang, kode barang, kategori, merk..."
-                />
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  Ringkasan
-                </p>
-                <p className="mt-1 text-sm font-black text-slate-800">
-                  {selectedItems.length} barang dipilih
-                </p>
-                <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                  Total qty {selectedItems.reduce((acc, item) => acc + Number(item.qty || 0), 0)}
-                </p>
-              </div>
-            </div>
-
-            {barangModalFiltered.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                Barang tidak ditemukan
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {barangModalFiltered.map((item) => {
-                  const selected = selectedItems.find((x) => x.barangId === item.id)
-                  return (
-                    <div
-                      key={item.id}
-                      className={`rounded-2xl border p-4 transition-all ${
-                        selected ? "border-cyan-300 bg-cyan-50/60" : "border-slate-200 bg-white"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <label className="mt-0.5 flex cursor-pointer items-center">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(selected)}
-                              onChange={() => toggleBarangSelection(item.id)}
-                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-                            />
-                          </label>
-
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-black text-slate-800">
-                              {item.kodeBarang} · {item.nama}
-                            </p>
-                            <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                              Stok {item.stok} • {item.kategoriNama || "Tanpa Kategori"} •{" "}
-                              {item.merk || "Tanpa Merk"}
-                            </p>
-                            <p className="mt-1 text-[11px] font-semibold text-slate-400">
-                              Supplier {item.supplier || "-"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex w-full items-end gap-2 lg:w-auto">
-                          <div className="w-full lg:w-36">
-                            <FormInput
-                              label="Qty"
-                              value={selected?.qty || ""}
-                              disabled={!selected}
-                              inputMode="numeric"
-                              onChange={(e: any) =>
-                                setQtySelectedBarang(
-                                  item.id,
-                                  String(e.target.value).replace(/[^\d]/g, "")
-                                )
-                              }
-                              placeholder="Qty"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedItems(
-                      barangModalFiltered.map((item) => ({
-                        barangId: item.id,
-                        qty: selectedItems.find((x) => x.barangId === item.id)?.qty || "1",
-                      }))
-                    )
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
-                >
-                  Pilih Semua Hasil
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedItems([])}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
-                >
-                  Kosongkan Pilihan
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setBarangModalOpen(false)}
-                className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-cyan-600"
-              >
-                Selesai Pilih Barang
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
         open={Boolean(detailData)}
         onClose={() => setSelectedDetail(null)}
         title="Detail Transfer"
@@ -1835,7 +1044,9 @@ export default function TransferBarangPage() {
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                 Toko Asal
               </p>
-              <p className="mt-2 text-sm font-black text-slate-800">{detailData.tokoAsalNama}</p>
+              <p className="mt-2 text-sm font-black text-slate-800">
+                {detailData.tokoAsalNama}
+              </p>
               <p className="mt-1 text-[12px] font-semibold text-slate-500">
                 Stok {detailData.stokAsalSebelum} → {detailData.stokAsalSesudah}
               </p>
@@ -1845,7 +1056,9 @@ export default function TransferBarangPage() {
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                 Toko Tujuan
               </p>
-              <p className="mt-2 text-sm font-black text-slate-800">{detailData.tokoTujuanNama}</p>
+              <p className="mt-2 text-sm font-black text-slate-800">
+                {detailData.tokoTujuanNama}
+              </p>
               <p className="mt-1 text-[12px] font-semibold text-slate-500">
                 Stok {detailData.stokTujuanSebelum} → {detailData.stokTujuanSesudah}
               </p>
@@ -1853,20 +1066,17 @@ export default function TransferBarangPage() {
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 md:col-span-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Catatan
+                Catatan Pengirim
               </p>
-              <p className="mt-2 text-sm font-semibold text-slate-700">{detailData.catatan || "-"}</p>
+              <p className="mt-2 text-sm font-semibold text-slate-700">
+                {detailData.catatan || "-"}
+              </p>
+
               <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 Catatan Penerimaan
               </p>
               <p className="mt-2 text-sm font-semibold text-slate-700">
                 {detailData.catatanPenerimaan || "-"}
-              </p>
-              <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Alasan Batal
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-700">
-                {detailData.alasanBatal || "-"}
               </p>
             </div>
 
@@ -1916,12 +1126,20 @@ export default function TransferBarangPage() {
               <p className="mt-1 text-[12px] font-semibold text-slate-500">
                 {receiveTarget.tokoAsalNama} → {receiveTarget.tokoTujuanNama}
               </p>
+              <p className="mt-1 text-[12px] font-semibold text-cyan-700">
+                Dikirim oleh {receiveTarget.sentByNama || receiveTarget.createdByNama || "-"}
+              </p>
             </div>
 
             <FormTextArea
               label="Catatan Penerimaan"
               value={receiveForm.catatanPenerimaan}
-              onChange={(e: any) => setReceiveField("catatanPenerimaan")(e.target.value)}
+              onChange={(e: any) =>
+                setReceiveForm((prev) => ({
+                  ...prev,
+                  catatanPenerimaan: e.target.value,
+                }))
+              }
               placeholder="Opsional"
             />
 
@@ -1949,48 +1167,6 @@ export default function TransferBarangPage() {
                   <CircleCheckBig size={16} />
                 )}
                 Konfirmasi Diterima
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
-
-      <Modal
-        open={Boolean(cancelTarget)}
-        onClose={() => setCancelTarget(null)}
-        title="Batalkan Transfer"
-        subtitle={cancelTarget?.kodeTransfer || ""}
-      >
-        {cancelTarget ? (
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-black text-red-700">Transfer ini akan dibatalkan.</p>
-              <p className="mt-1 text-[12px] font-semibold text-red-600">
-                Kalau status sudah terkirim, stok asal akan dikembalikan lagi.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCancelTarget(null)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-all hover:bg-slate-50"
-              >
-                Tutup
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCancelTransfer}
-                disabled={actionLoading === cancelTarget.id}
-                className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-red-600 disabled:opacity-60"
-              >
-                {actionLoading === cancelTarget.id ? (
-                  <RefreshCw size={16} className="animate-spin" />
-                ) : (
-                  <Undo2 size={16} />
-                )}
-                Ya, Batalkan Transfer
               </button>
             </div>
           </div>

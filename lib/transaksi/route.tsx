@@ -1,68 +1,31 @@
 /* 
-  Halaman admin transaksi kasir.
-  Fitur:
-  - transaksi kasir per toko
-  - scanner barcode gun / keyboard global
-  - scanner barcode kamera model panel
-  - scan barcode yang sama tidak menambah qty
-  - bunyi tit saat scan berhasil
-  - diskon otomatis
-  - stok keluar + mutasi stok
-  - tulis laporan harian & bulanan
-  - modal struk otomatis setelah transaksi berhasil
-  - print struk dari modal
-  - data struk dari Firestore (bukan keranjang aktif)
-  - tombol print ulang di riwayat transaksi
+  Helper, tipe, dan komponen transaksi kasir.
+  Berisi util transaksi, struk, riwayat transaksi, serta tampilan detail konfirmasi
+  termasuk akun kasir dari koleksi users dan nomor tujuan barang digital.
 */
 
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { auth, db } from "@/lib/firebase"
+import { useEffect, useState } from "react"
+import { db } from "@/lib/firebase"
+import { collection, getDocs, orderBy, query, serverTimestamp } from "firebase/firestore"
 import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  orderBy,
-  runTransaction,
-  serverTimestamp,
-  getDoc,
-} from "firebase/firestore"
-import {
-  ShoppingCart,
-  Search,
-  Store,
-  Percent,
-  Wallet,
   Receipt,
-  RefreshCw,
-  Trash2,
-  Plus,
-  Minus,
-  BadgeDollarSign,
-  CircleDollarSign,
-  CheckCircle2,
-  AlertCircle,
-  Boxes,
-  Layers3,
-  Camera,
-  ScanBarcode,
-  PauseCircle,
-  PlayCircle,
-  RotateCcw,
-  Printer,
   X,
   Clock,
+  Printer,
   History,
+  RefreshCw,
   Smartphone,
   Wifi,
   Zap,
   Ticket,
   Gamepad2,
+  User2,
+  Mail,
+  Target,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -235,6 +198,9 @@ export type StrukData = {
   jenisTransaksi: "fisik" | "digital"
   items: StrukItem[]
   createdAtMs: number
+  kasirUid?: string
+  kasirNama?: string
+  kasirEmail?: string
 }
 
 export type LaporanMetodeBreakdown = {
@@ -295,7 +261,6 @@ declare global {
     webkitAudioContext?: typeof AudioContext
   }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -430,7 +395,7 @@ export function mergeKategoriBreakdown(
     for (const item of existing) {
       const kategoriId = String(item?.kategoriId || "").trim() || "tanpa-kategori"
       const nama = item?.nama || "Tanpa Kategori"
-       map.set(kategoriId, {
+      map.set(kategoriId, {
         kategoriId,
         nama,
         jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
@@ -451,7 +416,7 @@ export function mergeKategoriBreakdown(
   for (const item of incoming) {
     const kategoriId = String(item?.kategoriId || "").trim() || "tanpa-kategori"
     const nama = item?.nama || "Tanpa Kategori"
-        const prev = map.get(kategoriId) || {
+    const prev = map.get(kategoriId) || {
       kategoriId,
       nama,
       jumlahTransaksi: 0,
@@ -467,7 +432,7 @@ export function mergeKategoriBreakdown(
       satuanNamaList: [] as string[],
     }
 
-        map.set(kategoriId, {
+    map.set(kategoriId, {
       kategoriId,
       nama,
       jumlahTransaksi: Number(prev.jumlahTransaksi || 0) + Number(item?.jumlahTransaksi || 0),
@@ -594,23 +559,35 @@ export function formatJenisBarangLabel(value?: "fisik" | "digital") {
 
 export function formatSubJenisDigitalLabel(value?: string) {
   switch (value) {
-    case "pulsa":       return "Pulsa"
-    case "paket_data":  return "Paket Data"
-    case "token_listrik": return "Token Listrik"
-    case "voucher":     return "Voucher"
-    case "saldo_game":  return "Saldo Game"
-    default:            return "-"
+    case "pulsa":
+      return "Pulsa"
+    case "paket_data":
+      return "Paket Data"
+    case "token_listrik":
+      return "Token Listrik"
+    case "voucher":
+      return "Voucher"
+    case "saldo_game":
+      return "Saldo Game"
+    default:
+      return "-"
   }
 }
 
 export function getDigitalIcon(subJenis?: string) {
   switch (subJenis) {
-    case "pulsa":         return Smartphone
-    case "paket_data":    return Wifi
-    case "token_listrik": return Zap
-    case "voucher":       return Ticket
-    case "saldo_game":    return Gamepad2
-    default:              return Smartphone
+    case "pulsa":
+      return Smartphone
+    case "paket_data":
+      return Wifi
+    case "token_listrik":
+      return Zap
+    case "voucher":
+      return Ticket
+    case "saldo_game":
+      return Gamepad2
+    default:
+      return Smartphone
   }
 }
 
@@ -623,7 +600,6 @@ export function getTujuanLabel(subJenis?: string) {
   if (subJenis === "saldo_game") return "User ID / Nomor"
   return "Nomor Tujuan"
 }
-
 
 export function getDigitalNominalPotong(item: Pick<CartItem, "jenisBarang" | "nominalProduk" | "qty">) {
   if (item.jenisBarang !== "digital") return 0
@@ -696,6 +672,14 @@ export function buildDigitalSaldoRingkasan(cart: CartItem[]) {
     .join("")
 }
 
+export function getKasirDisplayName(struk?: Partial<StrukData> | null) {
+  return String(struk?.kasirNama || "").trim() || "Tanpa Nama"
+}
+
+export function getKasirDisplayEmail(struk?: Partial<StrukData> | null) {
+  return String(struk?.kasirEmail || "").trim() || "-"
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Print Helper
 // ─────────────────────────────────────────────────────────────────────────────
@@ -719,21 +703,20 @@ export function cetakStruk(struk: StrukData) {
       background: #fff;
     }
     .center { text-align: center; }
-    .bold { font-weight: bold; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
     .divider-solid { border-top: 1px solid #000; margin: 6px 0; }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
     .row .label { flex: 1; }
     .row .value { text-align: right; white-space: nowrap; margin-left: 8px; }
     .item-nama { font-weight: bold; margin-bottom: 2px; }
-    .item-detail { color: #444; font-size: 11px; }
+    .item-detail { color: #444; font-size: 11px; margin-top: 1px; }
     .diskon-badge { font-size: 10px; color: #444; }
-    .total-row { font-size: 13px; font-weight: bold; }
     .grand-total { font-size: 15px; font-weight: bold; }
     .footer { text-align: center; margin-top: 6px; font-size: 10px; color: #555; }
     .logo { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
     .nomor { font-size: 10px; color: #555; margin-top: 2px; }
     .kembalian-row { font-size: 13px; font-weight: bold; color: #000; }
+    .section-title { font-size: 10px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
   </style>
 </head>
 <body>
@@ -745,10 +728,30 @@ export function cetakStruk(struk: StrukData) {
 
   <div class="divider-solid"></div>
 
-  ${struk.items.map((item) => `
+  <div style="margin-bottom: 6px;">
+    <div class="section-title">Kasir</div>
+    <div class="item-detail">${getKasirDisplayName(struk)}</div>   
+  </div>
+
+  <div class="divider"></div>
+
+  ${struk.items
+    .map(
+      (item) => `
     <div style="margin-bottom: 6px;">
       <div class="item-nama">${item.nama}</div>
-      <div class="item-detail">${item.kodeBarang} · ${item.satuan}</div>
+     
+    
+      ${
+        item.provider
+          ? `<div class="item-detail">Provider: ${item.provider}</div>`
+          : ""
+      }
+      ${
+        item.jenisBarang === "digital" && item.tujuan
+          ? `<div class="item-detail">${getTujuanLabel(item.subJenisDigital)}: ${item.tujuan}</div>`
+          : ""
+      }
       ${
         item.pakaiKodeUnik && item.kodeUnik
           ? `<div class="item-detail">${
@@ -779,7 +782,9 @@ export function cetakStruk(struk: StrukData) {
           : ""
       }
     </div>
-  `).join("")}
+  `
+    )
+    .join("")}
 
   <div class="divider"></div>
 
@@ -821,12 +826,14 @@ export function cetakStruk(struk: StrukData) {
     alert("Popup diblokir browser. Izinkan popup untuk mencetak struk.")
     return
   }
+
   win.document.write(html)
   win.document.close()
   win.focus()
-  setTimeout(() => { win.print() }, 400)
+  setTimeout(() => {
+    win.print()
+  }, 400)
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
@@ -872,7 +879,6 @@ export function FieldLabel({ icon: Icon, label }: { icon?: any; label: string })
   )
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Modal Struk
 // ─────────────────────────────────────────────────────────────────────────────
@@ -903,7 +909,6 @@ export function ModalStruk({
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
             className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
           >
-            {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 py-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 text-white">
@@ -919,15 +924,13 @@ export function ModalStruk({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white hover:bg-white/30 transition-colors"
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white transition-colors hover:bg-white/30"
               >
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
 
-            {/* Body Struk */}
             <div className="max-h-[60vh] overflow-y-auto p-5">
-              {/* Toko & waktu */}
               <div className="mb-4 text-center">
                 <p className="text-base font-black text-slate-800">{struk.tokoNama}</p>
                 <div className="mt-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-400">
@@ -938,17 +941,47 @@ export function ModalStruk({
 
               <div className="mb-4 border-t-2 border-dashed border-slate-200" />
 
-              {/* Items */}
+              <div className="mb-4 rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500 text-white">
+                    <User2 size={15} strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-cyan-600">
+                      Dikonfirmasi Oleh
+                    </p>
+                    <p className="text-sm font-black text-slate-800">{getKasirDisplayName(struk)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <Mail size={12} strokeWidth={2.5} />
+                  {getKasirDisplayEmail(struk)}
+                </div>
+              </div>
+
               <div className="space-y-3">
                 {struk.items.map((item, i) => (
                   <div key={i} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-black text-slate-800">{item.nama}</p>
-                        <div className="space-y-0.5">
-                          <p className="text-[10px] font-semibold text-slate-400">
-                            {item.kodeBarang} · {item.satuan}
-                          </p>
+
+                        <div className="space-y-0.5">                        
+
+                          {item.jenisBarang === "digital" && (
+                            <p className="text-[10px] font-semibold text-violet-600">
+                              
+                              {item.provider ? ` · ${item.provider}` : ""}
+                            </p>
+                          )}
+
+                          {item.jenisBarang === "digital" && item.tujuan && (
+                            <p className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
+                              <Target size={10} strokeWidth={2.5} />
+                              {getTujuanLabel(item.subJenisDigital)}: {item.tujuan}
+                            </p>
+                          )}
+
                           {item.pakaiKodeUnik && item.kodeUnik && (
                             <p className="text-[10px] font-semibold text-cyan-600">
                               {item.jenisKodeUnik === "imei"
@@ -960,13 +993,15 @@ export function ModalStruk({
                             </p>
                           )}
                         </div>
+
                         {item.diskonNama && (
                           <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">
                             🏷 {item.diskonNama}
                           </span>
                         )}
                       </div>
-                      <div className="text-right flex-shrink-0">
+
+                      <div className="flex-shrink-0 text-right">
                         {item.totalDiskon > 0 && (
                           <p className="text-[10px] font-semibold text-slate-400 line-through">
                             {formatRupiah(item.subtotalAsli)}
@@ -986,24 +1021,26 @@ export function ModalStruk({
 
               <div className="my-4 border-t-2 border-dashed border-slate-200" />
 
-              {/* Ringkasan */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
                   <span>Subtotal</span>
                   <span>{formatRupiah(struk.subtotal)}</span>
                 </div>
+
                 {struk.totalDiskon > 0 && (
                   <div className="flex items-center justify-between text-sm font-semibold text-emerald-600">
                     <span>Total Diskon</span>
                     <span>- {formatRupiah(struk.totalDiskon)}</span>
                   </div>
                 )}
+
                 {struk.totalDiskon > 0 && (
                   <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
                     <span>Setelah Diskon</span>
                     <span>{formatRupiah(struk.totalSetelahDiskon)}</span>
                   </div>
                 )}
+
                 {struk.biayaAdminNominal > 0 && (
                   <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
                     <span>Biaya Admin ({struk.biayaAdminPersen}%)</span>
@@ -1023,10 +1060,12 @@ export function ModalStruk({
                     {struk.metodePembayaranProvider && ` · ${struk.metodePembayaranProvider}`}
                   </span>
                 </div>
+
                 <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
                   <span>Uang Bayar</span>
                   <span>{formatRupiah(struk.uangBayar)}</span>
                 </div>
+
                 <div className="flex items-center justify-between text-sm font-black text-emerald-600">
                   <span>Kembalian</span>
                   <span>{formatRupiah(struk.kembalian)}</span>
@@ -1044,19 +1083,18 @@ export function ModalStruk({
               </div>
             </div>
 
-            {/* Footer Actions */}
             <div className="flex gap-3 border-t border-slate-100 p-4">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 rounded-xl border-2 border-slate-200 bg-white py-3 text-sm font-black text-slate-700 hover:bg-slate-50 transition-colors"
+                className="flex-1 rounded-xl border-2 border-slate-200 bg-white py-3 text-sm font-black text-slate-700 transition-colors hover:bg-slate-50"
               >
                 Tutup
               </button>
               <button
                 type="button"
                 onClick={() => cetakStruk(struk)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 py-3 text-sm font-black text-white shadow-sm hover:opacity-95 transition-opacity"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 py-3 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-95"
               >
                 <Printer size={16} strokeWidth={2.5} />
                 Print Struk
@@ -1068,7 +1106,6 @@ export function ModalStruk({
     </AnimatePresence>
   )
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Riwayat Transaksi Panel
@@ -1086,6 +1123,7 @@ export function RiwayatTransaksiPanel() {
       const snap = await getDocs(
         query(collection(db, "transaksi"), orderBy("createdAtMs", "desc"))
       )
+
       const list: StrukData[] = snap.docs.slice(0, 20).map((d) => {
         const x = d.data() as any
         return {
@@ -1093,7 +1131,7 @@ export function RiwayatTransaksiPanel() {
           nomorTransaksi: x?.nomorTransaksi || "",
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || "",
-          jenisTransaksi: x?.jenisTransaksi || "",
+          jenisTransaksi: x?.jenisTransaksi || "fisik",
           metodePembayaranNama: x?.metodePembayaranNama || "",
           metodePembayaranTipe: x?.metodePembayaranTipe || "",
           metodePembayaranProvider: x?.metodePembayaranProvider || "",
@@ -1111,6 +1149,9 @@ export function RiwayatTransaksiPanel() {
           totalJenisBarang: Number(x?.totalJenisBarang || 0),
           status: x?.status || "",
           catatan: x?.catatan || "",
+          kasirUid: x?.kasirUid || x?.createdByUid || x?.uid || "",
+          kasirNama: x?.kasirNama || x?.userNama || x?.nama || "",
+          kasirEmail: x?.kasirEmail || x?.userEmail || x?.email || "",
           items: Array.isArray(x?.items)
             ? x.items.map((item: any) => ({
                 barangId: item?.barangId || "",
@@ -1132,6 +1173,14 @@ export function RiwayatTransaksiPanel() {
                 pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
                 jenisKodeUnik: item?.jenisKodeUnik || "",
                 kodeUnik: item?.kodeUnik || "",
+                jenisBarang: item?.jenisBarang === "digital" ? "digital" : "fisik",
+                subJenisDigital: item?.subJenisDigital || "",
+                providerId: item?.providerId || "",
+                provider: item?.provider || "",
+                saldoSourceId: item?.saldoSourceId || "",
+                saldoSourceNama: item?.saldoSourceNama || "",
+                nominalProduk: Number(item?.nominalProduk || 0),
+                tujuan: item?.tujuan || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
                 diskonTipe: item?.diskonTipe || "",
@@ -1141,6 +1190,7 @@ export function RiwayatTransaksiPanel() {
           createdAtMs: Number(x?.createdAtMs || 0),
         }
       })
+
       setRiwayat(list)
     } catch (e) {
       console.error("Gagal memuat riwayat:", e)
@@ -1160,7 +1210,6 @@ export function RiwayatTransaksiPanel() {
       )}
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {/* Toggle Button */}
         <button
           type="button"
           onClick={() => setOpen((p) => !p)}
@@ -1182,7 +1231,6 @@ export function RiwayatTransaksiPanel() {
           </div>
         </button>
 
-        {/* Collapsible Content */}
         <AnimatePresence>
           {open && (
             <motion.div
@@ -1220,16 +1268,16 @@ export function RiwayatTransaksiPanel() {
                     Belum ada riwayat transaksi
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                     {riwayat.map((trx) => (
                       <button
                         key={trx.id}
                         type="button"
                         onClick={() => setSelectedStruk(trx)}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left hover:border-cyan-300 hover:bg-cyan-50 transition-all"
+                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-all hover:border-cyan-300 hover:bg-cyan-50"
                       >
                         <div className="min-w-0">
-                          <p className="text-xs font-black text-slate-800 truncate">
+                          <p className="truncate text-xs font-black text-slate-800">
                             {trx.nomorTransaksi}
                           </p>
                           <p className="text-[10px] font-semibold text-slate-400">
@@ -1238,7 +1286,14 @@ export function RiwayatTransaksiPanel() {
                           <p className="text-[10px] font-semibold text-slate-500">
                             {trx.totalItem} item · {trx.metodePembayaranNama}
                           </p>
+                          {(trx.kasirNama || trx.kasirEmail) && (
+                            <p className="mt-1 text-[10px] font-semibold text-cyan-600">
+                              {getKasirDisplayName(trx)}
+                              {trx.kasirEmail ? ` · ${trx.kasirEmail}` : ""}
+                            </p>
+                          )}
                         </div>
+
                         <div className="flex-shrink-0 text-right">
                           <p className="text-sm font-black text-slate-800">
                             {formatRupiah(trx.grandTotal)}
@@ -1260,5 +1315,3 @@ export function RiwayatTransaksiPanel() {
     </>
   )
 }
-
-

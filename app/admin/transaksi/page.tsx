@@ -1,18 +1,7 @@
 /* 
   Halaman admin transaksi kasir.
-  Fitur:
-  - transaksi kasir per toko
-  - scanner barcode gun / keyboard global
-  - scanner barcode kamera model panel
-  - scan barcode yang sama tidak menambah qty
-  - bunyi tit saat scan berhasil
-  - diskon otomatis
-  - stok keluar + mutasi stok
-  - tulis laporan harian & bulanan
-  - modal struk otomatis setelah transaksi berhasil
-  - print struk dari modal
-  - data struk dari Firestore (bukan keranjang aktif)
-  - tombol print ulang di riwayat transaksi
+  Menangani transaksi fisik dan digital, scanner barcode/kamera,
+  sinkron saldo digital, simpan kasir dari koleksi users, dan preview konfirmasi.
 */
 
 "use client"
@@ -47,19 +36,18 @@ import {
   Boxes,
   Layers3,
   Camera,
-  ScanBarcode,
   PauseCircle,
   PlayCircle,
   RotateCcw,
-  Printer,
-  X,
   Clock,
-  History,
   Smartphone,
   Wifi,
   Zap,
   Ticket,
   Gamepad2,
+  User2,
+  Mail,
+  Target,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -69,7 +57,6 @@ import {
   type MetodePembayaran,
   type CartItem,
   type StrukData,
-  type StrukItem,
   type LaporanKategoriBreakdown,
   type MasterSaldoDigital,
   type DigitalSaldoUsage,
@@ -77,7 +64,6 @@ import {
   formatRupiah,
   formatRibuanInput,
   formatPercent,
-  formatTanggalStruk,
   normalizeBarcode,
   hitungHargaSetelahDiskon,
   getBestDiskonForBarang,
@@ -97,10 +83,13 @@ import {
   RiwayatTransaksiPanel,
 } from "@/lib/transaksi/route"
 
+type UserProfile = {
+  uid: string
+  nama: string
+  email: string
+}
 
 export default function TransaksiPage() {
-  // ── State ──────────────────────────────────────────────────────────────────
-
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
 
@@ -109,6 +98,7 @@ export default function TransaksiPage() {
   const [diskonList, setDiskonList] = useState<Diskon[]>([])
   const [metodeList, setMetodeList] = useState<MetodePembayaran[]>([])
   const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([])
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null)
 
   const [selectedTokoId, setSelectedTokoId] = useState("")
   const [selectedMetodeId, setSelectedMetodeId] = useState("")
@@ -123,15 +113,12 @@ export default function TransaksiPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [strukModal, setStrukModal] = useState<StrukData | null>(null)
 
-  // Camera state
   const [cameraSupported, setCameraSupported] = useState(true)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraLoading, setCameraLoading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraStatus, setCameraStatus] = useState("Arahkan barcode ke area scan")
   const [lastCameraResult, setLastCameraResult] = useState("")
-
-  // ── Refs ───────────────────────────────────────────────────────────────────
 
   const scanBufferRef = useRef("")
   const scanLastTimeRef = useRef(0)
@@ -146,9 +133,6 @@ export default function TransaksiPage() {
   const cameraCooldownUntilRef = useRef(0)
 
   const beepAudioContextRef = useRef<AudioContext | null>(null)
-
-
-  // ── Audio ──────────────────────────────────────────────────────────────────
 
   const playSuccessBeep = () => {
     try {
@@ -172,8 +156,31 @@ export default function TransaksiPage() {
     }
   }
 
+  const fetchCurrentUserProfile = async (uid: string, emailFallback?: string | null) => {
+    try {
+      const snap = await getDoc(doc(db, "users", uid))
+      if (snap.exists()) {
+        const data = snap.data() as any
+        const profile: UserProfile = {
+          uid,
+          nama: String(data?.nama || "").trim() || "Tanpa Nama",
+          email: String(data?.email || "").trim() || String(emailFallback || "").trim() || "-",
+        }
+        setCurrentUserProfile(profile)
+        return profile
+      }
+    } catch (e) {
+      console.error("Gagal mengambil profil users:", e)
+    }
 
-  // ── Fetch Functions ────────────────────────────────────────────────────────
+    const fallback: UserProfile = {
+      uid,
+      nama: "Tanpa Nama",
+      email: String(emailFallback || "").trim() || "-",
+    }
+    setCurrentUserProfile(fallback)
+    return fallback
+  }
 
   const fetchToko = async () => {
     const snap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
@@ -206,7 +213,7 @@ export default function TransaksiPage() {
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || "",
           merk: x?.merk || "",
-           supplier: x?.supplier || "",
+          supplier: x?.supplier || "",
           satuan: x?.satuan || x?.satuanNama || "",
           satuanId: x?.satuanId || "",
           satuanNama: x?.satuanNama || x?.satuan || "",
@@ -287,7 +294,6 @@ export default function TransaksiPage() {
     if (metodeTunai) setSelectedMetodeId((prev) => prev || metodeTunai.id)
   }
 
-
   const fetchSaldo = async () => {
     const snap = await getDocs(query(collection(db, "master_saldo_digital"), orderBy("namaSaldo")))
     const list: MasterSaldoDigital[] = snap.docs
@@ -326,12 +332,13 @@ export default function TransaksiPage() {
     }
   }
 
-
-  // ── Effects ────────────────────────────────────────────────────────────────
-
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
-      if (u) await fetchAll()
+      if (u) {
+        await Promise.all([fetchAll(), fetchCurrentUserProfile(u.uid, u.email)])
+      } else {
+        setCurrentUserProfile(null)
+      }
     })
     return () => unsub()
   }, [])
@@ -343,9 +350,6 @@ export default function TransaksiPage() {
       !!navigator.mediaDevices?.getUserMedia
     setCameraSupported(supported)
   }, [])
-
-
-  // ── Derived / Memos ────────────────────────────────────────────────────────
 
   const selectedToko = useMemo(
     () => tokoList.find((t) => t.id === selectedTokoId) || null,
@@ -375,6 +379,7 @@ export default function TransaksiPage() {
         item.merk.toLowerCase().includes(q) ||
         item.kategoriNama.toLowerCase().includes(q) ||
         String(item.provider || "").toLowerCase().includes(q)
+
       if (!sameToko || !sameJenis || !matchSearch) return false
       if (activeTab === "digital") return item.aktif !== false
       return true
@@ -391,9 +396,6 @@ export default function TransaksiPage() {
     }
     return map
   }, [barangList, selectedTokoId])
-
-
-  // ── Cart Actions ───────────────────────────────────────────────────────────
 
   type AddToCartResult = {
     ok: boolean
@@ -456,8 +458,10 @@ export default function TransaksiPage() {
               : item
           )
         }
+
         const nextQty = found.qty + 1
         if (jenisBarang === "fisik" && nextQty > barang.stok) return prev
+
         return prev.map((item) =>
           item.barangId === barang.id
             ? {
@@ -483,7 +487,7 @@ export default function TransaksiPage() {
 
       return [
         ...prev,
-          {
+        {
           barangId: barang.id,
           kodeBarang: barang.kodeBarang,
           nama: barang.nama,
@@ -558,9 +562,6 @@ export default function TransaksiPage() {
     return { ok: true, status }
   }
 
-
-  // ── Barcode Scanner (keyboard/gun) ─────────────────────────────────────────
-
   useEffect(() => {
     const resetScanBuffer = () => {
       scanBufferRef.current = ""
@@ -619,9 +620,6 @@ export default function TransaksiPage() {
       resetScanBuffer()
     }
   }, [barangBarcodeMap, selectedTokoId, activeTab])
-
-
-  // ── Camera Scanner ─────────────────────────────────────────────────────────
 
   const stopCameraScanner = () => {
     if (cameraRafRef.current) {
@@ -703,8 +701,14 @@ export default function TransaksiPage() {
         ? await window.BarcodeDetector.getSupportedFormats()
         : []
       const preferredFormats = [
-        "code_128", "ean_13", "ean_8", "upc_a", "upc_e",
-        "code_39", "codabar", "itf",
+        "code_128",
+        "ean_13",
+        "ean_8",
+        "upc_a",
+        "upc_e",
+        "code_39",
+        "codabar",
+        "itf",
       ]
       const finalFormats =
         supportedFormats.length > 0
@@ -745,7 +749,9 @@ export default function TransaksiPage() {
   useEffect(() => {
     if (cameraOpen && activeTab === "fisik") void startCameraScanner()
     else stopCameraScanner()
-    return () => { stopCameraScanner() }
+    return () => {
+      stopCameraScanner()
+    }
   }, [cameraOpen, activeTab])
 
   useEffect(() => {
@@ -754,9 +760,6 @@ export default function TransaksiPage() {
       beepAudioContextRef.current?.close?.()
     }
   }, [])
-
-
-  // ── Cart Mutation Helpers ──────────────────────────────────────────────────
 
   const updateQty = (barangId: string, mode: "plus" | "minus") => {
     setCart((prev) =>
@@ -788,9 +791,6 @@ export default function TransaksiPage() {
     setSuccessMsg("Keranjang dikosongkan")
     setTimeout(() => setSuccessMsg(null), 2000)
   }
-
-
-  // ── Kalkulasi ──────────────────────────────────────────────────────────────
 
   const subtotal = useMemo(
     () => cart.reduce((acc, item) => acc + item.hargaAsli * item.qty, 0),
@@ -853,8 +853,17 @@ export default function TransaksiPage() {
     [cartDigital]
   )
 
-
-  // ── Submit Transaksi ───────────────────────────────────────────────────────
+  const digitalTargetList = useMemo(() => {
+    return cart
+      .filter((item) => item.jenisBarang === "digital")
+      .map((item) => ({
+        barangId: item.barangId,
+        nama: item.nama,
+        tujuan: String(item.tujuan || "").trim(),
+        label: getTujuanLabel(item.subJenisDigital),
+        subJenisLabel: formatSubJenisDigitalLabel(item.subJenisDigital),
+      }))
+  }, [cart])
 
   const handleProsesTransaksi = async () => {
     const user = auth.currentUser
@@ -867,29 +876,30 @@ export default function TransaksiPage() {
     if (!selectedMetode) return void setError("Data metode pembayaran tidak ditemukan")
 
     if (activeTab === "digital") {
-      const invalidTarget = cart.some(
-        (item) =>
-          item.jenisBarang === "digital" &&
-          digitalButuhTujuan(item.subJenisDigital) &&
-          !String(item.tujuan || "").trim()
-      )
-      if (invalidTarget)
-        return void setError("Isi tujuan untuk semua barang digital yang memerlukan tujuan")
+  const invalidTarget = cart.some(
+    (item) =>
+      item.jenisBarang === "digital" &&
+      !String(item.tujuan || "").trim()
+  )
+  if (invalidTarget)
+    return void setError("Isi nomor tujuan untuk semua barang digital")
 
-      const digitalSaldoError = validateDigitalSaldoUsage(cart)
-      if (digitalSaldoError) return void setError(digitalSaldoError)
-    }
+  const digitalSaldoError = validateDigitalSaldoUsage(cart)
+  if (digitalSaldoError) return void setError(digitalSaldoError)
+}
 
     setSubmitLoading(true)
     setError(null)
     setSuccessMsg(null)
 
     try {
+      const kasirProfile =
+        currentUserProfile || (await fetchCurrentUserProfile(user.uid, user.email))
+
       const nowMs = Date.now()
       const nomorTransaksi = `TRX-${nowMs}`
       const { tahun, bulan, hari, tanggalKey, bulanKey } = getTanggalParts(nowMs)
 
-      // Snapshot semua nilai sebelum async
       const cartSnapshot = [...cart]
       const grandTotalSnapshot = grandTotal
       const subtotalSnapshot = subtotal
@@ -907,7 +917,7 @@ export default function TransaksiPage() {
 
       let savedTransaksiId = ""
       const itemPayload: any[] = []
-           const kategoriAccumulator = new Map<
+      const kategoriAccumulator = new Map<
         string,
         LaporanKategoriBreakdown & {
           kategoriId: string
@@ -923,7 +933,6 @@ export default function TransaksiPage() {
         const laporanHarianRef = doc(db, "laporan_harian", `${tanggalKey}__${selectedToko.id}`)
         const laporanBulananRef = doc(db, "laporan_bulanan", `${bulanKey}__${selectedToko.id}`)
 
-        // Read stok barang fisik
         const barangFisik = cartSnapshot.filter((item) => item.jenisBarang === "fisik")
         const barangReads = await Promise.all(
           barangFisik.map(async (item) => {
@@ -952,7 +961,9 @@ export default function TransaksiPage() {
             }
             if (jumlahSaldo < usage.totalPotong) {
               throw new Error(
-                `Saldo ${usage.saldoSourceNama} tidak mencukupi. Butuh ${formatRupiah(usage.totalPotong)}, tersedia ${formatRupiah(jumlahSaldo)}`
+                `Saldo ${usage.saldoSourceNama} tidak mencukupi. Butuh ${formatRupiah(
+                  usage.totalPotong
+                )}, tersedia ${formatRupiah(jumlahSaldo)}`
               )
             }
             return {
@@ -969,7 +980,6 @@ export default function TransaksiPage() {
         const laporanHarianData = laporanHarianSnap.exists() ? laporanHarianSnap.data() : null
         const laporanBulananData = laporanBulananSnap.exists() ? laporanBulananSnap.data() : null
 
-        // Update stok
         for (const { barangRef, stokSesudah } of barangReads) {
           transaction.update(barangRef, {
             stok: stokSesudah,
@@ -992,13 +1002,12 @@ export default function TransaksiPage() {
           })
         }
 
-        // Build item payload & kategori accumulator
         for (const item of cartSnapshot) {
           const subtotalAsliItem = item.hargaAsli * item.qty
           const subtotalFinalItem = item.hargaSetelahDiskon * item.qty
           const totalDiskonItem = subtotalAsliItem - subtotalFinalItem
 
-                      const itemRow = {
+          const itemRow = {
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
             nama: item.nama,
@@ -1036,18 +1045,14 @@ export default function TransaksiPage() {
           const kategoriId = item.kategoriId?.trim() || "tanpa-kategori"
           const kategoriNama = item.kategoriNama?.trim() || "Tanpa Kategori"
           const totalModalItem = Number(item.hargaModal || 0) * Number(item.qty || 0)
-          const proporsiOmzet =
-            grandTotalSnapshot > 0 ? subtotalFinalItem / grandTotalSnapshot : 0
+          const proporsiOmzet = grandTotalSnapshot > 0 ? subtotalFinalItem / grandTotalSnapshot : 0
           const adminKategori = Math.round(biayaAdminNominalSnapshot * proporsiOmzet)
           const labaBersihKategori = subtotalFinalItem - totalModalItem - adminKategori
 
-                    const prevKategori = kategoriAccumulator.get(kategoriId)
+          const prevKategori = kategoriAccumulator.get(kategoriId)
 
           const nextSatuanIds = Array.from(
-            new Set([
-              ...(prevKategori?.satuanIds || []),
-              ...(item.satuanId ? [item.satuanId] : []),
-            ])
+            new Set([...(prevKategori?.satuanIds || []), ...(item.satuanId ? [item.satuanId] : [])])
           )
 
           const nextSatuanNamaList = Array.from(
@@ -1065,7 +1070,8 @@ export default function TransaksiPage() {
             omzet: Number(prevKategori?.omzet || 0) + subtotalFinalItem + adminKategori,
             subtotal: Number(prevKategori?.subtotal || 0) + subtotalAsliItem,
             totalDiskon: Number(prevKategori?.totalDiskon || 0) + totalDiskonItem,
-            totalSetelahDiskon: Number(prevKategori?.totalSetelahDiskon || 0) + subtotalFinalItem,
+            totalSetelahDiskon:
+              Number(prevKategori?.totalSetelahDiskon || 0) + subtotalFinalItem,
             totalModal: Number(prevKategori?.totalModal || 0) + totalModalItem,
             totalBiayaAdmin: Number(prevKategori?.totalBiayaAdmin || 0) + adminKategori,
             labaBersih: Number(prevKategori?.labaBersih || 0) + labaBersihKategori,
@@ -1074,7 +1080,6 @@ export default function TransaksiPage() {
           })
         }
 
-        // Tulis mutasi stok
         for (const { item, stokSekarang, stokSesudah } of barangReads) {
           const mutasiRef = doc(collection(db, "mutasi_stok"))
           transaction.set(mutasiRef, {
@@ -1098,7 +1103,6 @@ export default function TransaksiPage() {
           })
         }
 
-        // Tulis transaksi
         transaction.set(transaksiRef, {
           id: transaksiRef.id,
           nomorTransaksi,
@@ -1127,6 +1131,9 @@ export default function TransaksiPage() {
           digitalSaldoUsage: digitalSaldoUsageSnapshot,
           digitalSaldoRingkasan: buildDigitalSaldoRingkasan(cartSnapshot),
           items: itemPayload,
+          kasirUid: kasirProfile.uid,
+          kasirNama: kasirProfile.nama,
+          kasirEmail: kasirProfile.email,
           createdAt: serverTimestamp(),
           createdAtMs: nowMs,
           createdBy: user.uid,
@@ -1134,15 +1141,13 @@ export default function TransaksiPage() {
           updatedAtMs: nowMs,
         })
 
-        // Tulis laporan
-         const kategoriBreakdownTambah = Array.from(kategoriAccumulator.values()).map(
-          (item) => ({
-            ...item,
-            jumlahTransaksi: 1,
-            satuanIds: item.satuanIds || [],
-            satuanNamaList: item.satuanNamaList || [],
-          })
-        )
+        const kategoriBreakdownTambah = Array.from(kategoriAccumulator.values()).map((item) => ({
+          ...item,
+          jumlahTransaksi: 1,
+          satuanIds: item.satuanIds || [],
+          satuanNamaList: item.satuanNamaList || [],
+        }))
+
         const sharedLaporanArgs = {
           tokoId: selectedToko.id,
           tokoNama: selectedToko.nama,
@@ -1172,6 +1177,7 @@ export default function TransaksiPage() {
             ...sharedLaporanArgs,
           })
         )
+
         transaction.set(
           laporanBulananRef,
           buildLaporanPayload({
@@ -1185,7 +1191,6 @@ export default function TransaksiPage() {
         )
       })
 
-      // Baca struk dari Firestore untuk modal
       const savedSnap = await getDoc(doc(db, "transaksi", savedTransaksiId))
       if (savedSnap.exists()) {
         const x = savedSnap.data() as any
@@ -1212,11 +1217,15 @@ export default function TransaksiPage() {
           status: x?.status || "",
           catatan: x?.catatan || "",
           jenisTransaksi: (x?.jenisTransaksi || activeTab) as "fisik" | "digital",
+          kasirUid: x?.kasirUid || user.uid,
+          kasirNama: x?.kasirNama || kasirProfile.nama,
+          kasirEmail: x?.kasirEmail || kasirProfile.email,
           items: Array.isArray(x?.items)
-            ?               x.items.map((item: any) => ({
+            ? x.items.map((item: any) => ({
                 barangId: item?.barangId || "",
                 kodeBarang: item?.kodeBarang || "",
                 nama: item?.nama || "",
+                kategoriId: item?.kategoriId || "",
                 kategoriNama: item?.kategoriNama || "",
                 merk: item?.merk || "",
                 satuan: item?.satuan || "",
@@ -1267,16 +1276,11 @@ export default function TransaksiPage() {
     }
   }
 
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <>
       <ModalStruk struk={strukModal} onClose={() => setStrukModal(null)} />
 
       <div className="space-y-4 text-slate-900 sm:space-y-5">
-
-        {/* ── Page Header ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1311,7 +1315,10 @@ export default function TransaksiPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setActiveTab("digital"); setCameraOpen(false) }}
+                onClick={() => {
+                  setActiveTab("digital")
+                  setCameraOpen(false)
+                }}
                 className={`flex h-10 items-center rounded-xl px-4 text-xs font-black uppercase tracking-wide ${
                   activeTab === "digital"
                     ? "bg-cyan-600 text-white"
@@ -1327,7 +1334,7 @@ export default function TransaksiPage() {
                 title="Refresh"
               >
                 <RefreshCw size={14} strokeWidth={2.5} />
-                <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
+                <span className="hidden text-xs font-black uppercase tracking-wide sm:ml-2 sm:inline">
                   Refresh
                 </span>
               </button>
@@ -1339,7 +1346,7 @@ export default function TransaksiPage() {
                 title={cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
               >
                 <Camera size={14} strokeWidth={2.5} />
-                <span className="hidden sm:inline sm:ml-2 text-xs font-black uppercase tracking-wide">
+                <span className="hidden text-xs font-black uppercase tracking-wide sm:ml-2 sm:inline">
                   {cameraOpen ? "Tutup Kamera" : "Buka Kamera"}
                 </span>
               </button>
@@ -1347,7 +1354,6 @@ export default function TransaksiPage() {
           </div>
         </motion.div>
 
-        {/* ── Info Cards ── */}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <InfoCard
             icon={Boxes}
@@ -1375,7 +1381,6 @@ export default function TransaksiPage() {
           />
         </div>
 
-        {/* ── Notifikasi ── */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -1391,6 +1396,7 @@ export default function TransaksiPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
         <AnimatePresence>
           {successMsg && (
             <motion.div
@@ -1407,13 +1413,8 @@ export default function TransaksiPage() {
           )}
         </AnimatePresence>
 
-        {/* ── Main Grid ── */}
         <div className="grid gap-4 xl:grid-cols-12">
-
-          {/* ─ Kolom Kiri: Daftar Barang + Scanner ─ */}
           <div className="space-y-4 xl:col-span-7">
-
-            {/* Filter: Toko, Metode, Search */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
@@ -1425,10 +1426,13 @@ export default function TransaksiPage() {
                   >
                     <option value="">Pilih toko</option>
                     {tokoList.map((toko) => (
-                      <option key={toko.id} value={toko.id}>{toko.nama}</option>
+                      <option key={toko.id} value={toko.id}>
+                        {toko.nama}
+                      </option>
                     ))}
                   </select>
                 </div>
+
                 <div>
                   <FieldLabel icon={Wallet} label="Metode Pembayaran" />
                   <select
@@ -1439,12 +1443,14 @@ export default function TransaksiPage() {
                     <option value="">Pilih metode pembayaran</option>
                     {metodeList.map((metode) => (
                       <option key={metode.id} value={metode.id}>
-                        {metode.nama}{metode.biayaAdmin ? ` (${formatPercent(metode.biayaAdmin)})` : ""}
+                        {metode.nama}
+                        {metode.biayaAdmin ? ` (${formatPercent(metode.biayaAdmin)})` : ""}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
+
               <div className="mt-4">
                 <FieldLabel
                   icon={Search}
@@ -1473,7 +1479,6 @@ export default function TransaksiPage() {
               </div>
             </div>
 
-            {/* Camera Panel / Placeholder */}
             {activeTab === "fisik" ? (
               cameraOpen ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1486,6 +1491,7 @@ export default function TransaksiPage() {
                         Kamera tetap tampil di halaman, tidak menutupi keranjang
                       </p>
                     </div>
+
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -1497,7 +1503,10 @@ export default function TransaksiPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => { stopCameraScanner(); void startCameraScanner() }}
+                        onClick={() => {
+                          stopCameraScanner()
+                          void startCameraScanner()
+                        }}
                         className="flex h-10 items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black uppercase tracking-wide text-cyan-700 hover:bg-cyan-100"
                       >
                         <RotateCcw size={15} strokeWidth={2.5} />
@@ -1520,7 +1529,6 @@ export default function TransaksiPage() {
                           muted
                           className="aspect-video w-full object-cover"
                         />
-                        {/* Scan area overlay */}
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                           <div className="h-24 w-[78%] rounded-2xl border-2 border-cyan-400/90 shadow-[0_0_0_9999px_rgba(15,23,42,0.28)]" />
                         </div>
@@ -1584,7 +1592,6 @@ export default function TransaksiPage() {
                   <p className="text-sm font-black text-slate-700">
                     Tab digital aktif. Scanner barcode dan kamera non-aktifkan.
                   </p>
-                  {/* invisible spacer untuk alignment */}
                   <div className="flex h-10 items-center gap-2 rounded-xl border border-transparent px-4 text-xs font-black uppercase tracking-wide opacity-0 select-none">
                     <PlayCircle size={15} strokeWidth={2.5} />
                     Aktifkan Kamera
@@ -1593,7 +1600,6 @@ export default function TransaksiPage() {
               </div>
             )}
 
-            {/* Daftar Barang */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -1719,10 +1725,7 @@ export default function TransaksiPage() {
             </div>
           </div>
 
-          {/* ─ Kolom Kanan: Keranjang + Pembayaran ─ */}
           <div className="space-y-4 xl:col-span-5">
-
-            {/* Keranjang */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -1757,7 +1760,6 @@ export default function TransaksiPage() {
                         key={item.barangId}
                         className="rounded-2xl border border-slate-200 bg-white p-3"
                       >
-                        {/* Item header */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
@@ -1776,16 +1778,10 @@ export default function TransaksiPage() {
                             </div>
                             <p className="mt-1 text-xs font-semibold text-slate-500">
                               {item.kodeBarang}
-                            </p>
-                            <p className="mt-1 text-xs font-semibold text-slate-500">
-                              {item.merk || "-"} · {item.satuan || "-"}
-                            </p>
+                            </p>                          
                             {item.jenisBarang === "digital" && (
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                                <span className="inline-flex items-center gap-1">
-                                  <DigitalIcon size={12} strokeWidth={2.5} />
-                                  {formatSubJenisDigitalLabel(item.subJenisDigital)}
-                                </span>
+                               
                                 <span>{item.provider || "-"}</span>
                                 <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700">
                                   {item.saldoSourceNama || "Tanpa Saldo"}
@@ -1798,6 +1794,7 @@ export default function TransaksiPage() {
                               </span>
                             )}
                           </div>
+
                           <button
                             type="button"
                             onClick={() => removeItem(item.barangId)}
@@ -1808,20 +1805,18 @@ export default function TransaksiPage() {
                         </div>
 
                         {/* Input tujuan (digital) */}
-                        {item.jenisBarang === "digital" &&
-                          digitalButuhTujuan(item.subJenisDigital) && (
-                            <div className="mt-3">
-                              <FieldLabel label={getTujuanLabel(item.subJenisDigital)} />
-                              <input
-                                value={item.tujuan || ""}
-                                onChange={(e) => updateTujuan(item.barangId, e.target.value)}
-                                placeholder={`Isi ${getTujuanLabel(item.subJenisDigital).toLowerCase()}...`}
-                                className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
-                              />
-                            </div>
-                          )}
+{item.jenisBarang === "digital" && (
+  <div className="mt-3">
+    <FieldLabel label="Nomor Tujuan" />
+    <input
+      value={item.tujuan || ""}
+      onChange={(e) => updateTujuan(item.barangId, e.target.value)}
+      placeholder="Isi nomor tujuan"
+      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+    />
+  </div>
+)}
 
-                        {/* Qty + Subtotal */}
                         <div className="mt-3 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <button
@@ -1831,9 +1826,9 @@ export default function TransaksiPage() {
                             >
                               <Minus size={14} strokeWidth={3} />
                             </button>
-                            <div className="min-w-[44px] text-center text-sm font-black text-slate-800">
+                            <span className="min-w-[2rem] text-center text-sm font-black text-slate-800">
                               {item.qty}
-                            </div>
+                            </span>
                             <button
                               type="button"
                               onClick={() => updateQty(item.barangId, "plus")}
@@ -1842,6 +1837,7 @@ export default function TransaksiPage() {
                               <Plus size={14} strokeWidth={3} />
                             </button>
                           </div>
+
                           <div className="text-right">
                             {item.hargaAsli !== item.hargaSetelahDiskon && (
                               <p className="text-xs font-bold text-slate-400 line-through">
@@ -1860,74 +1856,133 @@ export default function TransaksiPage() {
               )}
             </div>
 
-            {/* Ringkasan Pembayaran */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
-                Ringkasan Pembayaran
-              </h2>
-
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
-                  <span>Subtotal</span>
-                  <span>{formatRupiah(subtotal)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
-                  <span>Total Diskon</span>
-                  <span className="text-emerald-600">- {formatRupiah(totalDiskon)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
-                  <span>Setelah Diskon</span>
-                  <span>{formatRupiah(totalSetelahDiskon)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
-                  <span>Biaya Admin</span>
-                  <span>{formatRupiah(biayaAdminNominal)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-3 text-base font-black text-slate-800">
-                  <span>Grand Total</span>
-                  <span>{formatRupiah(grandTotal)}</span>
-                </div>
+              <div className="mb-4">
+                <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+                  Konfirmasi Pembayaran
+                </h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Pastikan data transaksi sudah benar sebelum diproses
+                </p>
               </div>
 
-              <div className="mt-4 space-y-4">
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500 text-white">
+                      <User2 size={15} strokeWidth={2.5} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-cyan-600">
+                        Akun Konfirmasi
+                      </p>
+                      <p className="text-sm font-black text-slate-800">
+                        {currentUserProfile?.nama || "Tanpa Nama"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <Mail size={12} strokeWidth={2.5} />
+                    {currentUserProfile?.email || "-"}
+                  </div>
+                </div>
+
+                {activeTab === "digital" && digitalTargetList.length > 0 && (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                    <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                      Nomor Tujuan Digital
+                    </p>
+                    <div className="space-y-2">
+                      {digitalTargetList.map((item) => (
+                        <div
+                          key={item.barangId}
+                          className="rounded-xl border border-emerald-200 bg-white/70 px-3 py-2"
+                        >
+                          <p className="text-xs font-black text-slate-800">{item.nama}</p>                         
+                          <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                            <Target size={11} strokeWidth={2.5} />
+                            {item.label}: {item.tujuan || "-"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "digital" && digitalSaldoUsage.length > 0 && (
+                  <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
+                      Potongan Saldo Digital
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">
+                      {digitalSaldoRingkasan || "-"}
+                    </p>
+                  </div>
+                )}
+
                 <div>
-                  <FieldLabel icon={BadgeDollarSign} label="Uang Bayar" />
+                  <FieldLabel icon={Wallet} label="Uang Bayar" />
                   <input
                     value={uangBayar}
                     onChange={(e) => setUangBayar(formatRibuanInput(e.target.value))}
-                    inputMode="numeric"
                     placeholder="Masukkan uang bayar"
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                    inputMode="numeric"
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
                   />
                 </div>
+
                 <div>
-                  <FieldLabel icon={Receipt} label="Catatan" />
+                  <FieldLabel icon={BadgeDollarSign} label="Catatan" />
                   <textarea
                     value={catatan}
                     onChange={(e) => setCatatan(e.target.value)}
-                    placeholder="Catatan transaksi..."
                     rows={3}
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+                    placeholder="Catatan transaksi (opsional)"
+                    className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
                   />
                 </div>
 
-                {/* Kembalian / Kurang Bayar / Laba */}
-                <div className="grid gap-3 rounded-2xl bg-slate-50 p-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Subtotal</span>
+                    <span className="font-black text-slate-800">{formatRupiah(subtotal)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Total Diskon</span>
+                    <span className="font-black text-emerald-600">{formatRupiah(totalDiskon)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Biaya Admin</span>
+                    <span className="font-black text-slate-800">
+                      {formatRupiah(biayaAdminNominal)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-base font-black text-slate-800">
+                    <span>Grand Total</span>
+                    <span>{formatRupiah(grandTotal)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                    <span>Uang Bayar</span>
+                    <span className="font-black text-slate-800">
+                      {formatRupiah(uangBayarNumber)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
                     <span>Kembalian</span>
                     <span className="font-black text-emerald-600">{formatRupiah(kembalian)}</span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
                     <span>Kurang Bayar</span>
                     <span className="font-black text-red-600">{formatRupiah(kurangBayar)}</span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
                     <span>Estimasi Laba Kotor</span>
-                    <span className="font-black text-slate-800">{formatRupiah(estimasiLabaKotor)}</span>
+                    <span className="font-black text-slate-800">
+                      {formatRupiah(estimasiLabaKotor)}
+                    </span>
                   </div>
                 </div>
 
-                {/* Tombol Proses */}
                 <button
                   type="button"
                   disabled={!isBisaCheckout}
@@ -1949,7 +2004,6 @@ export default function TransaksiPage() {
               </div>
             </div>
 
-            {/* Riwayat Transaksi */}
             <RiwayatTransaksiPanel />
           </div>
         </div>

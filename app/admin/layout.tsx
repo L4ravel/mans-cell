@@ -50,6 +50,7 @@ import {
   Boxes,
   BarChart3,
   AlertTriangle,
+  ArrowDownToLine,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -95,6 +96,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
           { href: "/admin/restock-barang", icon: AlertTriangle, label: "Restock Barang" },
           { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
+          { href: "/admin/terima-barang", icon: ArrowDownToLine, label: "Terima Barang" },
           { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
           { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
           { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
@@ -189,6 +191,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-barang-tetap") ||
       currentPath.startsWith("/admin/restock-barang") ||
       currentPath.startsWith("/admin/transfer-barang") ||
+      currentPath.startsWith("/admin/terima-barang") ||
       currentPath.startsWith("/admin/tambah-pelanggan") ||
       currentPath.startsWith("/admin/akun-pelanggan") ||
       currentPath.startsWith("/admin/buat-akun") ||
