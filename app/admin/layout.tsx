@@ -2,6 +2,10 @@
   Layout admin desktop dengan basis lebar 2560px.
   Jika monitor lebih kecil, desktop otomatis discale agar seluruh area tetap terlihat.
   Mobile tetap seperti sebelumnya.
+
+  Revisi:
+  - tambah badge notifikasi pada menu Restock Barang
+  - badge menghitung total item restock dari barang fisik + saldo digital
 */
 
 "use client"
@@ -11,7 +15,13 @@ import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { auth, db } from "@/lib/firebase"
-import { doc, getDoc } from "firebase/firestore"
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+} from "firebase/firestore"
 import {
   Home,
   Menu,
@@ -39,6 +49,7 @@ import {
   Receipt,
   Boxes,
   BarChart3,
+  AlertTriangle,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -69,6 +80,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authLoading, setAuthLoading] = useState(true)
   const [isAuthorized, setIsAuthorized] = useState(false)
   const [desktopZoom, setDesktopZoom] = useState(1)
+  const [restockCount, setRestockCount] = useState(0)
 
   const menuGroups: MenuGroup[] = useMemo(
     () => [
@@ -81,6 +93,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-saldo", icon: Wallet, label: "Tambah Saldo" },
           { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
+          { href: "/admin/restock-barang", icon: AlertTriangle, label: "Restock Barang" },
           { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
           { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
           { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
@@ -128,6 +141,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     []
   )
 
+  const fetchRestockCount = async () => {
+    try {
+      const [barangSnap, saldoSnap] = await Promise.all([
+        getDocs(query(collection(db, "barang"))),
+        getDocs(query(collection(db, "master_saldo_digital"))),
+      ])
+
+      const totalBarangRestock = barangSnap.docs.reduce((sum, d) => {
+        const x = d.data() as any
+        const jenisBarang = (x?.jenisBarang || "fisik") as "fisik" | "digital"
+        const stok = Number(x?.stok || 0)
+        const stokMinimum = Number(x?.stokMinimum || 0)
+
+        if (jenisBarang === "fisik" && stok <= stokMinimum) return sum + 1
+        return sum
+      }, 0)
+
+      const totalSaldoRestock = saldoSnap.docs.reduce((sum, d) => {
+        const x = d.data() as any
+        const aktif = x?.aktif !== false
+        const jumlahSaldo = Number(x?.jumlahSaldo || 0)
+        const jumlahMinimum = Number(x?.jumlahMinimum || 0)
+
+        if (aktif && jumlahSaldo <= jumlahMinimum) return sum + 1
+        return sum
+      }, 0)
+
+      setRestockCount(totalBarangRestock + totalSaldoRestock)
+    } catch (error) {
+      console.error("Gagal memuat notifikasi restock:", error)
+      setRestockCount(0)
+    }
+  }
+
   const getGroupsFromPath = (currentPath: string) => {
     const nextOpenGroup: string[] = []
 
@@ -140,6 +187,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-satuan") ||
       currentPath.startsWith("/admin/tambah-supplier") ||
       currentPath.startsWith("/admin/tambah-barang-tetap") ||
+      currentPath.startsWith("/admin/restock-barang") ||
       currentPath.startsWith("/admin/transfer-barang") ||
       currentPath.startsWith("/admin/tambah-pelanggan") ||
       currentPath.startsWith("/admin/akun-pelanggan") ||
@@ -149,7 +197,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/laporan-keuntungan-bulanan") ||
       currentPath.startsWith("/admin/laporan-setelah-modal-tetap") ||
       currentPath.startsWith("/admin/laporan-keuntungan-harian")
-      
     ) {
       nextOpenGroup.push("Master Data")
     }
@@ -225,6 +272,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
 
         setIsAuthorized(true)
+        await fetchRestockCount()
       } catch (error) {
         console.error("Gagal validasi user admin:", error)
         setIsAuthorized(false)
@@ -239,6 +287,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       unsub()
     }
   }, [router, hasHydrated])
+
+  useEffect(() => {
+    if (!hasHydrated || !isAuthorized) return
+    fetchRestockCount()
+  }, [pathname, hasHydrated, isAuthorized])
 
   useEffect(() => {
     if (!hasHydrated) return
@@ -282,10 +335,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     if (href === "/admin/tambah-saldo") {
-      return (
-        pathname === "/admin/tambah-saldo" ||
-        pathname === "/admin/tambah-provider"        
-      )
+      return pathname === "/admin/tambah-saldo" || pathname === "/admin/tambah-provider"
     }
 
     if (href === "/admin/dashboard-absensi") return pathname === "/admin/dashboard-absensi"
@@ -427,6 +477,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       {group.items.map((item, idx) => {
                         const ItemIcon = item.icon
                         const active = isActive(item.href)
+                        const isRestockMenu = item.href === "/admin/restock-barang"
 
                         return (
                           <motion.div
@@ -452,11 +503,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 strokeWidth={active ? 2.5 : 2}
                                 className="flex-shrink-0"
                               />
+
                               <span
-                                className={active ? "truncate font-bold" : "truncate font-semibold"}
+                                className={`truncate ${
+                                  active ? "font-bold" : "font-semibold"
+                                }`}
                               >
                                 {item.label}
                               </span>
+
+                              {isRestockMenu && restockCount > 0 && (
+                                <span
+                                  className={`ml-auto inline-flex min-w-[1.35rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                                    active
+                                      ? "bg-white text-blue-600"
+                                      : "bg-orange-500 text-white"
+                                  }`}
+                                >
+                                  {restockCount}
+                                </span>
+                              )}
                             </Link>
                           </motion.div>
                         )
@@ -496,7 +562,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="absolute left-1/2 top-0 h-56 w-56 -translate-x-1/2 rounded-full bg-indigo-200/15 blur-[80px]" />
       </div>
 
-      {/* MOBILE: tetap seperti sebelumnya */}
       <aside
         className={`
           fixed top-3 bottom-3 left-3 z-[60] flex w-72 flex-col
@@ -540,7 +605,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <NavMenu />
       </aside>
 
-      {/* DESKTOP: basis width 2560px lalu auto zoom jika monitor lebih kecil */}
       <div className="relative z-10 hidden lg:flex justify-center">
         <div
           className="w-[2560px]"

@@ -206,8 +206,10 @@ export default function TransaksiPage() {
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || "",
           merk: x?.merk || "",
-          supplier: x?.supplier || "",
-          satuan: x?.satuan || "",
+           supplier: x?.supplier || "",
+          satuan: x?.satuan || x?.satuanNama || "",
+          satuanId: x?.satuanId || "",
+          satuanNama: x?.satuanNama || x?.satuan || "",
           hargaModal: Number(x?.hargaModal || 0),
           hargaJual: Number(x?.hargaJual || 0),
           stok: Number(x?.stok || 0),
@@ -481,7 +483,7 @@ export default function TransaksiPage() {
 
       return [
         ...prev,
-                {
+          {
           barangId: barang.id,
           kodeBarang: barang.kodeBarang,
           nama: barang.nama,
@@ -489,6 +491,8 @@ export default function TransaksiPage() {
           kategoriNama: barang.kategoriNama,
           merk: barang.merk,
           satuan: barang.satuan,
+          satuanId: barang.satuanId || "",
+          satuanNama: barang.satuanNama || barang.satuan || "",
           stok: barang.stok,
           qty: 1,
           hargaModal: barang.hargaModal,
@@ -903,7 +907,14 @@ export default function TransaksiPage() {
 
       let savedTransaksiId = ""
       const itemPayload: any[] = []
-            const kategoriAccumulator = new Map<string, LaporanKategoriBreakdown & { kategoriId: string }>()
+           const kategoriAccumulator = new Map<
+        string,
+        LaporanKategoriBreakdown & {
+          kategoriId: string
+          satuanIds?: string[]
+          satuanNamaList?: string[]
+        }
+      >()
 
       await runTransaction(db, async (transaction) => {
         const transaksiRef = doc(collection(db, "transaksi"))
@@ -987,7 +998,7 @@ export default function TransaksiPage() {
           const subtotalFinalItem = item.hargaSetelahDiskon * item.qty
           const totalDiskonItem = subtotalAsliItem - subtotalFinalItem
 
-                   const itemRow = {
+                      const itemRow = {
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
             nama: item.nama,
@@ -995,6 +1006,8 @@ export default function TransaksiPage() {
             kategoriNama: item.kategoriNama,
             merk: item.merk,
             satuan: item.satuan,
+            satuanId: item.satuanId || "",
+            satuanNama: item.satuanNama || item.satuan || "",
             qty: item.qty,
             hargaModal: item.hargaModal,
             hargaAsli: item.hargaAsli,
@@ -1028,7 +1041,22 @@ export default function TransaksiPage() {
           const adminKategori = Math.round(biayaAdminNominalSnapshot * proporsiOmzet)
           const labaBersihKategori = subtotalFinalItem - totalModalItem - adminKategori
 
-          const prevKategori = kategoriAccumulator.get(kategoriId)
+                    const prevKategori = kategoriAccumulator.get(kategoriId)
+
+          const nextSatuanIds = Array.from(
+            new Set([
+              ...(prevKategori?.satuanIds || []),
+              ...(item.satuanId ? [item.satuanId] : []),
+            ])
+          )
+
+          const nextSatuanNamaList = Array.from(
+            new Set([
+              ...(prevKategori?.satuanNamaList || []),
+              ...(item.satuanNama || item.satuan ? [item.satuanNama || item.satuan] : []),
+            ])
+          )
+
           kategoriAccumulator.set(kategoriId, {
             kategoriId,
             nama: kategoriNama,
@@ -1041,6 +1069,8 @@ export default function TransaksiPage() {
             totalModal: Number(prevKategori?.totalModal || 0) + totalModalItem,
             totalBiayaAdmin: Number(prevKategori?.totalBiayaAdmin || 0) + adminKategori,
             labaBersih: Number(prevKategori?.labaBersih || 0) + labaBersihKategori,
+            satuanIds: nextSatuanIds,
+            satuanNamaList: nextSatuanNamaList,
           })
         }
 
@@ -1105,8 +1135,13 @@ export default function TransaksiPage() {
         })
 
         // Tulis laporan
-        const kategoriBreakdownTambah = Array.from(kategoriAccumulator.values()).map(
-          (item) => ({ ...item, jumlahTransaksi: 1 })
+         const kategoriBreakdownTambah = Array.from(kategoriAccumulator.values()).map(
+          (item) => ({
+            ...item,
+            jumlahTransaksi: 1,
+            satuanIds: item.satuanIds || [],
+            satuanNamaList: item.satuanNamaList || [],
+          })
         )
         const sharedLaporanArgs = {
           tokoId: selectedToko.id,
@@ -1178,13 +1213,15 @@ export default function TransaksiPage() {
           catatan: x?.catatan || "",
           jenisTransaksi: (x?.jenisTransaksi || activeTab) as "fisik" | "digital",
           items: Array.isArray(x?.items)
-            ? x.items.map((item: any) => ({
+            ?               x.items.map((item: any) => ({
                 barangId: item?.barangId || "",
                 kodeBarang: item?.kodeBarang || "",
                 nama: item?.nama || "",
                 kategoriNama: item?.kategoriNama || "",
                 merk: item?.merk || "",
                 satuan: item?.satuan || "",
+                satuanId: item?.satuanId || "",
+                satuanNama: item?.satuanNama || item?.satuan || "",
                 qty: Number(item?.qty || 0),
                 hargaModal: Number(item?.hargaModal || 0),
                 hargaAsli: Number(item?.hargaAsli || 0),

@@ -107,6 +107,8 @@ type Barang = {
   merk: string
   supplier: string
   satuan: string
+  satuanId?: string
+  satuanNama?: string
   hargaModal: number
   hargaJual: number
   stok: number
@@ -151,6 +153,8 @@ const EMPTY_FORM = {
   merk: "",
   supplier: "",
   satuan: "",
+  satuanId: "",
+  satuanNama: "",
   hargaModal: "",
   hargaJual: "",
   stok: "",
@@ -525,7 +529,9 @@ export default function TambahBarangPage() {
           tokoNama: x?.tokoNama || "",
           merk: x?.merk || "",
           supplier: x?.supplier || "",
-          satuan: x?.satuan || "",
+          satuan: x?.satuan || x?.satuanNama || "",
+          satuanId: x?.satuanId || "",
+          satuanNama: x?.satuanNama || x?.satuan || "",
           hargaModal: Number(x?.hargaModal || 0),
           hargaJual: Number(x?.hargaJual || 0),
           stok: Number(x?.stok || 0),
@@ -628,13 +634,15 @@ export default function TambahBarangPage() {
     setError(null)
   }
 
-  const handleChangeJenisBarang = (nextJenis: JenisBarang) => {
+    const handleChangeJenisBarang = (nextJenis: JenisBarang) => {
     setForm((prev) => ({
       ...prev,
       jenisBarang: nextJenis,
       kodeBarang: nextJenis === "digital" ? "" : prev.kodeBarang,
       merk: nextJenis === "digital" ? "" : prev.merk,
-      satuan: nextJenis === "digital" ? "transaksi" : prev.satuan || "pcs",
+      satuan: nextJenis === "digital" ? "transaksi" : prev.satuan || prev.satuanNama || "",
+      satuanId: nextJenis === "digital" ? "" : prev.satuanId || "",
+      satuanNama: nextJenis === "digital" ? "transaksi" : prev.satuanNama || prev.satuan || "",
       stok: nextJenis === "digital" ? "0" : prev.stok,
       stokMinimum: nextJenis === "digital" ? "0" : prev.stokMinimum,
       pakaiKodeUnik: nextJenis === "fisik" ? prev.pakaiKodeUnik : false,
@@ -643,7 +651,7 @@ export default function TambahBarangPage() {
       providerId: nextJenis === "digital" ? prev.providerId : "",
       provider: nextJenis === "digital" ? prev.provider : "",
       saldoSourceId: nextJenis === "digital" ? prev.saldoSourceId : "",
-      supplier: nextJenis === "digital" ? prev.supplier : prev.supplier,
+      supplier: prev.supplier,
       nominalProduk: nextJenis === "digital" ? prev.nominalProduk : "",
       aktif: nextJenis === "digital" ? prev.aktif : true,
     }))
@@ -656,11 +664,15 @@ export default function TambahBarangPage() {
     setError(null)
   }
 
-  const openAdd = () => {
+    const openAdd = () => {
+    const defaultSatuan = satuanList[0]
+
     setForm({
       ...EMPTY_FORM,
       supplier: supplierList[0]?.nama || "",
-      satuan: satuanList[0]?.nama || "pcs",
+      satuan: defaultSatuan?.nama || "pcs",
+      satuanId: defaultSatuan?.id || "",
+      satuanNama: defaultSatuan?.nama || "pcs",
       providerId: providerList[0]?.id || "",
       provider: providerList[0]?.nama || "",
       saldoSourceId: saldoList.find((item) => item.aktif)?.id || saldoList[0]?.id || "",
@@ -671,7 +683,7 @@ export default function TambahBarangPage() {
     setShowModal(true)
   }
 
-  const openEdit = (d: Barang) => {
+    const openEdit = (d: Barang) => {
     setForm({
       kodeBarang: d.kodeBarang || "",
       nama: d.nama,
@@ -679,7 +691,9 @@ export default function TambahBarangPage() {
       tokoId: d.tokoId || "",
       merk: d.merk,
       supplier: d.jenisBarang === "digital" ? d.saldoSourceNama || d.supplier || "" : d.supplier || "",
-      satuan: d.satuan || "",
+      satuan: d.satuanNama || d.satuan || "",
+      satuanId: d.satuanId || "",
+      satuanNama: d.satuanNama || d.satuan || "",
       hargaModal: String(d.hargaModal || ""),
       hargaJual: String(d.hargaJual || ""),
       stok: String(d.stok || ""),
@@ -714,8 +728,8 @@ export default function TambahBarangPage() {
     }
 
     if (isFisikForm) {
-      if (!form.supplier.trim()) return "Supplier wajib dipilih"
-      if (!form.satuan.trim()) return "Satuan wajib dipilih"
+            if (!form.supplier.trim()) return "Supplier wajib dipilih"
+      if (!form.satuanId.trim()) return "Satuan wajib dipilih"
       if (!form.stok.trim()) return "Stok wajib diisi"
       if (!form.stokMinimum.trim()) return "Stok minimum wajib diisi"
     }
@@ -827,12 +841,20 @@ export default function TambahBarangPage() {
       if (isDigitalForm && !saldoDipilih) {
         setError("Sumber saldo tidak ditemukan")
         return
-      }
+      }       
+
+       let satuanDipilih: SatuanBarang | null = null
 
       if (isFisikForm) {
         const supplier = supplierList.find((s) => s.nama === form.supplier)
         if (!supplier) {
           setError("Supplier tidak ditemukan")
+          return
+        }
+
+        satuanDipilih = satuanList.find((s) => s.id === form.satuanId) || null
+        if (!satuanDipilih) {
+          setError("Satuan tidak ditemukan")
           return
         }
       }
@@ -845,7 +867,7 @@ export default function TambahBarangPage() {
       const jenisKodeUnik = form.jenisKodeUnik
       const kodeUnik = pakaiKodeUnik ? normalizeKodeUnik(form.kodeUnik) : ""
 
-      const payload = {
+            const payload = {
         kodeBarang,
         nama: form.nama.trim(),
         kategoriId: kategori.id,
@@ -854,7 +876,9 @@ export default function TambahBarangPage() {
         tokoNama: toko.nama,
         merk: isDigitalForm ? "" : form.merk.trim(),
         supplier: isDigitalForm ? (saldoDipilih?.namaSaldo || "") : form.supplier.trim(),
-        satuan: isDigitalForm ? "transaksi" : form.satuan.trim(),
+        satuan: isDigitalForm ? "transaksi" : satuanDipilih?.nama || form.satuanNama || form.satuan || "",
+        satuanId: isDigitalForm ? "" : satuanDipilih?.id || "",
+        satuanNama: isDigitalForm ? "transaksi" : satuanDipilih?.nama || form.satuanNama || form.satuan || "",
         hargaModal: Number(form.hargaModal),
         hargaJual: Number(form.hargaJual),
         stok: isDigitalForm ? 0 : Number(form.stok),
@@ -1515,7 +1539,7 @@ export default function TambahBarangPage() {
                             {d.merk || "-"}
                           </span>
                           <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                            {d.satuan || "-"}
+                            {d.satuanNama || d.satuan || "-"}
                           </span>
                           <span className="rounded-lg bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
                             {d.supplier || "-"}
@@ -1636,7 +1660,7 @@ export default function TambahBarangPage() {
 
                           <td className="px-4 py-3">
                             <p className="text-sm font-bold text-slate-700">{d.tokoNama || "-"}</p>
-                            <p className="mt-1 text-xs text-slate-500">{d.satuan || "-"}</p>
+                            <p className="mt-1 text-xs text-slate-500">{d.satuanNama || d.satuan || "-"}</p>
                           </td>
 
                           <td className="px-4 py-3">
@@ -2007,19 +2031,29 @@ export default function TambahBarangPage() {
                       <>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <FormSelect
-                            label="Satuan"
-                            required
-                            icon={Ruler}
-                            value={form.satuan}
-                            onChange={(e: any) => setField("satuan")(e.target.value)}
-                          >
-                            <option value="">Pilih satuan</option>
-                            {satuanList.map((s) => (
-                              <option key={s.id} value={s.nama}>
-                                {s.nama}
-                              </option>
-                            ))}
-                          </FormSelect>
+  label="Satuan"
+  required
+  icon={Ruler}
+  value={form.satuanId}
+  onChange={(e: any) => {
+    const nextId = e.target.value
+    const satuan = satuanList.find((item) => item.id === nextId)
+
+    setForm((prev) => ({
+      ...prev,
+      satuanId: nextId,
+      satuanNama: satuan?.nama || "",
+      satuan: satuan?.nama || "",
+    }))
+  }}
+>
+  <option value="">Pilih satuan</option>
+  {satuanList.map((s) => (
+    <option key={s.id} value={s.id}>
+      {s.nama}
+    </option>
+  ))}
+</FormSelect>
 
                           <div className="rounded-xl border-2 border-slate-200 bg-white px-3 py-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2399,4 +2433,4 @@ export default function TambahBarangPage() {
       </div>
     </>
   )
-}
+} 

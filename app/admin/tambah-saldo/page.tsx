@@ -1,6 +1,9 @@
 /*
   Halaman admin master saldo digital.
   Bisa membuat lebih dari 1 sumber saldo untuk transaksi barang digital.
+  Revisi:
+  - tambah field jumlahMinimum agar saldo digital bisa dipantau batas minimumnya
+  - data ini nanti bisa dipakai untuk fitur restock saldo digital
 */
 
 "use client"
@@ -31,6 +34,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Store,
   Trash2,
@@ -43,6 +47,7 @@ type MasterSaldoDigital = {
   id: string
   namaSaldo: string
   jumlahSaldo: number
+  jumlahMinimum: number
   aktif: boolean
   keterangan: string
   createdAt?: number
@@ -59,6 +64,7 @@ const ITEMS_OPTIONS = [
 const EMPTY_FORM = {
   namaSaldo: "",
   jumlahSaldo: "",
+  jumlahMinimum: "",
   aktif: true,
   keterangan: "",
 }
@@ -269,6 +275,7 @@ export default function TambahSaldoPage() {
           id: d.id,
           namaSaldo: x?.namaSaldo || "",
           jumlahSaldo: Number(x?.jumlahSaldo || 0),
+          jumlahMinimum: Number(x?.jumlahMinimum || 0),
           aktif: x?.aktif !== false,
           keterangan: x?.keterangan || "",
           createdAt:
@@ -336,6 +343,17 @@ export default function TambahSaldoPage() {
 
   const totalSumberSaldo = data.length
   const totalSaldoAktifCount = data.filter((item) => item.aktif).length
+  const totalSaldoMinimum = useMemo(
+    () => data.reduce((sum, item) => sum + Number(item.jumlahMinimum || 0), 0),
+    [data]
+  )
+  const totalSaldoPerluRestock = useMemo(
+    () =>
+      data.filter(
+        (item) => item.aktif && Number(item.jumlahSaldo || 0) <= Number(item.jumlahMinimum || 0)
+      ).length,
+    [data]
+  )
 
   const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
 
@@ -351,6 +369,7 @@ export default function TambahSaldoPage() {
     setForm({
       namaSaldo: item.namaSaldo || "",
       jumlahSaldo: String(item.jumlahSaldo || ""),
+      jumlahMinimum: String(item.jumlahMinimum || ""),
       aktif: item.aktif !== false,
       keterangan: item.keterangan || "",
     })
@@ -368,10 +387,17 @@ export default function TambahSaldoPage() {
   const validateForm = () => {
     if (!form.namaSaldo.trim()) return "Nama saldo wajib diisi"
     if (!form.jumlahSaldo.trim()) return "Jumlah saldo wajib diisi"
+    if (!form.jumlahMinimum.trim()) return "Jumlah minimum wajib diisi"
 
     const jumlahSaldo = Number(form.jumlahSaldo)
+    const jumlahMinimum = Number(form.jumlahMinimum)
+
     if (Number.isNaN(jumlahSaldo) || jumlahSaldo < 0) {
       return "Jumlah saldo tidak valid"
+    }
+
+    if (Number.isNaN(jumlahMinimum) || jumlahMinimum < 0) {
+      return "Jumlah minimum tidak valid"
     }
 
     const duplicateNama = data.find((item) => {
@@ -403,6 +429,7 @@ export default function TambahSaldoPage() {
       const payload = {
         namaSaldo: form.namaSaldo.trim(),
         jumlahSaldo: Number(form.jumlahSaldo),
+        jumlahMinimum: Number(form.jumlahMinimum),
         aktif: Boolean(form.aktif),
         keterangan: form.keterangan.trim(),
       }
@@ -503,17 +530,17 @@ export default function TambahSaldoPage() {
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             <motion.button
-  whileHover={{ scale: 1.05 }}
-  whileTap={{ scale: 0.95 }}
-  onClick={() => router.push("/admin/tambah-provider")}
-  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:bg-slate-50 sm:w-auto sm:px-3"
-  title="Provider"
->
-  <Store size={13} strokeWidth={3} />
-  <span className="hidden sm:inline sm:ml-1.5 text-[10px] font-black uppercase tracking-wide">
-    Provider
-  </span>
-</motion.button>
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => router.push("/admin/tambah-provider")}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:bg-slate-50 sm:w-auto sm:px-3"
+              title="Provider"
+            >
+              <Store size={13} strokeWidth={3} />
+              <span className="hidden sm:inline sm:ml-1.5 text-[10px] font-black uppercase tracking-wide">
+                Provider
+              </span>
+            </motion.button>
 
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -581,7 +608,7 @@ export default function TambahSaldoPage() {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -637,6 +664,28 @@ export default function TambahSaldoPage() {
                 Saldo Aktif
               </p>
               <p className="mt-1 text-xl font-black text-slate-800">{totalSaldoAktifCount}</p>
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.16 }}
+          className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100">
+              <ShieldAlert size={20} className="text-amber-600" strokeWidth={2.5} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Perlu Restock
+              </p>
+              <p className="mt-1 text-xl font-black text-slate-800">{totalSaldoPerluRestock}</p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Total min {formatRupiah(totalSaldoMinimum)}
+              </p>
             </div>
           </div>
         </motion.div>
@@ -741,56 +790,70 @@ export default function TambahSaldoPage() {
       {!loading && paged.length > 0 && (
         <>
           <div className="space-y-2 sm:hidden">
-            {paged.map((item, idx) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">{item.namaSaldo}</p>
-                    <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      {formatRupiah(item.jumlahSaldo)}
-                    </p>
+            {paged.map((item, idx) => {
+              const perluRestock = item.aktif && item.jumlahSaldo <= item.jumlahMinimum
+
+              return (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                  className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-black text-slate-800">{item.namaSaldo}</p>
+                      <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        {formatRupiah(item.jumlahSaldo)}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-shrink-0 gap-1.5">
+                      <button
+                        onClick={() => openEdit(item)}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                      >
+                        <Pencil size={12} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteId(item.id)
+                          setShowDeleteConfirm(true)
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
+                      >
+                        <Trash2 size={12} strokeWidth={2.5} />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex flex-shrink-0 gap-1.5">
-                    <button
-                      onClick={() => openEdit(item)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span
+                      className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-black ${
+                        item.aktif ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                      }`}
                     >
-                      <Pencil size={12} strokeWidth={2.5} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDeleteId(item.id)
-                        setShowDeleteConfirm(true)
-                      }}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
-                    >
-                      <Trash2 size={12} strokeWidth={2.5} />
-                    </button>
+                      {item.aktif ? "Aktif" : "Nonaktif"}
+                    </span>
+
+                    <span className="inline-flex rounded-lg bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-700">
+                      Min: {formatRupiah(item.jumlahMinimum)}
+                    </span>
+
+                    {perluRestock ? (
+                      <span className="inline-flex rounded-lg bg-red-100 px-2.5 py-1 text-[10px] font-black text-red-700">
+                        Perlu Restock
+                      </span>
+                    ) : null}
                   </div>
-                </div>
 
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <span
-                    className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-black ${
-                      item.aktif ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {item.aktif ? "Aktif" : "Nonaktif"}
-                  </span>
-                </div>
-
-                <p className="mt-2 text-xs font-semibold text-slate-600">
-                  {item.keterangan || "-"}
-                </p>
-              </motion.div>
-            ))}
+                  <p className="mt-2 text-xs font-semibold text-slate-600">
+                    {item.keterangan || "-"}
+                  </p>
+                </motion.div>
+              )
+            })}
           </div>
 
           <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:block">
@@ -803,6 +866,9 @@ export default function TambahSaldoPage() {
                     </th>
                     <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
                       Jumlah
+                    </th>
+                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      Minimum
                     </th>
                     <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
                       Status
@@ -819,63 +885,81 @@ export default function TambahSaldoPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.map((item) => (
-                    <tr key={item.id} className="border-t border-slate-100 align-top">
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-black text-slate-800">{item.namaSaldo}</p>
-                       
-                      </td>
+                  {paged.map((item) => {
+                    const perluRestock =
+                      item.aktif && Number(item.jumlahSaldo || 0) <= Number(item.jumlahMinimum || 0)
 
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-black text-slate-800">
-                          {formatRupiah(item.jumlahSaldo)}
-                        </p>
-                      </td>
+                    return (
+                      <tr key={item.id} className="border-t border-slate-100 align-top">
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-black text-slate-800">{item.namaSaldo}</p>
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-lg px-2 py-1 text-xs font-black ${
-                            item.aktif ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                          }`}
-                        >
-                          {item.aktif ? "Aktif" : "Nonaktif"}
-                        </span>
-                      </td>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-black text-slate-800">
+                            {formatRupiah(item.jumlahSaldo)}
+                          </p>
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-semibold text-slate-700">
-                          {item.keterangan || "-"}
-                        </p>
-                      </td>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-black text-amber-700">
+                            {formatRupiah(item.jumlahMinimum)}
+                          </p>
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-semibold text-slate-700">
-                          {formatDateTime(item.updatedAt || item.createdAt)}
-                        </p>
-                      </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <span
+                              className={`inline-flex rounded-lg px-2 py-1 text-xs font-black ${
+                                item.aktif ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {item.aktif ? "Aktif" : "Nonaktif"}
+                            </span>
 
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => openEdit(item)}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
-                          >
-                            <Pencil size={13} strokeWidth={2.5} />
-                          </button>
+                            {perluRestock ? (
+                              <span className="inline-flex rounded-lg bg-red-100 px-2 py-1 text-xs font-black text-red-700">
+                                Perlu Restock
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
 
-                          <button
-                            onClick={() => {
-                              setDeleteId(item.id)
-                              setShowDeleteConfirm(true)
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
-                          >
-                            <Trash2 size={13} strokeWidth={2.5} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-semibold text-slate-700">
+                            {item.keterangan || "-"}
+                          </p>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-semibold text-slate-700">
+                            {formatDateTime(item.updatedAt || item.createdAt)}
+                          </p>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => openEdit(item)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                            >
+                              <Pencil size={13} strokeWidth={2.5} />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setDeleteId(item.id)
+                                setShowDeleteConfirm(true)
+                              }}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
+                            >
+                              <Trash2 size={13} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1014,12 +1098,33 @@ export default function TambahSaldoPage() {
                       }
                     />
 
-                    <div className="rounded-xl border-2 border-cyan-100 bg-cyan-50 px-4 py-3">
+                    <FormInput
+                      label="Jumlah Minimum"
+                      required
+                      icon={ShieldAlert}
+                      inputMode="numeric"
+                      value={form.jumlahMinimum}
+                      onChange={(e: any) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          jumlahMinimum: e.target.value.replace(/[^\d]/g, ""),
+                        }))
+                      }
+                      placeholder="Contoh: 500000"
+                      rightSlot={
+                        <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700">
+                          {formatRupiah(Number(form.jumlahMinimum || 0))}
+                        </span>
+                      }
+                    />
+
+                    <div className="sm:col-span-2 rounded-xl border-2 border-cyan-100 bg-cyan-50 px-4 py-3">
                       <p className="text-[10px] font-black uppercase tracking-widest text-cyan-600">
                         Info Saldo
                       </p>
                       <p className="mt-1 text-xs font-semibold text-cyan-700">
-                        Sumber saldo ini nanti bisa dipakai untuk transaksi barang digital.
+                        Sumber saldo ini nanti bisa dipakai untuk transaksi barang digital. Jika jumlah saldo sudah
+                        menyentuh atau di bawah minimum, data ini bisa masuk ke fitur restock saldo.
                       </p>
                     </div>
 

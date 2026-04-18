@@ -2,12 +2,16 @@
   Halaman admin laporan keuntungan harian.
   Membaca koleksi laporan_harian dan pengeluaran dari Firestore untuk menampilkan
   penghasilan kotor, total pengeluaran, keuntungan bersih per hari, detail rekap harian,
-  ranking toko, ranking kategori barang, dan chart batang keuntungan bersih harian.
+  ranking toko, ranking kategori barang, chart batang keuntungan bersih harian,
+  filter kategori barang, filter satuan, dan ranking satuan.
 
   Konsisten dengan halaman laporan keuntungan bersih bulanan:
   - filter kategori khusus kategori barang jualan
   - opsi kategori dari laporan_harian.kategoriBreakdown
   - rekap dan ranking kategori fokus ke kategori barang yang dijual
+  - tambah filter satuan dari kategoriBreakdown.satuanIds / satuanNamaList
+  - tambah ranking satuan agar lebih mudah melihat keuntungan per unit
+  - opsi kategori dan satuan ikut filter tanggal + toko aktif agar tidak menampilkan sisa data lama
 */
 
 "use client"
@@ -29,6 +33,7 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  Ruler,
 } from "lucide-react"
 import { motion } from "framer-motion"
 
@@ -51,6 +56,9 @@ type KategoriBreakdown = {
   totalBiayaAdmin: number
   labaKotor: number
   labaBersih: number
+  satuanIds?: string[]
+  satuanNamaList?: string[]
+  namaBarangList?: string[]
 }
 
 type LaporanHarian = {
@@ -81,6 +89,8 @@ type RekapKeuntunganHarian = {
   tokoNama: string
   kategoriId: string
   kategoriNama: string
+  satuanId: string
+  satuanNama: string
   penghasilanKotor: number
   pengeluaran: number
   keuntunganBersih: number
@@ -99,6 +109,17 @@ type RankingKategoriBarang = {
   omzet: number
   qtyTerjual: number
   jumlahTransaksi: number
+}
+
+type RankingSatuanBarang = {
+  satuanId: string
+  satuanNama: string
+  penghasilanKotor: number
+  keuntunganBersih: number
+  omzet: number
+  qtyTerjual: number
+  jumlahTransaksi: number
+  namaBarangList: string[]
 }
 
 function formatRupiah(value: number) {
@@ -144,6 +165,23 @@ function normalizeKategoriKey(value?: string) {
   return String(value || "").trim().toLowerCase()
 }
 
+function normalizeSatuanKey(value?: string) {
+  return String(value || "").trim().toLowerCase()
+}
+
+function uniqueStringList(values: any[]): string[] {
+  const map = new Map<string, string>()
+
+  for (const value of values || []) {
+    const text = String(value || "").trim()
+    const key = text.toLowerCase()
+    if (!text || map.has(key)) continue
+    map.set(key, text)
+  }
+
+  return Array.from(map.values())
+}
+
 function getTanggalKeyFromUnknown(value: any) {
   const direct = String(value?.tanggalKey || "").trim()
   if (direct) return direct
@@ -160,6 +198,41 @@ function getTanggalKeyFromUnknown(value: any) {
   }
 
   return ""
+}
+
+function getSatuanEntries(item: KategoriBreakdown) {
+  const ids = Array.isArray(item.satuanIds) ? item.satuanIds : []
+  const names = Array.isArray(item.satuanNamaList) ? item.satuanNamaList : []
+  const maxLen = Math.max(ids.length, names.length)
+
+  const result: { id: string; nama: string; key: string }[] = []
+
+  for (let i = 0; i < maxLen; i++) {
+    const rawId = String(ids[i] || "").trim()
+    const rawNama = String(names[i] || "").trim()
+    const normalizedKey = normalizeSatuanKey(rawId || rawNama)
+    const visibleNama = rawNama || rawId || "Tanpa Satuan"
+
+    if (!normalizedKey) continue
+    if (result.some((entry) => entry.key === normalizedKey)) continue
+
+    result.push({
+      id: normalizedKey,
+      nama: visibleNama,
+      key: normalizedKey,
+    })
+  }
+
+  return result
+}
+
+function getNamaBarangRefs(item: KategoriBreakdown) {
+  const rawList = uniqueStringList([
+    ...(Array.isArray(item.namaBarangList) ? item.namaBarangList : []),
+  ])
+
+  if (rawList.length > 0) return rawList
+  return []
 }
 
 function InfoCard({
@@ -252,6 +325,7 @@ export default function LaporanKeuntunganHarianPage() {
   const [search, setSearch] = useState("")
   const [filterToko, setFilterToko] = useState("")
   const [filterKategori, setFilterKategori] = useState("")
+  const [filterSatuan, setFilterSatuan] = useState("")
   const [tanggalMulai, setTanggalMulai] = useState(getStartOfMonthDateInput())
   const [tanggalSelesai, setTanggalSelesai] = useState(toDateInputValue(new Date()))
 
@@ -288,6 +362,20 @@ export default function LaporanKeuntunganHarianPage() {
                 .trim()
                 .toLowerCase()
 
+              const satuanIds = uniqueStringList(
+                Array.isArray(item?.satuanIds) ? item.satuanIds : []
+              )
+
+              const satuanNamaList = uniqueStringList(
+                Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : []
+              )
+
+              const namaBarangList = uniqueStringList([
+                ...(Array.isArray(item?.namaBarangList) ? item.namaBarangList : []),
+                ...(Array.isArray(item?.barangNamaList) ? item.barangNamaList : []),
+                ...(Array.isArray(item?.produkNamaList) ? item.produkNamaList : []),
+              ])
+
               return {
                 kategoriId: kategoriKey,
                 kategoriNama: namaKategori || "Tanpa Kategori",
@@ -310,6 +398,9 @@ export default function LaporanKeuntunganHarianPage() {
                       Number(item?.totalModal || 0) -
                       Number(item?.totalBiayaAdmin || 0)
                 ),
+                satuanIds,
+                satuanNamaList,
+                namaBarangList,
               }
             })
           : []
@@ -363,10 +454,19 @@ export default function LaporanKeuntunganHarianPage() {
     return () => unsub()
   }, [])
 
+  const laporanHarianVisible = useMemo(() => {
+    return laporanHarianList.filter((laporan) => {
+      const matchToko = !filterToko || laporan.tokoId === filterToko
+      const matchStart = !tanggalMulai || laporan.tanggalKey >= tanggalMulai
+      const matchEnd = !tanggalSelesai || laporan.tanggalKey <= tanggalSelesai
+      return matchToko && matchStart && matchEnd
+    })
+  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai])
+
   const kategoriBarangList = useMemo(() => {
     const map = new Map<string, { id: string; nama: string }>()
 
-    for (const laporan of laporanHarianList) {
+    for (const laporan of laporanHarianVisible) {
       for (const item of laporan.kategoriBreakdown || []) {
         const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
         if (!key) continue
@@ -381,30 +481,75 @@ export default function LaporanKeuntunganHarianPage() {
     }
 
     return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
-  }, [laporanHarianList])
+  }, [laporanHarianVisible])
+
+  const satuanBarangList = useMemo(() => {
+    const map = new Map<string, { id: string; nama: string }>()
+
+    for (const laporan of laporanHarianVisible) {
+      for (const item of laporan.kategoriBreakdown || []) {
+        const entries = getSatuanEntries(item)
+
+        for (const entry of entries) {
+          if (!map.has(entry.key)) {
+            map.set(entry.key, {
+              id: entry.key,
+              nama: entry.nama,
+            })
+          }
+        }
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
+  }, [laporanHarianVisible])
+
+  useEffect(() => {
+    if (filterKategori && !kategoriBarangList.some((item) => item.id === filterKategori)) {
+      setFilterKategori("")
+    }
+  }, [filterKategori, kategoriBarangList])
+
+  useEffect(() => {
+    if (filterSatuan && !satuanBarangList.some((item) => item.id === filterSatuan)) {
+      setFilterSatuan("")
+    }
+  }, [filterSatuan, satuanBarangList])
 
   const rekapList = useMemo(() => {
     const map = new Map<string, RekapKeuntunganHarian>()
 
     for (const item of laporanHarianList) {
-      if (filterKategori) {
-        const matchedBreakdown = (item.kategoriBreakdown || []).find((row) => {
-          const rowKey = row.kategoriId || normalizeKategoriKey(row.kategoriNama)
-          return rowKey === filterKategori
-        })
+      const matchedBreakdowns = (item.kategoriBreakdown || []).filter((row) => {
+        const rowKategoriKey = row.kategoriId || normalizeKategoriKey(row.kategoriNama)
+        const matchKategori = !filterKategori || rowKategoriKey === filterKategori
 
-        if (!matchedBreakdown) continue
+        const rowSatuanKeys = getSatuanEntries(row).map((entry) => entry.key)
+        const matchSatuan =
+          !filterSatuan || rowSatuanKeys.includes(normalizeSatuanKey(filterSatuan))
 
-        const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${filterKategori}`
+        return matchKategori && matchSatuan
+      })
+
+      if (filterKategori || filterSatuan) {
+        if (matchedBreakdowns.length === 0) continue
+
+        const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${
+          filterKategori || "all"
+        }__${filterSatuan || "all"}`
+
         const current = map.get(key) || {
           tanggalKey: item.tanggalKey,
           tokoId: item.tokoId,
           tokoNama: item.tokoNama || "Tanpa Toko",
-          kategoriId:
-            matchedBreakdown.kategoriId ||
-            normalizeKategoriKey(matchedBreakdown.kategoriNama) ||
-            filterKategori,
-          kategoriNama: matchedBreakdown.kategoriNama || "Tanpa Kategori",
+          kategoriId: filterKategori || "",
+          kategoriNama: filterKategori
+            ? kategoriBarangList.find((x) => x.id === filterKategori)?.nama || "Tanpa Kategori"
+            : "Semua Kategori",
+          satuanId: filterSatuan || "",
+          satuanNama: filterSatuan
+            ? satuanBarangList.find((x) => x.id === filterSatuan)?.nama || "Tanpa Satuan"
+            : "Semua Satuan",
           penghasilanKotor: 0,
           pengeluaran: 0,
           keuntunganBersih: 0,
@@ -414,24 +559,34 @@ export default function LaporanKeuntunganHarianPage() {
           jumlahDataPengeluaran: 0,
         }
 
-        current.penghasilanKotor += Number(
-          matchedBreakdown.labaBersih || matchedBreakdown.labaKotor || 0
+        current.penghasilanKotor += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.labaBersih || row.labaKotor || 0),
+          0
         )
-        current.omzet += Number(
-          matchedBreakdown.omzet || matchedBreakdown.totalSetelahDiskon || 0
+        current.omzet += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.omzet || row.totalSetelahDiskon || 0),
+          0
         )
-        current.jumlahTransaksi += Number(matchedBreakdown.jumlahTransaksi || 0)
-        current.jumlahQtyTerjual += Number(matchedBreakdown.qtyTerjual || 0)
+        current.jumlahTransaksi += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.jumlahTransaksi || 0),
+          0
+        )
+        current.jumlahQtyTerjual += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.qtyTerjual || 0),
+          0
+        )
 
         map.set(key, current)
       } else {
-        const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all`
+        const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`
         const current = map.get(key) || {
           tanggalKey: item.tanggalKey,
           tokoId: item.tokoId,
           tokoNama: item.tokoNama || "Tanpa Toko",
           kategoriId: "",
           kategoriNama: "Semua Kategori",
+          satuanId: "",
+          satuanNama: "Semua Satuan",
           penghasilanKotor: 0,
           pengeluaran: 0,
           keuntunganBersih: 0,
@@ -460,7 +615,7 @@ export default function LaporanKeuntunganHarianPage() {
     for (const item of pengeluaranList) {
       const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${
         filterKategori || "all"
-      }`
+      }__${filterSatuan || "all"}`
 
       const current = map.get(key) || {
         tanggalKey: item.tanggalKey,
@@ -470,6 +625,10 @@ export default function LaporanKeuntunganHarianPage() {
         kategoriNama: filterKategori
           ? kategoriBarangList.find((x) => x.id === filterKategori)?.nama || "Tanpa Kategori"
           : "Semua Kategori",
+        satuanId: filterSatuan || "",
+        satuanNama: filterSatuan
+          ? satuanBarangList.find((x) => x.id === filterSatuan)?.nama || "Tanpa Satuan"
+          : "Semua Satuan",
         penghasilanKotor: 0,
         pengeluaran: 0,
         keuntunganBersih: 0,
@@ -495,7 +654,14 @@ export default function LaporanKeuntunganHarianPage() {
         if (tanggalCompare !== 0) return tanggalCompare
         return b.keuntunganBersih - a.keuntunganBersih
       })
-  }, [laporanHarianList, pengeluaranList, filterKategori, kategoriBarangList])
+  }, [
+    laporanHarianList,
+    pengeluaranList,
+    filterKategori,
+    filterSatuan,
+    kategoriBarangList,
+    satuanBarangList,
+  ])
 
   const filteredRekap = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -505,7 +671,8 @@ export default function LaporanKeuntunganHarianPage() {
         !q ||
         item.tanggalKey.toLowerCase().includes(q) ||
         item.tokoNama.toLowerCase().includes(q) ||
-        item.kategoriNama.toLowerCase().includes(q)
+        item.kategoriNama.toLowerCase().includes(q) ||
+        item.satuanNama.toLowerCase().includes(q)
 
       const matchToko = !filterToko || item.tokoId === filterToko
       const matchStart = !tanggalMulai || item.tanggalKey >= tanggalMulai
@@ -607,6 +774,10 @@ export default function LaporanKeuntunganHarianPage() {
       for (const item of laporan.kategoriBreakdown || []) {
         const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
         if (!kategoriKey) continue
+        if (filterKategori && kategoriKey !== filterKategori) continue
+
+        const satuanKeys = getSatuanEntries(item).map((entry) => entry.key)
+        if (filterSatuan && !satuanKeys.includes(normalizeSatuanKey(filterSatuan))) continue
 
         const current = map.get(kategoriKey) || {
           kategoriId: kategoriKey,
@@ -639,7 +810,97 @@ export default function LaporanKeuntunganHarianPage() {
         return item.kategoriNama.toLowerCase().includes(q)
       })
       .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai, search])
+  }, [laporanHarianList, filterToko, filterKategori, filterSatuan, tanggalMulai, tanggalSelesai, search])
+
+  const rankingSatuanBarang = useMemo(() => {
+    const map = new Map<string, RankingSatuanBarang>()
+    const q = search.toLowerCase().trim()
+
+    for (const laporan of laporanHarianList) {
+      if (filterToko && laporan.tokoId !== filterToko) continue
+      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue
+      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue
+
+      for (const item of laporan.kategoriBreakdown || []) {
+        const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
+        if (filterKategori && kategoriKey !== filterKategori) continue
+
+        const namaBarangRefs = getNamaBarangRefs(item)
+        const satuanEntries = getSatuanEntries(item)
+        const effectiveEntries =
+          satuanEntries.length > 0
+            ? satuanEntries
+            : [{ id: "tanpa-satuan", nama: "Tanpa Satuan", key: "tanpa-satuan" }]
+
+        if (filterSatuan) {
+          const hasMatchSatuan = effectiveEntries.some(
+            (entry) => entry.key === normalizeSatuanKey(filterSatuan)
+          )
+          if (!hasMatchSatuan) continue
+        }
+
+        const divisor = effectiveEntries.length || 1
+        const partialPenghasilan = Number(item.labaBersih || item.labaKotor || 0) / divisor
+        const partialOmzet = Number(item.omzet || item.totalSetelahDiskon || 0) / divisor
+        const partialQty = Number(item.qtyTerjual || 0) / divisor
+        const partialTransaksi = Number(item.jumlahTransaksi || 0) / divisor
+
+        for (const entry of effectiveEntries) {
+          if (filterSatuan && entry.key !== normalizeSatuanKey(filterSatuan)) continue
+
+          const current = map.get(entry.key) || {
+            satuanId: entry.key,
+            satuanNama: entry.nama,
+            penghasilanKotor: 0,
+            keuntunganBersih: 0,
+            omzet: 0,
+            qtyTerjual: 0,
+            jumlahTransaksi: 0,
+            namaBarangList: [],
+          }
+
+          current.penghasilanKotor += partialPenghasilan
+          current.keuntunganBersih += partialPenghasilan
+          current.omzet += partialOmzet
+          current.qtyTerjual += partialQty
+          current.jumlahTransaksi += partialTransaksi
+
+          const refsToAdd =
+            namaBarangRefs.length > 0 ? namaBarangRefs : [item.kategoriNama || "Tanpa Kategori"]
+
+          for (const nama of refsToAdd) {
+            if (!current.namaBarangList.some((saved) => saved.toLowerCase() === nama.toLowerCase())) {
+              current.namaBarangList.push(nama)
+            }
+          }
+
+          map.set(entry.key, current)
+        }
+      }
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        namaBarangList: item.namaBarangList.sort((a, b) => a.localeCompare(b)),
+      }))
+      .filter((item) => {
+        if (!q) return true
+        return (
+          item.satuanNama.toLowerCase().includes(q) ||
+          item.namaBarangList.some((nama) => nama.toLowerCase().includes(q))
+        )
+      })
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
+  }, [
+    laporanHarianList,
+    filterToko,
+    filterKategori,
+    filterSatuan,
+    tanggalMulai,
+    tanggalSelesai,
+    search,
+  ])
 
   const maxChartValue = Math.max(
     ...chartData.map((item) => Math.abs(item.keuntunganBersih)),
@@ -648,6 +909,9 @@ export default function LaporanKeuntunganHarianPage() {
 
   const kategoriAktifLabel =
     kategoriBarangList.find((item) => item.id === filterKategori)?.nama || "Semua Kategori"
+
+  const satuanAktifLabel =
+    satuanBarangList.find((item) => item.id === filterSatuan)?.nama || "Semua Satuan"
 
   return (
     <div className="space-y-4 text-slate-900 sm:space-y-5">
@@ -667,7 +931,7 @@ export default function LaporanKeuntunganHarianPage() {
                 Laporan Keuntungan Harian
               </h1>
               <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Keuntungan kategori barang jualan · bersih setelah pengeluaran
+                Keuntungan kategori barang jualan · bersih setelah pengeluaran · filter satuan
               </p>
             </div>
           </div>
@@ -703,7 +967,7 @@ export default function LaporanKeuntunganHarianPage() {
         transition={{ delay: 0.06 }}
         className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <div className="lg:col-span-2">
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
               Cari
@@ -717,7 +981,7 @@ export default function LaporanKeuntunganHarianPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tanggal, toko, atau kategori barang..."
+                placeholder="Tanggal, toko, kategori, satuan, atau barang..."
                 className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </div>
@@ -740,6 +1004,20 @@ export default function LaporanKeuntunganHarianPage() {
           >
             <option value="">Semua Kategori Barang</option>
             {kategoriBarangList.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nama}
+              </option>
+            ))}
+          </FilterSelect>
+
+          <FilterSelect
+            label="Satuan"
+            value={filterSatuan}
+            onChange={setFilterSatuan}
+            icon={Ruler}
+          >
+            <option value="">Semua Satuan</option>
+            {satuanBarangList.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.nama}
               </option>
@@ -797,7 +1075,7 @@ export default function LaporanKeuntunganHarianPage() {
           icon={Wallet}
           label="Pengeluaran"
           value={formatRupiah(totalPengeluaran)}
-          subValue={`${filteredRekap.length} rekap`}
+          subValue={`${filteredRekap.length} rekap • ${satuanAktifLabel}`}
         />
         <InfoCard
           icon={TrendingUp}
@@ -884,7 +1162,7 @@ export default function LaporanKeuntunganHarianPage() {
                 Rekap Keuntungan Harian
               </p>
               <p className="mt-1 text-sm font-black text-slate-800">
-                Detail per hari, toko, dan kategori barang
+                Detail per hari, toko, kategori barang, dan satuan
               </p>
             </div>
 
@@ -899,7 +1177,7 @@ export default function LaporanKeuntunganHarianPage() {
 
                   return (
                     <div
-                      key={`${item.tanggalKey}-${item.tokoId}-${item.kategoriId}-${index}`}
+                      key={`${item.tanggalKey}-${item.tokoId}-${item.kategoriId}-${item.satuanId}-${index}`}
                       className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
                     >
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -908,7 +1186,8 @@ export default function LaporanKeuntunganHarianPage() {
                             {formatTanggalKey(item.tanggalKey)}
                           </p>
                           <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            {item.tokoNama || "Tanpa Toko"} • {item.kategoriNama || "Semua Kategori"}
+                            {item.tokoNama || "Tanpa Toko"} • {item.kategoriNama || "Semua Kategori"} •{" "}
+                            {item.satuanNama || "Semua Satuan"}
                           </p>
                         </div>
 
@@ -961,7 +1240,7 @@ export default function LaporanKeuntunganHarianPage() {
                             Transaksi
                           </p>
                           <p className="mt-1 text-sm font-black text-slate-800">
-                            {item.jumlahTransaksi}
+                            {Math.round(item.jumlahTransaksi * 100) / 100}
                           </p>
                         </div>
 
@@ -970,7 +1249,7 @@ export default function LaporanKeuntunganHarianPage() {
                             Qty Terjual
                           </p>
                           <p className="mt-1 text-sm font-black text-slate-800">
-                            {item.jumlahQtyTerjual}
+                            {Math.round(item.jumlahQtyTerjual * 100) / 100}
                           </p>
                         </div>
 
@@ -1088,7 +1367,8 @@ export default function LaporanKeuntunganHarianPage() {
                                 {item.kategoriNama}
                               </p>
                               <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                                {item.qtyTerjual} item • {item.jumlahTransaksi} transaksi
+                                {Math.round(item.qtyTerjual * 100) / 100} item •{" "}
+                                {Math.round(item.jumlahTransaksi * 100) / 100} transaksi
                               </p>
                             </div>
                           </div>
@@ -1117,131 +1397,80 @@ export default function LaporanKeuntunganHarianPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                Ringkasan
+                Ranking Satuan
               </p>
               <p className="mt-1 text-sm font-black text-slate-800">
-                Gambaran cepat keuntungan harian
+                Satuan yang paling menguntungkan
               </p>
             </div>
 
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Kategori Barang Aktif</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Filter kategori barang saat ini
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">{kategoriAktifLabel}</p>
-                </div>
+            {rankingSatuanBarang.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Belum ada data satuan
               </div>
+            ) : (
+              <div className="space-y-3">
+                {rankingSatuanBarang.slice(0, 8).map((item, idx) => {
+                  const isNegative = item.keuntunganBersih < 0
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Total Kotor</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Dari penjualan kategori barang
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">
-                    {formatRupiah(totalPenghasilanKotor)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Total Pengeluaran</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Pengeluaran toko pada periode terpilih
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-red-600">
-                    {formatRupiah(totalPengeluaran)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Total Bersih</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Kotor dikurangi pengeluaran
-                    </p>
-                  </div>
-                  <p
-                    className={`text-sm font-black ${
-                      totalKeuntunganBersih < 0 ? "text-red-600" : "text-emerald-600"
-                    }`}
-                  >
-                    {formatRupiah(totalKeuntunganBersih)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Hari Direkap</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Total titik data chart
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">{chartData.length}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Toko Aktif</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Toko yang punya data
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">{rankingToko.length}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Kondisi</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Status total keuntungan bersih
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {totalKeuntunganBersih < 0 ? (
-                      <TrendingDown size={16} className="text-red-500" />
-                    ) : (
-                      <TrendingUp size={16} className="text-emerald-500" />
-                    )}
-                    <p
-                      className={`text-sm font-black ${
-                        totalKeuntunganBersih < 0 ? "text-red-600" : "text-emerald-600"
-                      }`}
+                  return (
+                    <div
+                      key={`${item.satuanId}-${idx}`}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
                     >
-                      {totalKeuntunganBersih < 0 ? "Minus" : "Positif"}
-                    </p>
-                  </div>
-                </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-black text-white">
+                              {idx + 1}
+                            </span>
+
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-slate-800">
+                                {item.satuanNama}
+                              </p>
+                              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                {Math.round(item.qtyTerjual * 100) / 100} item •{" "}
+                                {Math.round(item.jumlahTransaksi * 100) / 100} transaksi
+                              </p>
+                              <p className="mt-1 line-clamp-2 text-[11px] font-semibold text-slate-500">
+                                {item.namaBarangList.length > 0
+                                  ? item.namaBarangList.join(", ")
+                                  : "Belum ada nama barang"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <p
+                            className={`text-sm font-black ${
+                              isNegative ? "text-red-600" : "text-emerald-600"
+                            }`}
+                          >
+                            {formatRupiah(item.keuntunganBersih)}
+                          </p>
+                          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            Omzet {formatRupiah(item.omzet)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            </div>
-          </div>
+            )}
+          </div>       
         </div>
       </div>
 
-      {filterKategori && (
+      {(filterKategori || filterSatuan) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-[11px] font-bold text-amber-700">
-            Filter kategori sekarang hanya memakai <span className="font-black">kategori barang jualan</span>{" "}
-            dari field <span className="font-black">kategoriBreakdown</span> pada{" "}
-            <span className="font-black">laporan_harian</span>.
+            Filter aktif memakai data penjualan dari <span className="font-black">kategoriBreakdown</span>{" "}
+            pada <span className="font-black">laporan_harian</span>. Kategori:{" "}
+            <span className="font-black">{kategoriAktifLabel}</span> • Satuan:{" "}
+            <span className="font-black">{satuanAktifLabel}</span>
           </p>
         </div>
       )}

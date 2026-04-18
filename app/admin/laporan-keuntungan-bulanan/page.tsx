@@ -2,12 +2,15 @@
   Halaman admin laporan keuntungan bersih.
   File ini membaca koleksi laporan_bulanan dan pengeluaran dari Firestore untuk menampilkan
   penghasilan kotor, total pengeluaran, keuntungan bersih per bulan, detail rekap bulanan,
-  ranking toko, dan chart batang keuntungan bersih per bulan.
+  ranking toko, chart batang keuntungan bersih per bulan, filter kategori barang, dan filter satuan.
 
   Revisi:
   - filter kategori khusus kategori barang jualan
   - opsi kategori hanya dari laporan_bulanan.kategoriBreakdown
   - rekap dan ranking kategori fokus ke kategori barang yang dijual
+  - tambah filter satuan dari kategoriBreakdown.satuanIds / satuanNamaList
+  - tambah ranking satuan agar lebih mudah melihat keuntungan per unit
+  - opsi kategori dan satuan ikut filter bulan + toko aktif agar tidak menampilkan sisa data lama
 */
 
 "use client"
@@ -29,6 +32,7 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  Ruler,
 } from "lucide-react"
 import { motion } from "framer-motion"
 
@@ -51,6 +55,8 @@ type KategoriBreakdown = {
   totalBiayaAdmin: number
   labaKotor: number
   labaBersih: number
+  satuanIds?: string[]
+  satuanNamaList?: string[]
 }
 
 type LaporanBulanan = {
@@ -81,6 +87,8 @@ type RekapKeuntunganBersih = {
   tokoNama: string
   kategoriId: string
   kategoriNama: string
+  satuanId: string
+  satuanNama: string
   penghasilanKotor: number
   pengeluaran: number
   keuntunganBersih: number
@@ -99,6 +107,17 @@ type RankingKategoriBarang = {
   omzet: number
   qtyTerjual: number
   jumlahTransaksi: number
+}
+
+type RankingSatuanBarang = {
+  satuanId: string
+  satuanNama: string
+  penghasilanKotor: number
+  keuntunganBersih: number
+  omzet: number
+  qtyTerjual: number
+  jumlahTransaksi: number
+  namaBarangList: string[]
 }
 
 function formatRupiah(value: number) {
@@ -135,6 +154,23 @@ function getStartOfYearMonthInput() {
 
 function normalizeKategoriKey(value?: string) {
   return String(value || "").trim().toLowerCase()
+}
+
+function normalizeSatuanKey(value?: string) {
+  return String(value || "").trim().toLowerCase()
+}
+
+function uniqueStringList(values: any[]): string[] {
+  const map = new Map<string, string>()
+
+  for (const value of values || []) {
+    const text = String(value || "").trim()
+    const key = text.toLowerCase()
+    if (!text || map.has(key)) continue
+    map.set(key, text)
+  }
+
+  return Array.from(map.values())
 }
 
 function InfoCard({
@@ -227,6 +263,7 @@ export default function LaporanKeuntunganBersihPage() {
   const [search, setSearch] = useState("")
   const [filterToko, setFilterToko] = useState("")
   const [filterKategori, setFilterKategori] = useState("")
+  const [filterSatuan, setFilterSatuan] = useState("")
   const [bulanMulai, setBulanMulai] = useState(getStartOfYearMonthInput())
   const [bulanSelesai, setBulanSelesai] = useState(toMonthInputValue(new Date()))
 
@@ -254,43 +291,50 @@ export default function LaporanKeuntunganBersihPage() {
         const x = d.data() as any
 
         const kategoriBreakdown: KategoriBreakdown[] = Array.isArray(x?.kategoriBreakdown)
-  ? x.kategoriBreakdown.map((item: any) => {
-      const namaKategori = String(
-        item?.nama || item?.kategoriNama || "Tanpa Kategori"
-      ).trim()
+          ? x.kategoriBreakdown.map((item: any) => {
+              const namaKategori = String(
+                item?.nama || item?.kategoriNama || "Tanpa Kategori"
+              ).trim()
 
-      const kategoriKey = String(
-        item?.kategoriId || namaKategori
-      )
-        .trim()
-        .toLowerCase()
+              const kategoriKey = String(item?.kategoriId || namaKategori)
+                .trim()
+                .toLowerCase()
 
-      return {
-        kategoriId: kategoriKey,
-        kategoriNama: namaKategori || "Tanpa Kategori",
-        jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-        qtyTerjual: Number(item?.qtyTerjual || 0),
-        omzet: Number(item?.omzet || 0),
-        subtotal: Number(item?.subtotal || 0),
-        totalDiskon: Number(item?.totalDiskon || 0),
-        totalSetelahDiskon: Number(item?.totalSetelahDiskon || 0),
-        totalModal: Number(item?.totalModal || 0),
-        totalBiayaAdmin: Number(item?.totalBiayaAdmin || 0),
-        labaKotor: Number(
-          item?.labaKotor ??
-            Number(item?.totalSetelahDiskon || 0) -
-              Number(item?.totalModal || 0)
-        ),
-        labaBersih: Number(
-          item?.labaBersih ??
-            item?.labaKotor ??
-            Number(item?.totalSetelahDiskon || 0) -
-              Number(item?.totalModal || 0) -
-              Number(item?.totalBiayaAdmin || 0)
-        ),
-      }
-    })
-  : []
+              const satuanIds = uniqueStringList(
+                Array.isArray(item?.satuanIds) ? item.satuanIds : []
+              )
+
+              const satuanNamaList = uniqueStringList(
+                Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : []
+              )
+
+              return {
+                kategoriId: kategoriKey,
+                kategoriNama: namaKategori || "Tanpa Kategori",
+                jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
+                qtyTerjual: Number(item?.qtyTerjual || 0),
+                omzet: Number(item?.omzet || 0),
+                subtotal: Number(item?.subtotal || 0),
+                totalDiskon: Number(item?.totalDiskon || 0),
+                totalSetelahDiskon: Number(item?.totalSetelahDiskon || 0),
+                totalModal: Number(item?.totalModal || 0),
+                totalBiayaAdmin: Number(item?.totalBiayaAdmin || 0),
+                labaKotor: Number(
+                  item?.labaKotor ??
+                    Number(item?.totalSetelahDiskon || 0) - Number(item?.totalModal || 0)
+                ),
+                labaBersih: Number(
+                  item?.labaBersih ??
+                    item?.labaKotor ??
+                    Number(item?.totalSetelahDiskon || 0) -
+                      Number(item?.totalModal || 0) -
+                      Number(item?.totalBiayaAdmin || 0)
+                ),
+                satuanIds,
+                satuanNamaList,
+              }
+            })
+          : []
 
         return {
           id: d.id,
@@ -298,9 +342,7 @@ export default function LaporanKeuntunganBersihPage() {
           tokoId: String(x?.tokoId || ""),
           tokoNama: String(x?.tokoNama || ""),
           totalLabaKotor: Number(x?.totalLabaKotor || 0),
-          totalKeuntunganBersih: Number(
-            x?.totalKeuntunganBersih ?? x?.totalLabaKotor ?? 0
-          ),
+          totalKeuntunganBersih: Number(x?.totalKeuntunganBersih ?? x?.totalLabaKotor ?? 0),
           omzet: Number(x?.omzet || 0),
           jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
           kategoriBreakdown,
@@ -343,10 +385,19 @@ export default function LaporanKeuntunganBersihPage() {
     return () => unsub()
   }, [])
 
+  const laporanBulananVisible = useMemo(() => {
+    return laporanBulananList.filter((laporan) => {
+      const matchToko = !filterToko || laporan.tokoId === filterToko
+      const matchStart = !bulanMulai || laporan.bulanKey >= bulanMulai
+      const matchEnd = !bulanSelesai || laporan.bulanKey <= bulanSelesai
+      return matchToko && matchStart && matchEnd
+    })
+  }, [laporanBulananList, filterToko, bulanMulai, bulanSelesai])
+
   const kategoriBarangList = useMemo(() => {
     const map = new Map<string, { id: string; nama: string }>()
 
-    for (const laporan of laporanBulananList) {
+    for (const laporan of laporanBulananVisible) {
       for (const item of laporan.kategoriBreakdown || []) {
         const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
         if (!key) continue
@@ -361,30 +412,87 @@ export default function LaporanKeuntunganBersihPage() {
     }
 
     return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
-  }, [laporanBulananList])
+  }, [laporanBulananVisible])
+
+  const satuanBarangList = useMemo(() => {
+    const map = new Map<string, { id: string; nama: string }>()
+
+    for (const laporan of laporanBulananVisible) {
+      for (const item of laporan.kategoriBreakdown || []) {
+        const ids = item.satuanIds || []
+        const names = item.satuanNamaList || []
+        const maxLen = Math.max(ids.length, names.length)
+
+        for (let i = 0; i < maxLen; i++) {
+          const rawId = String(ids[i] || "").trim()
+          const rawNama = String(names[i] || "").trim()
+          const key = normalizeSatuanKey(rawId || rawNama)
+          const nama = rawNama || rawId || "Tanpa Satuan"
+
+          if (!key) continue
+          if (!map.has(key)) {
+            map.set(key, {
+              id: key,
+              nama,
+            })
+          }
+        }
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
+  }, [laporanBulananVisible])
+
+  useEffect(() => {
+    if (filterKategori && !kategoriBarangList.some((item) => item.id === filterKategori)) {
+      setFilterKategori("")
+    }
+  }, [filterKategori, kategoriBarangList])
+
+  useEffect(() => {
+    if (filterSatuan && !satuanBarangList.some((item) => item.id === filterSatuan)) {
+      setFilterSatuan("")
+    }
+  }, [filterSatuan, satuanBarangList])
 
   const rekapList = useMemo(() => {
     const map = new Map<string, RekapKeuntunganBersih>()
+    const aktifKategoriNama =
+      kategoriBarangList.find((x) => x.id === filterKategori)?.nama || "Semua Kategori"
+    const aktifSatuanNama =
+      satuanBarangList.find((x) => x.id === filterSatuan)?.nama || "Semua Satuan"
 
-    for (const item of laporanBulananList) {
-      if (filterKategori) {
-        const matchedBreakdown = (item.kategoriBreakdown || []).find((row) => {
-          const rowKey = row.kategoriId || normalizeKategoriKey(row.kategoriNama)
-          return rowKey === filterKategori
-        })
+    for (const laporan of laporanBulananList) {
+      const matchedBreakdowns = (laporan.kategoriBreakdown || []).filter((row) => {
+        const rowKategoriKey = row.kategoriId || normalizeKategoriKey(row.kategoriNama)
+        const matchKategori = !filterKategori || rowKategoriKey === filterKategori
 
-        if (!matchedBreakdown) continue
+        const rowSatuanKeys = [
+          ...(row.satuanIds || []).map((item) => normalizeSatuanKey(item)),
+          ...(row.satuanNamaList || []).map((item) => normalizeSatuanKey(item)),
+        ].filter(Boolean)
 
-        const key = `${item.bulanKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${filterKategori}`
+        const matchSatuan =
+          !filterSatuan || rowSatuanKeys.includes(normalizeSatuanKey(filterSatuan))
+
+        return matchKategori && matchSatuan
+      })
+
+      if (filterKategori || filterSatuan) {
+        if (matchedBreakdowns.length === 0) continue
+
+        const key = `${laporan.bulanKey}__${laporan.tokoId || laporan.tokoNama || "tanpa-toko"}__${
+          filterKategori || "all"
+        }__${filterSatuan || "all"}`
+
         const current = map.get(key) || {
-          bulanKey: item.bulanKey,
-          tokoId: item.tokoId,
-          tokoNama: item.tokoNama || "Tanpa Toko",
-          kategoriId:
-            matchedBreakdown.kategoriId ||
-            normalizeKategoriKey(matchedBreakdown.kategoriNama) ||
-            filterKategori,
-          kategoriNama: matchedBreakdown.kategoriNama || "Tanpa Kategori",
+          bulanKey: laporan.bulanKey,
+          tokoId: laporan.tokoId,
+          tokoNama: laporan.tokoNama || "Tanpa Toko",
+          kategoriId: filterKategori || "",
+          kategoriNama: filterKategori ? aktifKategoriNama : "Semua Kategori",
+          satuanId: filterSatuan || "",
+          satuanNama: filterSatuan ? aktifSatuanNama : "Semua Satuan",
           penghasilanKotor: 0,
           pengeluaran: 0,
           keuntunganBersih: 0,
@@ -394,24 +502,34 @@ export default function LaporanKeuntunganBersihPage() {
           jumlahDataPengeluaran: 0,
         }
 
-        current.penghasilanKotor += Number(
-          matchedBreakdown.labaBersih || matchedBreakdown.labaKotor || 0
+        current.penghasilanKotor += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.labaBersih || row.labaKotor || 0),
+          0
         )
-        current.omzet += Number(
-          matchedBreakdown.omzet || matchedBreakdown.totalSetelahDiskon || 0
+        current.omzet += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.omzet || row.totalSetelahDiskon || 0),
+          0
         )
-        current.jumlahTransaksi += Number(matchedBreakdown.jumlahTransaksi || 0)
-        current.jumlahQtyTerjual += Number(matchedBreakdown.qtyTerjual || 0)
+        current.jumlahTransaksi += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.jumlahTransaksi || 0),
+          0
+        )
+        current.jumlahQtyTerjual += matchedBreakdowns.reduce(
+          (sum, row) => sum + Number(row.qtyTerjual || 0),
+          0
+        )
 
         map.set(key, current)
       } else {
-        const key = `${item.bulanKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all`
+        const key = `${laporan.bulanKey}__${laporan.tokoId || laporan.tokoNama || "tanpa-toko"}__all__all`
         const current = map.get(key) || {
-          bulanKey: item.bulanKey,
-          tokoId: item.tokoId,
-          tokoNama: item.tokoNama || "Tanpa Toko",
+          bulanKey: laporan.bulanKey,
+          tokoId: laporan.tokoId,
+          tokoNama: laporan.tokoNama || "Tanpa Toko",
           kategoriId: "",
           kategoriNama: "Semua Kategori",
+          satuanId: "",
+          satuanNama: "Semua Satuan",
           penghasilanKotor: 0,
           pengeluaran: 0,
           keuntunganBersih: 0,
@@ -422,12 +540,12 @@ export default function LaporanKeuntunganBersihPage() {
         }
 
         current.penghasilanKotor += Number(
-          item.totalKeuntunganBersih || item.totalLabaKotor || 0
+          laporan.totalKeuntunganBersih || laporan.totalLabaKotor || 0
         )
-        current.omzet += Number(item.omzet || 0)
-        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
+        current.omzet += Number(laporan.omzet || 0)
+        current.jumlahTransaksi += Number(laporan.jumlahTransaksi || 0)
         current.jumlahQtyTerjual += Number(
-          (item.kategoriBreakdown || []).reduce(
+          (laporan.kategoriBreakdown || []).reduce(
             (sum, row) => sum + Number(row?.qtyTerjual || 0),
             0
           )
@@ -440,7 +558,7 @@ export default function LaporanKeuntunganBersihPage() {
     for (const item of pengeluaranList) {
       const key = `${item.bulanKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${
         filterKategori || "all"
-      }`
+      }__${filterSatuan || "all"}`
 
       const current = map.get(key) || {
         bulanKey: item.bulanKey,
@@ -450,6 +568,10 @@ export default function LaporanKeuntunganBersihPage() {
         kategoriNama: filterKategori
           ? kategoriBarangList.find((x) => x.id === filterKategori)?.nama || "Tanpa Kategori"
           : "Semua Kategori",
+        satuanId: filterSatuan || "",
+        satuanNama: filterSatuan
+          ? satuanBarangList.find((x) => x.id === filterSatuan)?.nama || "Tanpa Satuan"
+          : "Semua Satuan",
         penghasilanKotor: 0,
         pengeluaran: 0,
         keuntunganBersih: 0,
@@ -475,7 +597,14 @@ export default function LaporanKeuntunganBersihPage() {
         if (bulanCompare !== 0) return bulanCompare
         return b.keuntunganBersih - a.keuntunganBersih
       })
-  }, [laporanBulananList, pengeluaranList, filterKategori, kategoriBarangList])
+  }, [
+    laporanBulananList,
+    pengeluaranList,
+    filterKategori,
+    filterSatuan,
+    kategoriBarangList,
+    satuanBarangList,
+  ])
 
   const filteredRekap = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -485,7 +614,8 @@ export default function LaporanKeuntunganBersihPage() {
         !q ||
         item.bulanKey.toLowerCase().includes(q) ||
         item.tokoNama.toLowerCase().includes(q) ||
-        item.kategoriNama.toLowerCase().includes(q)
+        item.kategoriNama.toLowerCase().includes(q) ||
+        item.satuanNama.toLowerCase().includes(q)
 
       const matchToko = !filterToko || item.tokoId === filterToko
       const matchStart = !bulanMulai || item.bulanKey >= bulanMulai
@@ -505,14 +635,8 @@ export default function LaporanKeuntunganBersihPage() {
     0
   )
   const totalOmzet = filteredRekap.reduce((acc, item) => acc + item.omzet, 0)
-  const totalTransaksi = filteredRekap.reduce(
-    (acc, item) => acc + item.jumlahTransaksi,
-    0
-  )
-  const totalQtyTerjual = filteredRekap.reduce(
-    (acc, item) => acc + item.jumlahQtyTerjual,
-    0
-  )
+  const totalTransaksi = filteredRekap.reduce((acc, item) => acc + item.jumlahTransaksi, 0)
+  const totalQtyTerjual = filteredRekap.reduce((acc, item) => acc + item.jumlahQtyTerjual, 0)
 
   const keuntunganBulanIni = filteredRekap
     .filter((item) => item.bulanKey === toMonthInputValue(new Date()))
@@ -584,6 +708,7 @@ export default function LaporanKeuntunganBersihPage() {
 
   const rankingKategoriBarang = useMemo(() => {
     const map = new Map<string, RankingKategoriBarang>()
+    const q = search.toLowerCase().trim()
 
     for (const laporan of laporanBulananList) {
       if (filterToko && laporan.tokoId !== filterToko) continue
@@ -593,6 +718,14 @@ export default function LaporanKeuntunganBersihPage() {
       for (const item of laporan.kategoriBreakdown || []) {
         const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
         if (!kategoriKey) continue
+        if (filterKategori && kategoriKey !== filterKategori) continue
+
+        const satuanKeys = [
+          ...(item.satuanIds || []).map((value) => normalizeSatuanKey(value)),
+          ...(item.satuanNamaList || []).map((value) => normalizeSatuanKey(value)),
+        ].filter(Boolean)
+
+        if (filterSatuan && !satuanKeys.includes(normalizeSatuanKey(filterSatuan))) continue
 
         const current = map.get(kategoriKey) || {
           kategoriId: kategoriKey,
@@ -620,12 +753,104 @@ export default function LaporanKeuntunganBersihPage() {
         keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
       }))
       .filter((item) => {
-        const q = search.toLowerCase().trim()
         if (!q) return true
         return item.kategoriNama.toLowerCase().includes(q)
       })
       .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanBulananList, filterToko, bulanMulai, bulanSelesai, search])
+  }, [laporanBulananList, filterToko, filterKategori, filterSatuan, bulanMulai, bulanSelesai, search])
+
+  const rankingSatuanBarang = useMemo(() => {
+    const map = new Map<string, RankingSatuanBarang>()
+    const q = search.toLowerCase().trim()
+
+    for (const laporan of laporanBulananList) {
+      if (filterToko && laporan.tokoId !== filterToko) continue
+      if (bulanMulai && laporan.bulanKey < bulanMulai) continue
+      if (bulanSelesai && laporan.bulanKey > bulanSelesai) continue
+
+      for (const item of laporan.kategoriBreakdown || []) {
+        const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
+        if (filterKategori && kategoriKey !== filterKategori) continue
+
+        const ids = item.satuanIds || []
+        const names = item.satuanNamaList || []
+        const maxLen = Math.max(ids.length, names.length)
+        const namaBarangRef = item.kategoriNama || "Tanpa Kategori"
+
+        if (maxLen === 0) {
+          const satuanKey = "tanpa-satuan"
+          if (filterSatuan && satuanKey !== normalizeSatuanKey(filterSatuan)) continue
+
+          const current = map.get(satuanKey) || {
+            satuanId: satuanKey,
+            satuanNama: "Tanpa Satuan",
+            penghasilanKotor: 0,
+            keuntunganBersih: 0,
+            omzet: 0,
+            qtyTerjual: 0,
+            jumlahTransaksi: 0,
+            namaBarangList: [],
+          }
+
+          current.penghasilanKotor += Number(item.labaBersih || item.labaKotor || 0)
+          current.keuntunganBersih += Number(item.labaBersih || item.labaKotor || 0)
+          current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0)
+          current.qtyTerjual += Number(item.qtyTerjual || 0)
+          current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
+
+          if (namaBarangRef && !current.namaBarangList.includes(namaBarangRef)) {
+            current.namaBarangList.push(namaBarangRef)
+          }
+
+          map.set(satuanKey, current)
+          continue
+        }
+
+        for (let i = 0; i < maxLen; i++) {
+          const rawId = String(ids[i] || "").trim()
+          const rawNama = String(names[i] || "").trim()
+          const satuanKey = normalizeSatuanKey(rawId || rawNama)
+          const satuanNama = rawNama || rawId || "Tanpa Satuan"
+
+          if (!satuanKey) continue
+          if (filterSatuan && satuanKey !== normalizeSatuanKey(filterSatuan)) continue
+
+          const current = map.get(satuanKey) || {
+            satuanId: satuanKey,
+            satuanNama,
+            penghasilanKotor: 0,
+            keuntunganBersih: 0,
+            omzet: 0,
+            qtyTerjual: 0,
+            jumlahTransaksi: 0,
+            namaBarangList: [],
+          }
+
+          current.penghasilanKotor += Number(item.labaBersih || item.labaKotor || 0)
+          current.keuntunganBersih += Number(item.labaBersih || item.labaKotor || 0)
+          current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0)
+          current.qtyTerjual += Number(item.qtyTerjual || 0)
+          current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
+
+          if (namaBarangRef && !current.namaBarangList.includes(namaBarangRef)) {
+            current.namaBarangList.push(namaBarangRef)
+          }
+
+          map.set(satuanKey, current)
+        }
+      }
+    }
+
+    return Array.from(map.values())
+      .filter((item) => {
+        if (!q) return true
+        return (
+          item.satuanNama.toLowerCase().includes(q) ||
+          item.namaBarangList.some((nama) => nama.toLowerCase().includes(q))
+        )
+      })
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
+  }, [laporanBulananList, filterToko, filterKategori, filterSatuan, bulanMulai, bulanSelesai, search])
 
   const maxChartValue = Math.max(
     ...chartData.map((item) => Math.abs(item.keuntunganBersih)),
@@ -634,6 +859,9 @@ export default function LaporanKeuntunganBersihPage() {
 
   const kategoriAktifLabel =
     kategoriBarangList.find((item) => item.id === filterKategori)?.nama || "Semua Kategori"
+
+  const satuanAktifLabel =
+    satuanBarangList.find((item) => item.id === filterSatuan)?.nama || "Semua Satuan"
 
   return (
     <div className="space-y-4 text-slate-900 sm:space-y-5">
@@ -653,7 +881,7 @@ export default function LaporanKeuntunganBersihPage() {
                 Laporan Keuntungan Bersih
               </h1>
               <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Keuntungan kategori barang jualan · bersih setelah pengeluaran
+                Keuntungan kategori barang jualan · bersih setelah pengeluaran · filter satuan
               </p>
             </div>
           </div>
@@ -689,7 +917,7 @@ export default function LaporanKeuntunganBersihPage() {
         transition={{ delay: 0.06 }}
         className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <div className="lg:col-span-2">
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
               Cari
@@ -703,18 +931,13 @@ export default function LaporanKeuntunganBersihPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Bulan, toko, atau kategori barang..."
+                placeholder="Bulan, toko, kategori, atau satuan..."
                 className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </div>
           </div>
 
-          <FilterSelect
-            label="Toko"
-            value={filterToko}
-            onChange={setFilterToko}
-            icon={Store}
-          >
+          <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
             <option value="">Semua Toko</option>
             {tokoList.map((item) => (
               <option key={item.id} value={item.id}>
@@ -731,6 +954,20 @@ export default function LaporanKeuntunganBersihPage() {
           >
             <option value="">Semua Kategori Barang</option>
             {kategoriBarangList.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nama}
+              </option>
+            ))}
+          </FilterSelect>
+
+          <FilterSelect
+            label="Satuan"
+            value={filterSatuan}
+            onChange={setFilterSatuan}
+            icon={Ruler}
+          >
+            <option value="">Semua Satuan</option>
+            {satuanBarangList.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.nama}
               </option>
@@ -788,7 +1025,7 @@ export default function LaporanKeuntunganBersihPage() {
           icon={Wallet}
           label="Pengeluaran"
           value={formatRupiah(totalPengeluaran)}
-          subValue={`${filteredRekap.length} rekap`}
+          subValue={`${filteredRekap.length} rekap • ${satuanAktifLabel}`}
         />
         <InfoCard
           icon={TrendingUp}
@@ -877,7 +1114,7 @@ export default function LaporanKeuntunganBersihPage() {
                 Rekap Keuntungan Bersih
               </p>
               <p className="mt-1 text-sm font-black text-slate-800">
-                Detail per bulan, toko, dan kategori barang
+                Detail per bulan, toko, kategori barang, dan satuan
               </p>
             </div>
 
@@ -892,7 +1129,7 @@ export default function LaporanKeuntunganBersihPage() {
 
                   return (
                     <div
-                      key={`${item.bulanKey}-${item.tokoId}-${item.kategoriId}-${index}`}
+                      key={`${item.bulanKey}-${item.tokoId}-${item.kategoriId}-${item.satuanId}-${index}`}
                       className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
                     >
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -901,7 +1138,8 @@ export default function LaporanKeuntunganBersihPage() {
                             {formatBulanKey(item.bulanKey)}
                           </p>
                           <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            {item.tokoNama || "Tanpa Toko"} • {item.kategoriNama || "Semua Kategori"}
+                            {item.tokoNama || "Tanpa Toko"} • {item.kategoriNama || "Semua Kategori"} •{" "}
+                            {item.satuanNama || "Semua Satuan"}
                           </p>
                         </div>
 
@@ -1110,131 +1348,80 @@ export default function LaporanKeuntunganBersihPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                Ringkasan
+                Ranking Satuan
               </p>
               <p className="mt-1 text-sm font-black text-slate-800">
-                Gambaran cepat keuntungan bersih
+                Satuan yang paling menguntungkan
               </p>
             </div>
 
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Kategori Barang Aktif</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Filter kategori barang saat ini
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">{kategoriAktifLabel}</p>
-                </div>
+            {rankingSatuanBarang.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Belum ada data satuan
               </div>
+            ) : (
+              <div className="space-y-3">
+                {rankingSatuanBarang.slice(0, 8).map((item, idx) => {
+                  const isNegative = item.keuntunganBersih < 0
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Total Kotor</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Dari penjualan kategori barang
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">
-                    {formatRupiah(totalPenghasilanKotor)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Total Pengeluaran</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Pengeluaran toko pada periode terpilih
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-red-600">
-                    {formatRupiah(totalPengeluaran)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Total Bersih</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Kotor dikurangi pengeluaran
-                    </p>
-                  </div>
-                  <p
-                    className={`text-sm font-black ${
-                      totalKeuntunganBersih < 0 ? "text-red-600" : "text-emerald-600"
-                    }`}
-                  >
-                    {formatRupiah(totalKeuntunganBersih)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Bulan Direkap</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Total titik data chart
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">{chartData.length}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Toko Aktif</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Toko yang punya data
-                    </p>
-                  </div>
-                  <p className="text-sm font-black text-slate-800">{rankingToko.length}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Kondisi</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      Status total keuntungan bersih
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {totalKeuntunganBersih < 0 ? (
-                      <TrendingDown size={16} className="text-red-500" />
-                    ) : (
-                      <TrendingUp size={16} className="text-emerald-500" />
-                    )}
-                    <p
-                      className={`text-sm font-black ${
-                        totalKeuntunganBersih < 0 ? "text-red-600" : "text-emerald-600"
-                      }`}
+                  return (
+                    <div
+                      key={`${item.satuanId}-${idx}`}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
                     >
-                      {totalKeuntunganBersih < 0 ? "Minus" : "Positif"}
-                    </p>
-                  </div>
-                </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-black text-white">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-slate-800">
+                                {item.satuanNama}
+                              </p>
+                              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                {item.qtyTerjual} item • {item.jumlahTransaksi} transaksi
+                              </p>
+                              <p className="mt-1 line-clamp-2 text-[11px] font-semibold text-slate-500">
+                                {item.namaBarangList.length > 0
+                                  ? item.namaBarangList.join(", ")
+                                  : "Belum ada nama barang"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <p
+                            className={`text-sm font-black ${
+                              isNegative ? "text-red-600" : "text-emerald-600"
+                            }`}
+                          >
+                            {formatRupiah(item.keuntunganBersih)}
+                          </p>
+                          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            Omzet {formatRupiah(item.omzet)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            </div>
+            )}
           </div>
+
+          
         </div>
       </div>
 
-      {filterKategori && (
+      {(filterKategori || filterSatuan) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-[11px] font-bold text-amber-700">
-            Filter kategori sekarang hanya memakai <span className="font-black">kategori barang jualan</span> dari
-            field <span className="font-black">kategoriBreakdown</span> pada{" "}
-            <span className="font-black">laporan_bulanan</span>.
+            Filter aktif memakai data penjualan dari <span className="font-black">kategoriBreakdown</span>{" "}
+            pada <span className="font-black">laporan_bulanan</span>. Kategori:{" "}
+            <span className="font-black">{kategoriAktifLabel}</span> • Satuan:{" "}
+            <span className="font-black">{satuanAktifLabel}</span>
           </p>
         </div>
       )}

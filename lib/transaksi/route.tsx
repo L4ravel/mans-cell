@@ -87,6 +87,8 @@ export type Barang = {
   merk: string
   supplier: string
   satuan: string
+  satuanId?: string
+  satuanNama?: string
   hargaModal: number
   hargaJual: number
   stok: number
@@ -150,6 +152,8 @@ export type CartItem = {
   kategoriNama: string
   merk: string
   satuan: string
+  satuanId?: string
+  satuanNama?: string
   stok: number
   qty: number
   hargaModal: number
@@ -180,6 +184,8 @@ export type StrukItem = {
   kategoriNama: string
   merk: string
   satuan: string
+  satuanId?: string
+  satuanNama?: string
   qty: number
   hargaModal: number
   hargaAsli: number
@@ -250,6 +256,8 @@ export type LaporanKategoriBreakdown = {
   totalModal: number
   totalBiayaAdmin: number
   labaBersih: number
+  satuanIds?: string[]
+  satuanNamaList?: string[]
 }
 
 export type MasterSaldoDigital = {
@@ -422,7 +430,7 @@ export function mergeKategoriBreakdown(
     for (const item of existing) {
       const kategoriId = String(item?.kategoriId || "").trim() || "tanpa-kategori"
       const nama = item?.nama || "Tanpa Kategori"
-      map.set(kategoriId, {
+       map.set(kategoriId, {
         kategoriId,
         nama,
         jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
@@ -434,6 +442,8 @@ export function mergeKategoriBreakdown(
         totalModal: Number(item?.totalModal || 0),
         totalBiayaAdmin: Number(item?.totalBiayaAdmin || 0),
         labaBersih: Number(item?.labaBersih || 0),
+        satuanIds: Array.isArray(item?.satuanIds) ? item.satuanIds.filter(Boolean) : [],
+        satuanNamaList: Array.isArray(item?.satuanNamaList) ? item.satuanNamaList.filter(Boolean) : [],
       })
     }
   }
@@ -441,7 +451,7 @@ export function mergeKategoriBreakdown(
   for (const item of incoming) {
     const kategoriId = String(item?.kategoriId || "").trim() || "tanpa-kategori"
     const nama = item?.nama || "Tanpa Kategori"
-    const prev = map.get(kategoriId) || {
+        const prev = map.get(kategoriId) || {
       kategoriId,
       nama,
       jumlahTransaksi: 0,
@@ -453,9 +463,11 @@ export function mergeKategoriBreakdown(
       totalModal: 0,
       totalBiayaAdmin: 0,
       labaBersih: 0,
+      satuanIds: [] as string[],
+      satuanNamaList: [] as string[],
     }
 
-    map.set(kategoriId, {
+        map.set(kategoriId, {
       kategoriId,
       nama,
       jumlahTransaksi: Number(prev.jumlahTransaksi || 0) + Number(item?.jumlahTransaksi || 0),
@@ -467,6 +479,12 @@ export function mergeKategoriBreakdown(
       totalModal: Number(prev.totalModal || 0) + Number(item?.totalModal || 0),
       totalBiayaAdmin: Number(prev.totalBiayaAdmin || 0) + Number(item?.totalBiayaAdmin || 0),
       labaBersih: Number(prev.labaBersih || 0) + Number(item?.labaBersih || 0),
+      satuanIds: Array.from(
+        new Set([...(prev.satuanIds || []), ...((item?.satuanIds || []) as string[])])
+      ),
+      satuanNamaList: Array.from(
+        new Set([...(prev.satuanNamaList || []), ...((item?.satuanNamaList || []) as string[])])
+      ),
     })
   }
 
@@ -1098,9 +1116,12 @@ export function RiwayatTransaksiPanel() {
                 barangId: item?.barangId || "",
                 kodeBarang: item?.kodeBarang || "",
                 nama: item?.nama || "",
+                kategoriId: item?.kategoriId || "",
                 kategoriNama: item?.kategoriNama || "",
                 merk: item?.merk || "",
                 satuan: item?.satuan || "",
+                satuanId: item?.satuanId || "",
+                satuanNama: item?.satuanNama || item?.satuan || "",
                 qty: Number(item?.qty || 0),
                 hargaModal: Number(item?.hargaModal || 0),
                 hargaAsli: Number(item?.hargaAsli || 0),

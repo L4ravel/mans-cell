@@ -1,8 +1,67 @@
 // Halaman dashboard admin utama dengan header yang konsisten dengan halaman admin lainnya.
+// Revisi: badge aktif diganti indikator restock di header.
 
-import { BarChart3, Cpu } from "lucide-react"
+"use client"
+
+import Link from "next/link"
+import { useEffect, useState } from "react"
+import { auth, db } from "@/lib/firebase"
+import { collection, getDocs, query } from "firebase/firestore"
+import { AlertTriangle, BarChart3, Cpu } from "lucide-react"
 
 export default function AdminPage() {
+  const [restockCount, setRestockCount] = useState(0)
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchRestockCount = async () => {
+      try {
+        const [barangSnap, saldoSnap] = await Promise.all([
+          getDocs(query(collection(db, "barang"))),
+          getDocs(query(collection(db, "master_saldo_digital"))),
+        ])
+
+        const totalBarangRestock = barangSnap.docs.reduce((sum, d) => {
+          const x = d.data() as any
+          const jenisBarang = (x?.jenisBarang || "fisik") as "fisik" | "digital"
+          const stok = Number(x?.stok || 0)
+          const stokMinimum = Number(x?.stokMinimum || 0)
+
+          if (jenisBarang === "fisik" && stok <= stokMinimum) return sum + 1
+          return sum
+        }, 0)
+
+        const totalSaldoRestock = saldoSnap.docs.reduce((sum, d) => {
+          const x = d.data() as any
+          const aktif = x?.aktif !== false
+          const jumlahSaldo = Number(x?.jumlahSaldo || 0)
+          const jumlahMinimum = Number(x?.jumlahMinimum || 0)
+
+          if (aktif && jumlahSaldo <= jumlahMinimum) return sum + 1
+          return sum
+        }, 0)
+
+        if (!isMounted) return
+        setRestockCount(totalBarangRestock + totalSaldoRestock)
+      } catch (error) {
+        console.error("Gagal memuat jumlah restock:", error)
+        if (!isMounted) return
+        setRestockCount(0)
+      }
+    }
+
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      if (!user) return
+      await fetchRestockCount()
+    })
+
+    return () => {
+      isMounted = false
+      unsub()
+    }
+  }, [])
+
   return (
     <div className="space-y-4 text-slate-900 sm:space-y-5">
       <div className="relative overflow-hidden rounded-xl border border-slate-200 border-l-4 border-l-cyan-500 bg-white p-4 shadow-sm sm:p-5">
@@ -27,9 +86,19 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center justify-end gap-2 sm:flex-shrink-0">
-            <div className="inline-flex h-8 items-center rounded-full bg-cyan-500 px-3 shadow-sm shadow-cyan-200/50">
-              <span className="text-xs font-black text-white">AKTIF</span>
-            </div>
+            <Link
+              href="/admin/restock-barang"
+              className={`inline-flex h-8 items-center gap-2 rounded-full px-3 shadow-sm transition-all ${
+                restockCount > 0
+                  ? "bg-orange-500 text-white shadow-orange-200/60 hover:bg-orange-600"
+                  : "bg-emerald-500 text-white shadow-emerald-200/60 hover:bg-emerald-600"
+              }`}
+            >
+              <AlertTriangle size={14} strokeWidth={2.5} />
+              <span className="text-xs font-black">
+                {restockCount > 0 ? `RESTOCK ${restockCount}` : "AMAN"}
+              </span>
+            </Link>
           </div>
         </div>
 
