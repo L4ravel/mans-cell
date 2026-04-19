@@ -5,6 +5,7 @@
   Revisi:
   - hapus mekanisme scale desktop berbasis zoom
   - badge menghitung total item restock dari barang fisik + saldo digital
+  - sidebar dikelompokkan ulang agar lebih rapi
 */
 
 "use client"
@@ -89,17 +90,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-saldo", icon: Wallet, label: "Tambah Saldo" },
           { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
+        ],
+      },
+      {
+        label: "Stok & Distribusi",
+        icon: Boxes,
+        items: [
           { href: "/admin/restock-barang", icon: AlertTriangle, label: "Restock Barang" },
           { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
           { href: "/admin/terima-barang", icon: ArrowDownToLine, label: "Terima Barang" },
+          { href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
+        ],
+      },
+      {
+        label: "Pelanggan & Akun",
+        icon: UserPlus,
+        items: [
           { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
+          { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
+          { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
+        ],
+      },
+      {
+        label: "Keuangan & Laporan",
+        icon: BarChart3,
+        items: [
           { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
           { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
           { href: "/admin/laporan-keuntungan-bulanan", icon: BarChart3, label: "Laporan Keuntungan Bulanan" },
           { href: "/admin/laporan-keuntungan-harian", icon: BarChart3, label: "Laporan Keuntungan Harian" },
           { href: "/admin/laporan-setelah-modal-tetap", icon: BarChart3, label: "Laporan Setelah Modal Tetap" },
-          { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
-          { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
         ],
       },
       {
@@ -110,7 +130,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
           { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
           { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
-          { href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
           { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
           { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
         ],
@@ -183,20 +202,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-kategori") ||
       currentPath.startsWith("/admin/tambah-satuan") ||
       currentPath.startsWith("/admin/tambah-supplier") ||
-      currentPath.startsWith("/admin/tambah-barang-tetap") ||
+      currentPath.startsWith("/admin/tambah-barang-tetap")
+    ) {
+      nextOpenGroup.push("Master Data")
+    }
+
+    if (
       currentPath.startsWith("/admin/restock-barang") ||
       currentPath.startsWith("/admin/transfer-barang") ||
       currentPath.startsWith("/admin/terima-barang") ||
+      currentPath.startsWith("/admin/mutasi-stok")
+    ) {
+      nextOpenGroup.push("Stok & Distribusi")
+    }
+
+    if (
       currentPath.startsWith("/admin/tambah-pelanggan") ||
       currentPath.startsWith("/admin/akun-pelanggan") ||
-      currentPath.startsWith("/admin/buat-akun") ||
+      currentPath.startsWith("/admin/buat-akun")
+    ) {
+      nextOpenGroup.push("Pelanggan & Akun")
+    }
+
+    if (
       currentPath.startsWith("/admin/pengeluaran") ||
       currentPath.startsWith("/admin/laporan-pengeluaran") ||
       currentPath.startsWith("/admin/laporan-keuntungan-bulanan") ||
-      currentPath.startsWith("/admin/laporan-setelah-modal-tetap") ||
-      currentPath.startsWith("/admin/laporan-keuntungan-harian")
+      currentPath.startsWith("/admin/laporan-keuntungan-harian") ||
+      currentPath.startsWith("/admin/laporan-setelah-modal-tetap")
     ) {
-      nextOpenGroup.push("Master Data")
+      nextOpenGroup.push("Keuangan & Laporan")
     }
 
     if (
@@ -204,7 +239,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-diskon") ||
       currentPath.startsWith("/admin/tambah-metode-pembayaran") ||
       currentPath.startsWith("/admin/riwayat-transaksi") ||
-      currentPath.startsWith("/admin/mutasi-stok") ||
       currentPath.startsWith("/admin/laporan-harian") ||
       currentPath.startsWith("/admin/laporan-bulanan")
     ) {
@@ -595,7 +629,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <NavMenu />
       </aside>
 
-           <div className="relative z-10 lg:hidden">
+      <div className="relative z-10 lg:hidden">
         <div className="flex min-h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
           <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4">
             <button
