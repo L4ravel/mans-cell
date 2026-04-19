@@ -1,10 +1,9 @@
 /* 
-  Layout admin desktop dengan basis lebar 2560px.
-  Jika monitor lebih kecil, desktop otomatis discale agar seluruh area tetap terlihat.
-  Mobile tetap seperti sebelumnya.
+  Layout admin desktop tanpa pengunci zoom.
+  Desktop kembali normal responsif, mobile tetap seperti sebelumnya.
 
   Revisi:
-  - tambah badge notifikasi pada menu Restock Barang
+  - hapus mekanisme scale desktop berbasis zoom
   - badge menghitung total item restock dari barang fisik + saldo digital
 */
 
@@ -66,9 +65,6 @@ type MenuGroup = {
   items: MenuItem[]
 }
 
-const DESKTOP_BASE_WIDTH = 2560
-const DESKTOP_SIDE_PADDING = 40
-
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -80,7 +76,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [loggingOut, setLoggingOut] = useState(false)
   const [authLoading, setAuthLoading] = useState(true)
   const [isAuthorized, setIsAuthorized] = useState(false)
-  const [desktopZoom, setDesktopZoom] = useState(1)
   const [restockCount, setRestockCount] = useState(0)
 
   const menuGroups: MenuGroup[] = useMemo(
@@ -311,14 +306,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const handleResize = () => {
       if (window.innerWidth >= 1024) setSidebarOpen(false)
-
-      if (window.innerWidth >= 1024) {
-        const availableWidth = Math.max(window.innerWidth - DESKTOP_SIDE_PADDING, 320)
-        const nextZoom = Math.min(1, availableWidth / DESKTOP_BASE_WIDTH)
-        setDesktopZoom(nextZoom)
-      } else {
-        setDesktopZoom(1)
-      }
     }
 
     handleResize()
@@ -608,14 +595,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <NavMenu />
       </aside>
 
-      <div className="relative z-10 hidden lg:flex justify-center">
-        <div
-          className="w-[2560px]"
-          style={{
-            zoom: desktopZoom,
-          }}
-        >
-          <div className="relative flex min-h-[calc(100vh-1.5rem)] w-[2560px] gap-4 xl:gap-5">
+           <div className="relative z-10 lg:hidden">
+        <div className="flex min-h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+          <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"
+              aria-label={sidebarOpen ? "Tutup sidebar" : "Buka sidebar"}
+            >
+              {sidebarOpen ? (
+                <X size={17} strokeWidth={2} />
+              ) : (
+                <Menu size={17} strokeWidth={2} />
+              )}
+            </button>
+
+            <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+                <User size={14} strokeWidth={2.5} />
+              </div>
+              <span className="text-sm font-bold">Admin</span>
+            </div>
+          </header>
+
+          <main className="flex-1 overflow-auto bg-slate-50/30 p-4">
+            <div className="w-full">{children}</div>
+          </main>
+        </div>
+      </div>
+
+      <div className="relative z-10 hidden lg:block">
+        <div className="mx-auto w-full max-w-[2560px]">
+          <div className="relative flex min-h-[calc(100vh-1.5rem)] w-full gap-4 xl:gap-5">
             <aside
               className={`
                 relative hidden flex-col rounded-3xl border border-slate-200 bg-white shadow-xl
