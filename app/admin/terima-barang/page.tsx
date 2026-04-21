@@ -3,6 +3,7 @@
   Fokus untuk menerima transfer barang yang sudah dikirim,
   melihat detail transfer, filter riwayat penerimaan,
   dan menyimpan nama & email user penerima dari koleksi users.
+  Jika user bukan admin, data dikunci hanya untuk transfer yang terkait toko user sendiri.
 */
 
 "use client"
@@ -31,7 +32,6 @@ import {
   Cpu,
   Eye,
   Mail,
-  Package,
   RefreshCw,
   Search,
   Store,
@@ -54,6 +54,16 @@ type UserActor = {
   uid: string
   nama: string
   email: string
+}
+
+type UserProfile = {
+  uid: string
+  nama: string
+  email: string
+  role: string
+  roles: string[]
+  tokoId: string
+  tokoNama: string
 }
 
 type TransferBarang = {
@@ -121,6 +131,20 @@ const ITEMS_OPTIONS = [
 
 const EMPTY_RECEIVE_FORM: ReceiveForm = {
   catatanPenerimaan: "",
+}
+
+function normalizeRoles(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isAdminProfile(profile: UserProfile | null) {
+  if (!profile) return false
+  const role = String(profile.role || "").trim().toLowerCase()
+  if (role === "admin" || role === "superadmin") return true
+  return profile.roles.includes("admin") || profile.roles.includes("superadmin")
 }
 
 function FormInput({
@@ -360,6 +384,7 @@ export default function TerimaBarangPage() {
 
   const [tokoList, setTokoList] = useState<Toko[]>([])
   const [transferList, setTransferList] = useState<TransferBarang[]>([])
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null)
 
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -380,6 +405,16 @@ export default function TerimaBarangPage() {
 
   const [selectedDetail, setSelectedDetail] = useState<TransferBarang | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<TransferBarang | null>(null)
+
+  const isAdminUser = useMemo(
+    () => isAdminProfile(currentUserProfile),
+    [currentUserProfile]
+  )
+
+  const userTokoId = useMemo(
+    () => String(currentUserProfile?.tokoId || "").trim(),
+    [currentUserProfile]
+  )
 
   const getUserProfile = async (uid: string, emailFallback?: string | null): Promise<UserActor> => {
     try {
@@ -403,8 +438,65 @@ export default function TerimaBarangPage() {
     }
   }
 
-  const fetchToko = async () => {
+  const fetchCurrentUserProfile = async (uid: string, emailFallback?: string | null) => {
     try {
+      const snap = await getDoc(doc(db, "users", uid))
+      if (snap.exists()) {
+        const data = snap.data() as any
+        const profile: UserProfile = {
+          uid,
+          nama: String(data?.nama || "").trim() || "Tanpa Nama",
+          email: String(data?.email || "").trim() || String(emailFallback || "").trim() || "-",
+          role: String(data?.role || "").trim().toLowerCase(),
+          roles: normalizeRoles(data?.roles),
+          tokoId: String(data?.tokoId || "").trim(),
+          tokoNama: String(data?.tokoNama || "").trim(),
+        }
+        setCurrentUserProfile(profile)
+        return profile
+      }
+    } catch (e) {
+      console.error("Gagal mengambil profil user:", e)
+    }
+
+    const fallback: UserProfile = {
+      uid,
+      nama: "Tanpa Nama",
+      email: String(emailFallback || "").trim() || "-",
+      role: "",
+      roles: [],
+      tokoId: "",
+      tokoNama: "",
+    }
+
+    setCurrentUserProfile(fallback)
+    return fallback
+  }
+
+  const fetchToko = async (profile?: UserProfile | null) => {
+    const activeProfile = profile || currentUserProfile
+    const admin = isAdminProfile(activeProfile)
+
+    try {
+      if (!admin) {
+        const tokoId = String(activeProfile?.tokoId || "").trim()
+        const tokoNama = String(activeProfile?.tokoNama || "").trim()
+
+        if (!tokoId) {
+          setTokoList([])
+          return
+        }
+
+        setTokoList([
+          {
+            id: tokoId,
+            nama: tokoNama || "Toko User",
+            aktif: true,
+          },
+        ])
+        return
+      }
+
       const snap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
       const list: Toko[] = snap.docs
         .map((item) => {
@@ -493,10 +585,10 @@ export default function TerimaBarangPage() {
     }
   }
 
-  const fetchAll = async () => {
+  const fetchAll = async (profile?: UserProfile | null) => {
     setLoading(true)
     try {
-      await Promise.all([fetchToko(), fetchTransfer()])
+      await Promise.all([fetchToko(profile), fetchTransfer()])
     } finally {
       setLoading(false)
     }
@@ -504,17 +596,37 @@ export default function TerimaBarangPage() {
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) await fetchAll()
+      if (!user) {
+        setCurrentUserProfile(null)
+        setTokoList([])
+        setTransferList([])
+        return
+      }
+
+      const profile = await fetchCurrentUserProfile(user.uid, user.email)
+      if (!isAdminProfile(profile)) {
+        setFilterAsal("")
+        setFilterTujuan("")
+      }
+      await fetchAll(profile)
     })
     return () => unsub()
   }, [])
+
+  const scopedTransferList = useMemo(() => {
+    if (isAdminUser) return transferList
+    if (!userTokoId) return []
+    return transferList.filter(
+      (item) => item.tokoAsalId === userTokoId || item.tokoTujuanId === userTokoId
+    )
+  }, [transferList, isAdminUser, userTokoId])
 
   const filteredTransfer = useMemo(() => {
     const q = search.toLowerCase().trim()
     const startMillis = filterStartDate ? new Date(`${filterStartDate}T00:00:00`).getTime() : 0
     const endMillis = filterEndDate ? new Date(`${filterEndDate}T23:59:59.999`).getTime() : 0
 
-    return transferList.filter((item) => {
+    return scopedTransferList.filter((item) => {
       const matchSearch =
         !q ||
         item.kodeTransfer.toLowerCase().includes(q) ||
@@ -527,8 +639,10 @@ export default function TerimaBarangPage() {
         item.receivedByNama.toLowerCase().includes(q)
 
       const matchStatus = !filterStatus || item.status === filterStatus
-      const matchAsal = !filterAsal || item.tokoAsalId === filterAsal
-      const matchTujuan = !filterTujuan || item.tokoTujuanId === filterTujuan
+      const effectiveAsal = isAdminUser ? filterAsal : ""
+      const effectiveTujuan = isAdminUser ? filterTujuan : ""
+      const matchAsal = !effectiveAsal || item.tokoAsalId === effectiveAsal
+      const matchTujuan = !effectiveTujuan || item.tokoTujuanId === effectiveTujuan
 
       const compareMillis = toMillis(item.sentAt || item.createdAt)
       const matchDate =
@@ -538,13 +652,14 @@ export default function TerimaBarangPage() {
       return matchSearch && matchStatus && matchAsal && matchTujuan && matchDate
     })
   }, [
-    transferList,
+    scopedTransferList,
     search,
     filterStatus,
     filterAsal,
     filterTujuan,
     filterStartDate,
     filterEndDate,
+    isAdminUser,
   ])
 
   const totalPages =
@@ -568,6 +683,11 @@ export default function TerimaBarangPage() {
     const user = auth.currentUser
     if (!user || !receiveTarget) return
 
+    if (!isAdminUser && (!userTokoId || receiveTarget.tokoTujuanId !== userTokoId)) {
+      setError("Kamu hanya bisa menerima barang untuk toko milikmu sendiri")
+      return
+    }
+
     setActionLoading(receiveTarget.id)
     setError(null)
 
@@ -588,9 +708,13 @@ export default function TerimaBarangPage() {
         const latestTransfer = transferSnap.data() as any
         const latestStatus = (latestTransfer?.status || "DRAFT") as TransferStatus
         const qty = Number(latestTransfer?.qty || 0)
+        const latestTokoTujuanId = String(latestTransfer?.tokoTujuanId || "").trim()
 
         if (latestStatus !== "DIKIRIM") throw new Error("Transfer belum bisa diterima")
         if (qty <= 0) throw new Error("Qty transfer tidak valid")
+        if (!isAdminUser && latestTokoTujuanId !== userTokoId) {
+          throw new Error("Kamu hanya bisa menerima barang untuk toko milikmu sendiri")
+        }
 
         if (targetSnap.exists()) {
           const targetData = targetSnap.data() as any
@@ -650,7 +774,7 @@ export default function TerimaBarangPage() {
 
       setReceiveTarget(null)
       setReceiveForm(EMPTY_RECEIVE_FORM)
-      await fetchAll()
+      await fetchAll(currentUserProfile)
       setSuccessMsg("Transfer berhasil diterima")
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e: any) {
@@ -663,7 +787,7 @@ export default function TerimaBarangPage() {
 
   const detailData =
     selectedDetail
-      ? transferList.find((item) => item.id === selectedDetail.id) || selectedDetail
+      ? scopedTransferList.find((item) => item.id === selectedDetail.id) || selectedDetail
       : null
 
   return (
@@ -703,7 +827,7 @@ export default function TerimaBarangPage() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={fetchAll}
+              onClick={() => fetchAll(currentUserProfile)}
               disabled={loading}
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
             >
@@ -767,7 +891,7 @@ export default function TerimaBarangPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${isAdminUser ? "xl:grid-cols-6" : "xl:grid-cols-4"}`}>
           <FormInput
             label="Cari"
             value={search}
@@ -791,37 +915,61 @@ export default function TerimaBarangPage() {
             <option value="DITERIMA">Diterima</option>
           </FilterSelect>
 
-          <FilterSelect
-            label="Toko Asal"
-            value={filterAsal}
-            onChange={(v) => {
-              setFilterAsal(v)
-              setPage(1)
-            }}
-          >
-            <option value="">Semua toko asal</option>
-            {tokoList.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nama}
-              </option>
-            ))}
-          </FilterSelect>
+          {isAdminUser ? (
+            <>
+              <FilterSelect
+                label="Toko Asal"
+                value={filterAsal}
+                onChange={(v) => {
+                  setFilterAsal(v)
+                  setPage(1)
+                }}
+              >
+                <option value="">Semua toko asal</option>
+                {tokoList.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nama}
+                  </option>
+                ))}
+              </FilterSelect>
 
-          <FilterSelect
-            label="Toko Tujuan"
-            value={filterTujuan}
-            onChange={(v) => {
-              setFilterTujuan(v)
-              setPage(1)
-            }}
-          >
-            <option value="">Semua toko tujuan</option>
-            {tokoList.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nama}
-              </option>
-            ))}
-          </FilterSelect>
+              <FilterSelect
+                label="Toko Tujuan"
+                value={filterTujuan}
+                onChange={(v) => {
+                  setFilterTujuan(v)
+                  setPage(1)
+                }}
+              >
+                <option value="">Semua toko tujuan</option>
+                {tokoList.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nama}
+                  </option>
+                ))}
+              </FilterSelect>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Toko User
+                </label>
+                <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                  {currentUserProfile?.tokoNama || "Toko belum terhubung"}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Scope Data
+                </label>
+                <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                  Asal atau tujuan toko sendiri
+                </div>
+              </div>
+            </>
+          )}
 
           <FormInput
             label="Dari Tanggal"
@@ -910,6 +1058,7 @@ export default function TerimaBarangPage() {
             {pagedTransfer.map((item) => {
               const meta = getStatusMeta(item.status)
               const StatusIcon = meta.icon
+              const canReceive = item.status === "DIKIRIM" && (isAdminUser || item.tokoTujuanId === userTokoId)
 
               return (
                 <div
@@ -956,7 +1105,7 @@ export default function TerimaBarangPage() {
                         Detail
                       </button>
 
-                      {item.status === "DIKIRIM" && (
+                      {canReceive && (
                         <button
                           type="button"
                           onClick={() => {
