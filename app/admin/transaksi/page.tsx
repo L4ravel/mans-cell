@@ -87,6 +87,24 @@ type UserProfile = {
   uid: string
   nama: string
   email: string
+  role: string
+  roles: string[]
+  tokoId: string
+  tokoNama: string
+}
+
+const normalizeRoles = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+}
+
+const isAdminProfile = (profile: UserProfile | null) => {
+  if (!profile) return false
+  const role = String(profile.role || "").trim().toLowerCase()
+  if (role === "admin" || role === "superadmin") return true
+  return profile.roles.includes("admin") || profile.roles.includes("superadmin")
 }
 
 export default function TransaksiPage() {
@@ -157,30 +175,38 @@ export default function TransaksiPage() {
   }
 
   const fetchCurrentUserProfile = async (uid: string, emailFallback?: string | null) => {
-    try {
-      const snap = await getDoc(doc(db, "users", uid))
-      if (snap.exists()) {
-        const data = snap.data() as any
-        const profile: UserProfile = {
-          uid,
-          nama: String(data?.nama || "").trim() || "Tanpa Nama",
-          email: String(data?.email || "").trim() || String(emailFallback || "").trim() || "-",
-        }
-        setCurrentUserProfile(profile)
-        return profile
+  try {
+    const snap = await getDoc(doc(db, "users", uid))
+    if (snap.exists()) {
+      const data = snap.data() as any
+      const profile: UserProfile = {
+        uid,
+        nama: String(data?.nama || "").trim() || "Tanpa Nama",
+        email: String(data?.email || "").trim() || String(emailFallback || "").trim() || "-",
+        role: String(data?.role || "").trim().toLowerCase(),
+        roles: normalizeRoles(data?.roles),
+        tokoId: String(data?.tokoId || "").trim(),
+        tokoNama: String(data?.tokoNama || "").trim(),
       }
-    } catch (e) {
-      console.error("Gagal mengambil profil users:", e)
+      setCurrentUserProfile(profile)
+      return profile
     }
-
-    const fallback: UserProfile = {
-      uid,
-      nama: "Tanpa Nama",
-      email: String(emailFallback || "").trim() || "-",
-    }
-    setCurrentUserProfile(fallback)
-    return fallback
+  } catch (e) {
+    console.error("Gagal mengambil profil users:", e)
   }
+
+  const fallback: UserProfile = {
+    uid,
+    nama: "Tanpa Nama",
+    email: String(emailFallback || "").trim() || "-",
+    role: "",
+    roles: [],
+    tokoId: "",
+    tokoNama: "",
+  }
+  setCurrentUserProfile(fallback)
+  return fallback
+}
 
   const fetchToko = async () => {
     const snap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
@@ -320,28 +346,43 @@ export default function TransaksiPage() {
   }
 
   const fetchAll = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      await Promise.all([fetchToko(), fetchBarang(), fetchDiskon(), fetchMetode(), fetchSaldo()])
-    } catch (e) {
-      console.error(e)
-      setError("Gagal memuat data transaksi")
-    } finally {
-      setLoading(false)
+  setLoading(true)
+  setError(null)
+  try {
+    await Promise.all([fetchToko(), fetchBarang(), fetchDiskon(), fetchMetode(), fetchSaldo()])
+
+    if (!isAdminProfile(currentUserProfile)) {
+      const tokoIdUser = String(currentUserProfile?.tokoId || "").trim()
+      if (tokoIdUser) setSelectedTokoId(tokoIdUser)
     }
+  } catch (e) {
+    console.error(e)
+    setError("Gagal memuat data transaksi")
+  } finally {
+    setLoading(false)
   }
+}
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged(async (u) => {
-      if (u) {
-        await Promise.all([fetchAll(), fetchCurrentUserProfile(u.uid, u.email)])
-      } else {
-        setCurrentUserProfile(null)
+  const unsub = auth.onAuthStateChanged(async (u) => {
+    if (u) {
+      const [profile] = await Promise.all([
+        fetchCurrentUserProfile(u.uid, u.email),
+        fetchAll(),
+      ])
+
+      const admin = isAdminProfile(profile)
+      if (!admin) {
+        const tokoIdUser = String(profile?.tokoId || "").trim()
+        setSelectedTokoId(tokoIdUser)
       }
-    })
-    return () => unsub()
-  }, [])
+    } else {
+      setCurrentUserProfile(null)
+      setSelectedTokoId("")
+    }
+  })
+  return () => unsub()
+}, [])
 
   useEffect(() => {
     const supported =
@@ -351,20 +392,48 @@ export default function TransaksiPage() {
     setCameraSupported(supported)
   }, [])
 
-  const selectedToko = useMemo(
-    () => tokoList.find((t) => t.id === selectedTokoId) || null,
-    [tokoList, selectedTokoId]
-  )
-  const selectedMetode = useMemo(
-    () => metodeList.find((m) => m.id === selectedMetodeId) || null,
-    [metodeList, selectedMetodeId]
-  )
-  const metodeTunaiDefault = useMemo(
-    () => metodeList.find((m) => m.tipe === "Tunai") || null,
-    [metodeList]
-  )
+ const isAdminUser = useMemo(
+  () => isAdminProfile(currentUserProfile),
+  [currentUserProfile]
+)
 
-  const cart = activeTab === "fisik" ? cartFisik : cartDigital
+useEffect(() => {
+  if (!isAdminUser) {
+    const tokoIdUser = String(currentUserProfile?.tokoId || "").trim()
+    if (selectedTokoId !== tokoIdUser) {
+      setSelectedTokoId(tokoIdUser)
+    }
+  }
+}, [isAdminUser, currentUserProfile, selectedTokoId])
+
+const selectedToko = useMemo(() => {
+  const fromList = tokoList.find((t) => t.id === selectedTokoId) || null
+  if (fromList) return fromList
+
+  if (!isAdminUser && currentUserProfile?.tokoId) {
+    return {
+      id: currentUserProfile.tokoId,
+      nama: currentUserProfile.tokoNama || "Toko Karyawan",
+      kode: "",
+      pemilik: "",
+      aktif: true,
+    } as Toko
+  }
+
+  return null
+}, [tokoList, selectedTokoId, isAdminUser, currentUserProfile])
+
+const selectedMetode = useMemo(
+  () => metodeList.find((m) => m.id === selectedMetodeId) || null,
+  [metodeList, selectedMetodeId]
+)
+
+const metodeTunaiDefault = useMemo(
+  () => metodeList.find((m) => m.tipe === "Tunai") || null,
+  [metodeList]
+)
+
+const cart = activeTab === "fisik" ? cartFisik : cartDigital
   const setCart = activeTab === "fisik" ? setCartFisik : setCartDigital
 
   const barangByToko = useMemo(() => {
@@ -1418,20 +1487,27 @@ export default function TransaksiPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <FieldLabel icon={Store} label="Pilih Toko" />
-                  <select
-                    value={selectedTokoId}
-                    onChange={(e) => setSelectedTokoId(e.target.value)}
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
-                  >
-                    <option value="">Pilih toko</option>
-                    {tokoList.map((toko) => (
-                      <option key={toko.id} value={toko.id}>
-                        {toko.nama}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+  <FieldLabel icon={Store} label={isAdminUser ? "Pilih Toko" : "Toko Karyawan"} />
+
+  {isAdminUser ? (
+    <select
+      value={selectedTokoId}
+      onChange={(e) => setSelectedTokoId(e.target.value)}
+      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-cyan-300 focus:border-cyan-500"
+    >
+      <option value="">Pilih toko</option>
+      {tokoList.map((toko) => (
+        <option key={toko.id} value={toko.id}>
+          {toko.nama}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+      {selectedToko?.nama || currentUserProfile?.tokoNama || "Toko belum terhubung"}
+    </div>
+  )}
+</div>
 
                 <div>
                   <FieldLabel icon={Wallet} label="Metode Pembayaran" />
@@ -1622,10 +1698,10 @@ export default function TransaksiPage() {
                   Memuat data barang...
                 </div>
               ) : !selectedTokoId ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
-                  Pilih toko terlebih dahulu
-                </div>
-              ) : barangByToko.length === 0 ? (
+  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
+    {isAdminUser ? "Pilih toko terlebih dahulu" : "Akun ini belum memiliki toko"}
+  </div>
+) : barangByToko.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
                   Barang tidak ditemukan
                 </div>

@@ -6,6 +6,8 @@
   - hapus mekanisme scale desktop berbasis zoom
   - badge menghitung total item restock dari barang fisik + saldo digital
   - sidebar dikelompokkan ulang agar lebih rapi
+  - role karyawan diizinkan masuk layout
+  - role karyawan hanya bisa akses kelompok Transaksi + Terima Barang
 */
 
 "use client"
@@ -66,6 +68,8 @@ type MenuGroup = {
   items: MenuItem[]
 }
 
+type UserRole = "admin" | "karyawan" | ""
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -78,8 +82,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authLoading, setAuthLoading] = useState(true)
   const [isAuthorized, setIsAuthorized] = useState(false)
   const [restockCount, setRestockCount] = useState(0)
+  const [userRole, setUserRole] = useState<UserRole>("")
 
-  const menuGroups: MenuGroup[] = useMemo(
+  const allMenuGroups: MenuGroup[] = useMemo(
     () => [
       {
         label: "Master Data",
@@ -156,6 +161,90 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ],
     []
   )
+
+  const menuGroups: MenuGroup[] = useMemo(() => {
+    if (userRole === "admin") return allMenuGroups
+
+    if (userRole === "karyawan") {
+      return [
+        {
+          label: "Transaksi",
+          icon: ShoppingCart,
+          items: [
+            { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
+            { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
+            { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
+            { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
+            { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
+            { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
+          ],
+        },
+        {
+          label: "Stok & Distribusi",
+          icon: Boxes,
+          items: [
+            { href: "/admin/terima-barang", icon: ArrowDownToLine, label: "Terima Barang" },
+          ],
+        },
+      ]
+    }
+
+    return []
+  }, [allMenuGroups, userRole])
+
+  const allowedPaths = useMemo(() => {
+    if (userRole === "admin") {
+      return [
+        "/admin",
+        "/admin/tambah-toko",
+        "/admin/tambah-karyawan",
+        "/admin/tambah-saldo",
+        "/admin/tambah-barang",
+        "/admin/tambah-kategori",
+        "/admin/tambah-satuan",
+        "/admin/tambah-supplier",
+        "/admin/tambah-barang-tetap",
+        "/admin/restock-barang",
+        "/admin/transfer-barang",
+        "/admin/terima-barang",
+        "/admin/mutasi-stok",
+        "/admin/tambah-pelanggan",
+        "/admin/akun-pelanggan",
+        "/admin/buat-akun",
+        "/admin/pengeluaran",
+        "/admin/laporan-pengeluaran",
+        "/admin/laporan-keuntungan-bulanan",
+        "/admin/laporan-keuntungan-harian",
+        "/admin/laporan-setelah-modal-tetap",
+        "/admin/transaksi",
+        "/admin/tambah-diskon",
+        "/admin/tambah-metode-pembayaran",
+        "/admin/riwayat-transaksi",
+        "/admin/laporan-harian",
+        "/admin/laporan-bulanan",
+        "/admin/dashboard-absensi",
+        "/admin/laporan-absensi-karyawan",
+        "/admin/pengaturan-jam",
+        "/admin/tidak-wajib-absensi",
+        "/admin/laporan-absensi-bulanan",
+      ]
+    }
+
+    if (userRole === "karyawan") {
+      return [
+        "/admin",
+        "/admin/transaksi",
+        "/admin/tambah-diskon",
+        "/admin/tambah-metode-pembayaran",
+        "/admin/riwayat-transaksi",
+        "/admin/laporan-harian",
+        "/admin/laporan-bulanan",
+        "/admin/terima-barang",
+      ]
+    }
+
+    return []
+  }, [userRole])
 
   const fetchRestockCount = async () => {
     try {
@@ -275,6 +364,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (!isMounted) return
 
       if (!user) {
+        setUserRole("")
         setIsAuthorized(false)
         setAuthLoading(false)
         router.replace("/login")
@@ -287,6 +377,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         if (!isMounted) return
 
         if (!snap.exists()) {
+          setUserRole("")
           setIsAuthorized(false)
           setAuthLoading(false)
           router.replace("/unauthorized")
@@ -294,19 +385,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
 
         const data = snap.data()
-        const role: string = data?.role || ""
+        const role = String(data?.role || "").trim().toLowerCase() as UserRole
 
-        if (role !== "admin") {
+        if (role !== "admin" && role !== "karyawan") {
+          setUserRole("")
           setIsAuthorized(false)
           setAuthLoading(false)
           router.replace("/unauthorized")
           return
         }
 
+        setUserRole(role)
         setIsAuthorized(true)
         await fetchRestockCount()
       } catch (error) {
-        console.error("Gagal validasi user admin:", error)
+        console.error("Gagal validasi user admin/karyawan:", error)
+        setUserRole("")
         setIsAuthorized(false)
         router.replace("/login")
       } finally {
@@ -334,6 +428,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return Array.from(merged)
     })
   }, [pathname, hasHydrated])
+
+  useEffect(() => {
+    if (!hasHydrated || !isAuthorized || !userRole) return
+
+    const isAllowed =
+      pathname === "/admin" ||
+      allowedPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+
+    if (!isAllowed) {
+      router.replace("/unauthorized")
+    }
+  }, [pathname, hasHydrated, isAuthorized, userRole, allowedPaths, router])
 
   useEffect(() => {
     if (!hasHydrated) return
@@ -394,7 +500,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <Cpu className="text-blue-600" size={20} strokeWidth={2.2} />
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-800">Memuat panel admin...</p>
+              <p className="text-sm font-bold text-slate-800">Memuat panel...</p>
               <p className="text-xs text-slate-500">Sedang cek autentikasi dan role user</p>
             </div>
           </div>
@@ -407,6 +513,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   if (!isAuthorized) return null
+
+  const roleLabel = userRole === "admin" ? "Admin" : "Karyawan"
 
   const NavMenu = () => (
     <>
@@ -608,7 +716,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="text-sm font-black leading-none tracking-tight text-slate-800">
               Mans-Cell{" "}
               <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
-                Admin
+                {roleLabel}
               </span>
             </div>
             <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
@@ -649,7 +757,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
                 <User size={14} strokeWidth={2.5} />
               </div>
-              <span className="text-sm font-bold">Admin</span>
+              <span className="text-sm font-bold">{roleLabel}</span>
             </div>
           </header>
 
@@ -683,7 +791,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <div className="text-base font-black leading-none tracking-tight text-slate-800">
                       Mans-Cell{" "}
                       <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
-                        Admin
+                        {roleLabel}
                       </span>
                     </div>
                     <div className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
@@ -731,7 +839,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
                       <User size={14} strokeWidth={2.5} />
                     </div>
-                    <span className="text-sm font-bold">Admin</span>
+                    <span className="text-sm font-bold">{roleLabel}</span>
                   </div>
                 </div>
               </header>

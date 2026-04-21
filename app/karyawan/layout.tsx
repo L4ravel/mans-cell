@@ -3,12 +3,12 @@
 
 /*
   Layout ini menjadi gate auth dan shell dashboard untuk halaman karyawan.
-  Sidebar, dropdown user, logout, dan ganti password sudah disiapkan dengan tema yang konsisten.
+  Sidebar, dropdown user, logout, ganti password, dan akses ke area admin terbatas sudah disiapkan.
 */
 
 import Link from "next/link"
 import Image from "next/image"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { onAuthStateChanged } from "firebase/auth"
 import { doc, getDoc } from "firebase/firestore"
@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   Home,
+  ShoppingCart,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -65,6 +66,18 @@ export default function KaryawanLayout({
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/")
 
+  const canAccessAdminArea = useMemo(() => {
+    return userRoles.includes("admin") || userRoles.includes("karyawan")
+  }, [userRoles])
+
+  const adminAccessLabel = useMemo(() => {
+    return userRoles.includes("admin") ? "Akses Admin" : "Panel Transaksi"
+  }, [userRoles])
+
+  const adminAccessTarget = useMemo(() => {
+    return userRoles.includes("admin") ? "/admin" : "/admin/transaksi"
+  }, [userRoles])
+
   const handleMobileNavigate = (href: string) => {
     setSidebarOpen(false)
     setTimeout(() => {
@@ -89,7 +102,7 @@ export default function KaryawanLayout({
         const raw = snap.data()
         setUserName(raw?.nama || "Karyawan")
 
-        const roles: string[] = Array.isArray(raw?.roles)
+        const rolesRaw: string[] = Array.isArray(raw?.roles)
           ? raw.roles
           : Array.isArray(raw?.role)
           ? raw.role
@@ -97,9 +110,13 @@ export default function KaryawanLayout({
           ? [raw.role]
           : []
 
-        setUserRoles(roles)
+        const normalizedRoles = rolesRaw
+          .map((role) => String(role || "").trim().toLowerCase())
+          .filter(Boolean)
 
-        if (!roles.includes("karyawan")) {
+        setUserRoles(normalizedRoles)
+
+        if (!normalizedRoles.includes("karyawan")) {
           router.replace("/unauthorized")
           return
         }
@@ -186,6 +203,11 @@ export default function KaryawanLayout({
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleGoToAdminArea = () => {
+    router.push(adminAccessTarget)
+    setOpenUser(false)
   }
 
   if (checkingAuth) {
@@ -352,19 +374,24 @@ export default function KaryawanLayout({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-14 w-48 rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden z-20"
+                      className="absolute right-0 top-14 w-52 rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden z-20"
                     >
-                      {userRoles.includes("admin") && (
+                      {canAccessAdminArea && (
                         <button
-                          onClick={() => { router.push("/admin"); setOpenUser(false) }}
+                          onClick={handleGoToAdminArea}
                           className="flex w-full items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors"
                         >
                           <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-sm">
-                            <ShieldCheck size={16} className="text-white" strokeWidth={2.5} />
+                            {userRoles.includes("admin") ? (
+                              <ShieldCheck size={16} className="text-white" strokeWidth={2.5} />
+                            ) : (
+                              <ShoppingCart size={16} className="text-white" strokeWidth={2.5} />
+                            )}
                           </div>
-                          Akses Admin
+                          {adminAccessLabel}
                         </button>
                       )}
+
                       <button
                         onClick={() => { setShowModal(true); setOpenUser(false) }}
                         className="flex w-full items-center gap-2 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
@@ -374,6 +401,7 @@ export default function KaryawanLayout({
                         </div>
                         Ganti Password
                       </button>
+
                       <button
                         onClick={handleLogout}
                         className="flex w-full items-center gap-2 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50/80 transition-colors"
@@ -505,17 +533,22 @@ export default function KaryawanLayout({
                     transition={{ duration: 0.15 }}
                     className="absolute right-0 top-14 w-52 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-[46]"
                   >
-                    {userRoles.includes("admin") && (
+                    {canAccessAdminArea && (
                       <button
-                        onClick={() => { router.push("/admin"); setOpenUser(false) }}
+                        onClick={handleGoToAdminArea}
                         className="flex w-full items-center gap-2 px-4 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors"
                       >
                         <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-sm">
-                          <ShieldCheck size={16} className="text-white" strokeWidth={2.5} />
+                          {userRoles.includes("admin") ? (
+                            <ShieldCheck size={16} className="text-white" strokeWidth={2.5} />
+                          ) : (
+                            <ShoppingCart size={16} className="text-white" strokeWidth={2.5} />
+                          )}
                         </div>
-                        Akses Admin
+                        {adminAccessLabel}
                       </button>
                     )}
+
                     <button
                       onClick={() => { setShowModal(true); setOpenUser(false) }}
                       className="flex w-full items-center gap-2 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
@@ -525,6 +558,7 @@ export default function KaryawanLayout({
                       </div>
                       Ganti Password
                     </button>
+
                     <button
                       onClick={handleLogout}
                       className="flex w-full items-center gap-2 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50/80 transition-colors border-t border-slate-100"
