@@ -97,6 +97,36 @@ const validateImportRow = (r: ImportRow, idx: number): string | null => {
   return null
 }
 
+const syncNamaTokoByTokoId = async ({
+  tokoId,
+  tokoNama,
+  adminUid,
+}: {
+  tokoId: string
+  tokoNama: string
+  adminUid: string
+}) => {
+  const res = await fetch("/api/sinkron-nama-toko", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      tokoId,
+      tokoNama,
+      adminUid,
+    }),
+  })
+
+  const json = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    throw new Error(json?.message || "Gagal sinkron nama toko")
+  }
+
+  return json
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TambahTokoPage() {
@@ -232,34 +262,81 @@ export default function TambahTokoPage() {
     finally { setLoadingSave(false) }
   }
 
-  const update = async () => {
-    const user = auth.currentUser
-    if (!user || !editTarget || loadingSave || loadingUpdate) return
-    const kodeVal = kode.trim(), namaVal = nama.trim(), pemilikVal = pemilik.trim()
-    const noHpVal = noHp.trim(), alamatVal = alamat.trim(), kotaVal = kota.trim()
-    const latitudeVal = parseCoordinate(latitude), longitudeVal = parseCoordinate(longitude)
-    if (!kodeVal || !namaVal || !pemilikVal || !noHpVal || !alamatVal || !kotaVal) return
-    if (latitudeVal === null || longitudeVal === null) return
-    setLoadingUpdate(true)
-    try {
-      const ref = doc(db, "toko", editTarget.id)
-      await updateDoc(ref, {
-        kode: kodeVal, nama: namaVal, pemilik: pemilikVal, noHp: noHpVal,
-        alamat: alamatVal, kota: kotaVal, latitude: latitudeVal, longitude: longitudeVal,
-        aktif, updatedAt: Date.now(), updatedBy: user.uid,
+ const update = async () => {
+  const user = auth.currentUser
+  if (!user || !editTarget || loadingSave || loadingUpdate) return
+
+  const kodeVal = kode.trim()
+  const namaVal = nama.trim()
+  const pemilikVal = pemilik.trim()
+  const noHpVal = noHp.trim()
+  const alamatVal = alamat.trim()
+  const kotaVal = kota.trim()
+  const latitudeVal = parseCoordinate(latitude)
+  const longitudeVal = parseCoordinate(longitude)
+
+  if (!kodeVal || !namaVal || !pemilikVal || !noHpVal || !alamatVal || !kotaVal) return
+  if (latitudeVal === null || longitudeVal === null) return
+
+  setLoadingUpdate(true)
+
+  try {
+    const now = Date.now()
+    const ref = doc(db, "toko", editTarget.id)
+
+    await updateDoc(ref, {
+      kode: kodeVal,
+      nama: namaVal,
+      pemilik: pemilikVal,
+      noHp: noHpVal,
+      alamat: alamatVal,
+      kota: kotaVal,
+      latitude: latitudeVal,
+      longitude: longitudeVal,
+      aktif,
+      updatedAt: now,
+      updatedBy: user.uid,
+    })
+
+    if (String(editTarget.nama || "").trim() !== namaVal) {
+      await syncNamaTokoByTokoId({
+        tokoId: editTarget.id,
+        tokoNama: namaVal,
+        adminUid: user.uid,
       })
-      setData((prev) =>
-        prev.map((x) =>
+    }
+
+    setData((prev) =>
+      prev
+        .map((x) =>
           x.id === editTarget.id
-            ? { ...x, kode: kodeVal, nama: namaVal, pemilik: pemilikVal, noHp: noHpVal,
-                alamat: alamatVal, kota: kotaVal, latitude: latitudeVal, longitude: longitudeVal, aktif }
+            ? {
+                ...x,
+                kode: kodeVal,
+                nama: namaVal,
+                pemilik: pemilikVal,
+                noHp: noHpVal,
+                alamat: alamatVal,
+                kota: kotaVal,
+                latitude: latitudeVal,
+                longitude: longitudeVal,
+                aktif,
+              }
             : x
-        ).sort((a, b) => a.nama.localeCompare(b.nama, "id"))
-      )
-      resetForm()
-    } catch (e) { console.error(e) }
-    finally { setLoadingUpdate(false) }
+        )
+        .sort((a, b) => a.nama.localeCompare(b.nama, "id"))
+    )
+
+    setSuccessMsg("Data toko berhasil diupdate dan relasi toko ikut disinkronkan")
+    setTimeout(() => setSuccessMsg(null), 4000)
+    resetForm()
+  } catch (e) {
+    console.error(e)
+    setSuccessMsg(null)
+  } finally {
+    setLoadingUpdate(false)
   }
+}
 
   const hapus = async () => {
     if (!openDelete || loadingDeleteId) return

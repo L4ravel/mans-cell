@@ -193,6 +193,52 @@ function FilterSelect({ value, onChange, children, label, icon: Icon }: { value:
   )
 }
 
+const syncTokoKaryawanToUsers = async ({
+  karyawanId,
+  tokoId,
+  tokoNama,
+  adminUid,
+}: {
+  karyawanId: string
+  tokoId: string
+  tokoNama: string
+  adminUid: string
+}) => {
+  try {
+    const res = await fetch("/api/sinkron-toko-karyawan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        karyawanId,
+        tokoId,
+        tokoNama,
+        adminUid,
+      }),
+    })
+
+    const json = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        message: String(json?.message || "Gagal sinkron toko karyawan"),
+      }
+    }
+
+    return {
+      ok: true,
+      message: String(json?.message || "Sinkron toko karyawan berhasil"),
+    }
+  } catch (error: any) {
+    return {
+      ok: false,
+      message: String(error?.message || "Route sinkron toko belum tersedia"),
+    }
+  }
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TambahKaryawanPage() {
@@ -340,61 +386,140 @@ export default function TambahKaryawanPage() {
     return null
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const user = auth.currentUser
-    if (!user) return
-    const validationError = validateForm()
-    if (validationError) { setError(validationError); return }
-    setSubmitLoading(true)
-    setError(null)
-    try {
-      const toko = tokoList.find((t) => t.id === form.tokoId)
-      if (!toko) { setError("Toko tidak ditemukan"); return }
-      const payload = {
-        nama: form.nama.trim(), email: form.email.trim().toLowerCase(),
-        noHp: form.noHp.trim(), alamat: form.alamat.trim(),
-        tokoId: toko.id, tokoNama: toko.nama,
-        jabatan: form.jabatan as Karyawan["jabatan"],
-        tahunMasuk: Number(form.tahunMasuk),
-        role: "karyawan" as Karyawan["role"], aktif: form.aktif,
-      }
-      if (isEdit && editId) {
-        const karyawanRef = doc(db, "karyawan", editId)
-        await runTransaction(db, async (tx) => {
-          const currentSnap = await tx.get(karyawanRef)
-          const totalSnap = await tx.get(totalKaryawanDoc)
-          if (!currentSnap.exists()) throw new Error("DATA_KARYAWAN_TIDAK_DITEMUKAN")
-          const oldAktif = (currentSnap.data() as any)?.aktif ?? true
-          const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
-          tx.update(karyawanRef, { ...payload, updatedAt: Date.now(), updatedBy: user.uid })
-          if (oldAktif !== payload.aktif) {
-            const nextTotal = Math.max(0, currentTotal + (payload.aktif ? 1 : -1))
-            tx.set(totalKaryawanDoc, { totalAktif: nextTotal, updatedAt: Date.now(), updatedBy: user.uid }, { merge: true })
-          }
-        })
-        setSuccessMsg("Data karyawan berhasil diperbarui")
-      } else {
-        const newRef = doc(collection(db, "karyawan"))
-        await runTransaction(db, async (tx) => {
-          const totalSnap = await tx.get(totalKaryawanDoc)
-          const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
-          tx.set(newRef, { id: newRef.id, ...payload, createdAt: Date.now(), createdBy: user.uid })
-          if (payload.aktif) {
-            tx.set(totalKaryawanDoc, { totalAktif: Math.max(0, currentTotal + 1), updatedAt: Date.now(), updatedBy: user.uid }, { merge: true })
-          }
-        })
-        setSuccessMsg("Karyawan berhasil ditambahkan")
-      }
-      setTimeout(() => setSuccessMsg(null), 3000)
-      closeModal()
-      fetchData()
-    } catch (e: any) {
-      setError(e?.message === "DATA_KARYAWAN_TIDAK_DITEMUKAN" ? "Data karyawan tidak ditemukan" : "Gagal menyimpan data karyawan")
-    } finally {
-      setSubmitLoading(false)
-    }
+ const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  const user = auth.currentUser
+  if (!user) return
+
+  const validationError = validateForm()
+  if (validationError) {
+    setError(validationError)
+    return
   }
+
+  setSubmitLoading(true)
+  setError(null)
+
+  try {
+    const toko = tokoList.find((t) => t.id === form.tokoId)
+    if (!toko) {
+      setError("Toko tidak ditemukan")
+      return
+    }
+
+    const payload = {
+      nama: form.nama.trim(),
+      email: form.email.trim().toLowerCase(),
+      noHp: form.noHp.trim(),
+      alamat: form.alamat.trim(),
+      tokoId: toko.id,
+      tokoNama: toko.nama,
+      jabatan: form.jabatan as Karyawan["jabatan"],
+      tahunMasuk: Number(form.tahunMasuk),
+      role: "karyawan" as Karyawan["role"],
+      aktif: form.aktif,
+    }
+
+    if (isEdit && editId) {
+      const karyawanRef = doc(db, "karyawan", editId)
+
+      let oldTokoId = ""
+      let oldTokoNama = ""
+
+      await runTransaction(db, async (tx) => {
+        const currentSnap = await tx.get(karyawanRef)
+        const totalSnap = await tx.get(totalKaryawanDoc)
+
+        if (!currentSnap.exists()) {
+          throw new Error("DATA_KARYAWAN_TIDAK_DITEMUKAN")
+        }
+
+        const currentData = currentSnap.data() as any
+        const oldAktif = currentData?.aktif ?? true
+        oldTokoId = String(currentData?.tokoId || "").trim()
+        oldTokoNama = String(currentData?.tokoNama || "").trim()
+
+        const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
+
+        tx.update(karyawanRef, {
+          ...payload,
+          updatedAt: Date.now(),
+          updatedBy: user.uid,
+        })
+
+        if (oldAktif !== payload.aktif) {
+          const nextTotal = Math.max(0, currentTotal + (payload.aktif ? 1 : -1))
+          tx.set(
+            totalKaryawanDoc,
+            {
+              totalAktif: nextTotal,
+              updatedAt: Date.now(),
+              updatedBy: user.uid,
+            },
+            { merge: true }
+          )
+        }
+      })
+
+      let syncWarning = ""
+
+      if (oldTokoId !== payload.tokoId || oldTokoNama !== payload.tokoNama) {
+        const syncResult = await syncTokoKaryawanToUsers({
+          karyawanId: editId,
+          tokoId: payload.tokoId,
+          tokoNama: payload.tokoNama,
+          adminUid: user.uid,
+        })
+
+        if (!syncResult.ok) {
+          syncWarning = ` Namun sinkron user gagal: ${syncResult.message}`
+        }
+      }
+
+      setSuccessMsg(`Data karyawan berhasil diperbarui.${syncWarning}`)
+    } else {
+      const newRef = doc(collection(db, "karyawan"))
+
+      await runTransaction(db, async (tx) => {
+        const totalSnap = await tx.get(totalKaryawanDoc)
+        const currentTotal = Number(totalSnap.data()?.totalAktif || 0)
+
+        tx.set(newRef, {
+          id: newRef.id,
+          ...payload,
+          createdAt: Date.now(),
+          createdBy: user.uid,
+        })
+
+        if (payload.aktif) {
+          tx.set(
+            totalKaryawanDoc,
+            {
+              totalAktif: Math.max(0, currentTotal + 1),
+              updatedAt: Date.now(),
+              updatedBy: user.uid,
+            },
+            { merge: true }
+          )
+        }
+      })
+
+      setSuccessMsg("Karyawan berhasil ditambahkan")
+    }
+
+    setTimeout(() => setSuccessMsg(null), 4000)
+    closeModal()
+    fetchData()
+  } catch (e: any) {
+    setError(
+      e?.message === "DATA_KARYAWAN_TIDAK_DITEMUKAN"
+        ? "Data karyawan tidak ditemukan"
+        : "Gagal menyimpan data karyawan"
+    )
+  } finally {
+    setSubmitLoading(false)
+  }
+}
 
   const handleDelete = async () => {
     if (!deleteId) return

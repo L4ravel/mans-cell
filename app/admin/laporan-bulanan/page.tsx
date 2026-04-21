@@ -3,13 +3,14 @@
   File ini membaca koleksi laporan_bulanan dari Firestore untuk menampilkan
   ringkasan omzet, transaksi, diskon, admin, laba kotor, breakdown metode bayar,
   ranking toko, dan daftar rekap bulanan dengan filter bulan, toko, dan pencarian.
+  Jika user bukan admin, data otomatis dikunci ke toko user sendiri.
 */
 
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
 import { auth, db } from "@/lib/firebase"
-import { collection, getDocs, orderBy, query } from "firebase/firestore"
+import { collection, doc, getDoc, getDocs, orderBy, query } from "firebase/firestore"
 import {
   BarChart3,
   RefreshCw,
@@ -63,6 +64,16 @@ type LaporanBulanan = {
   updatedAtMs: number
 }
 
+type UserProfile = {
+  uid: string
+  nama: string
+  email: string
+  role: string
+  roles: string[]
+  tokoId: string
+  tokoNama: string
+}
+
 function formatRupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -94,6 +105,20 @@ function toMonthInputValue(date: Date) {
 function getStartOfYearMonthInput() {
   const now = new Date()
   return `${now.getFullYear()}-01`
+}
+
+function normalizeRoles(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isAdminProfile(profile: UserProfile | null) {
+  if (!profile) return false
+  const role = String(profile.role || "").trim().toLowerCase()
+  if (role === "admin" || role === "superadmin") return true
+  return profile.roles.includes("admin") || profile.roles.includes("superadmin")
 }
 
 function InfoCard({
@@ -178,68 +203,175 @@ export default function LaporanBulananPage() {
 
   const [tokoList, setTokoList] = useState<Toko[]>([])
   const [laporanList, setLaporanList] = useState<LaporanBulanan[]>([])
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null)
 
   const [search, setSearch] = useState("")
   const [filterToko, setFilterToko] = useState("")
   const [bulanMulai, setBulanMulai] = useState(getStartOfYearMonthInput())
   const [bulanSelesai, setBulanSelesai] = useState(toMonthInputValue(new Date()))
 
-  const fetchAll = async () => {
+  const isAdminUser = useMemo(
+    () => isAdminProfile(currentUserProfile),
+    [currentUserProfile]
+  )
+
+  const effectiveTokoId = useMemo(
+    () => (isAdminUser ? filterToko : String(currentUserProfile?.tokoId || "").trim()),
+    [isAdminUser, filterToko, currentUserProfile]
+  )
+
+  const fetchCurrentUserProfile = async (uid: string, emailFallback?: string | null) => {
+    try {
+      const snap = await getDoc(doc(db, "users", uid))
+      if (snap.exists()) {
+        const data = snap.data() as any
+        const profile: UserProfile = {
+          uid,
+          nama: String(data?.nama || "").trim() || "Tanpa Nama",
+          email: String(data?.email || "").trim() || String(emailFallback || "").trim() || "-",
+          role: String(data?.role || "").trim().toLowerCase(),
+          roles: normalizeRoles(data?.roles),
+          tokoId: String(data?.tokoId || "").trim(),
+          tokoNama: String(data?.tokoNama || "").trim(),
+        }
+        setCurrentUserProfile(profile)
+        return profile
+      }
+    } catch (err) {
+      console.error("Gagal mengambil profil user:", err)
+    }
+
+    const fallback: UserProfile = {
+      uid,
+      nama: "Tanpa Nama",
+      email: String(emailFallback || "").trim() || "-",
+      role: "",
+      roles: [],
+      tokoId: "",
+      tokoNama: "",
+    }
+    setCurrentUserProfile(fallback)
+    return fallback
+  }
+
+  const fetchAll = async (profileOverride?: UserProfile | null) => {
+    const activeProfile = profileOverride || currentUserProfile
+    const admin = isAdminProfile(activeProfile)
+    const tokoIdUser = String(activeProfile?.tokoId || "").trim()
+
+    if (!admin && !tokoIdUser) {
+      setError("Akun ini belum terhubung ke toko")
+      setTokoList([])
+      setLaporanList([])
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     try {
-      const [tokoSnap, laporanSnap] = await Promise.all([
-        getDocs(query(collection(db, "toko"), orderBy("nama"))),
-        getDocs(query(collection(db, "laporan_bulanan"), orderBy("bulanKey", "desc"))),
-      ])
+      const laporanPromise = getDocs(query(collection(db, "laporan_bulanan"), orderBy("bulanKey", "desc")))
 
-      const tokoData: Toko[] = tokoSnap.docs.map((d) => {
-        const x = d.data() as any
-        return {
-          id: d.id,
-          nama: x?.nama || "",
-          aktif: Boolean(x?.aktif),
-        }
-      })
+      if (admin) {
+        const [tokoSnap, laporanSnap] = await Promise.all([
+          getDocs(query(collection(db, "toko"), orderBy("nama"))),
+          laporanPromise,
+        ])
 
-      const laporanData: LaporanBulanan[] = laporanSnap.docs.map((d) => {
-        const x = d.data() as any
+        const tokoData: Toko[] = tokoSnap.docs.map((d) => {
+          const x = d.data() as any
+          return {
+            id: d.id,
+            nama: x?.nama || "",
+            aktif: Boolean(x?.aktif),
+          }
+        })
 
-        const breakdown: BreakdownMetode[] = Array.isArray(x?.metodePembayaranBreakdown)
-          ? x.metodePembayaranBreakdown.map((item: any) => ({
-              nama: item?.nama || "Tanpa Nama",
-              jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-              omzet: Number(item?.omzet || 0),
-              admin: Number(item?.admin || 0),
-            }))
-          : []
+        setTokoList(tokoData.filter((item) => item.nama))
 
-        return {
-          id: d.id,
-          bulanKey: x?.bulanKey || "",
-          tahun: Number(x?.tahun || 0),
-          bulan: Number(x?.bulan || 0),
-          tokoId: x?.tokoId || "",
-          tokoNama: x?.tokoNama || "",
-          jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
-          omzet: Number(x?.omzet || 0),
-          subtotal: Number(x?.subtotal || 0),
-          totalDiskon: Number(x?.totalDiskon || 0),
-          totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
-          totalBiayaAdmin: Number(x?.totalBiayaAdmin || 0),
-          totalModal: Number(x?.totalModal || 0),
-          totalLabaKotor: Number(x?.totalLabaKotor || 0),
-          totalItemTerjual: Number(x?.totalItemTerjual || 0),
-          totalJenisBarangTerjual: Number(x?.totalJenisBarangTerjual || 0),
-          rataRataBelanja: Number(x?.rataRataBelanja || 0),
-          metodePembayaranBreakdown: breakdown,
-          updatedAtMs: Number(x?.updatedAtMs || 0),
-        }
-      })
+        const laporanData: LaporanBulanan[] = laporanSnap.docs.map((d) => {
+          const x = d.data() as any
+          const breakdown: BreakdownMetode[] = Array.isArray(x?.metodePembayaranBreakdown)
+            ? x.metodePembayaranBreakdown.map((item: any) => ({
+                nama: item?.nama || "Tanpa Nama",
+                jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
+                omzet: Number(item?.omzet || 0),
+                admin: Number(item?.admin || 0),
+              }))
+            : []
 
-      setTokoList(tokoData.filter((item) => item.nama))
-      setLaporanList(laporanData.filter((item) => item.bulanKey))
+          return {
+            id: d.id,
+            bulanKey: x?.bulanKey || "",
+            tahun: Number(x?.tahun || 0),
+            bulan: Number(x?.bulan || 0),
+            tokoId: x?.tokoId || "",
+            tokoNama: x?.tokoNama || "",
+            jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
+            omzet: Number(x?.omzet || 0),
+            subtotal: Number(x?.subtotal || 0),
+            totalDiskon: Number(x?.totalDiskon || 0),
+            totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
+            totalBiayaAdmin: Number(x?.totalBiayaAdmin || 0),
+            totalModal: Number(x?.totalModal || 0),
+            totalLabaKotor: Number(x?.totalLabaKotor || 0),
+            totalItemTerjual: Number(x?.totalItemTerjual || 0),
+            totalJenisBarangTerjual: Number(x?.totalJenisBarangTerjual || 0),
+            rataRataBelanja: Number(x?.rataRataBelanja || 0),
+            metodePembayaranBreakdown: breakdown,
+            updatedAtMs: Number(x?.updatedAtMs || 0),
+          }
+        })
+
+        setLaporanList(laporanData.filter((item) => item.bulanKey))
+      } else {
+        setTokoList([
+          {
+            id: tokoIdUser,
+            nama: String(activeProfile?.tokoNama || "").trim() || "Toko Karyawan",
+            aktif: true,
+          },
+        ])
+
+        const laporanSnap = await laporanPromise
+        const laporanData: LaporanBulanan[] = laporanSnap.docs.map((d) => {
+          const x = d.data() as any
+          const breakdown: BreakdownMetode[] = Array.isArray(x?.metodePembayaranBreakdown)
+            ? x.metodePembayaranBreakdown.map((item: any) => ({
+                nama: item?.nama || "Tanpa Nama",
+                jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
+                omzet: Number(item?.omzet || 0),
+                admin: Number(item?.admin || 0),
+              }))
+            : []
+
+          return {
+            id: d.id,
+            bulanKey: x?.bulanKey || "",
+            tahun: Number(x?.tahun || 0),
+            bulan: Number(x?.bulan || 0),
+            tokoId: x?.tokoId || "",
+            tokoNama: x?.tokoNama || "",
+            jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
+            omzet: Number(x?.omzet || 0),
+            subtotal: Number(x?.subtotal || 0),
+            totalDiskon: Number(x?.totalDiskon || 0),
+            totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
+            totalBiayaAdmin: Number(x?.totalBiayaAdmin || 0),
+            totalModal: Number(x?.totalModal || 0),
+            totalLabaKotor: Number(x?.totalLabaKotor || 0),
+            totalItemTerjual: Number(x?.totalItemTerjual || 0),
+            totalJenisBarangTerjual: Number(x?.totalJenisBarangTerjual || 0),
+            rataRataBelanja: Number(x?.rataRataBelanja || 0),
+            metodePembayaranBreakdown: breakdown,
+            updatedAtMs: Number(x?.updatedAtMs || 0),
+          }
+        })
+
+        setLaporanList(
+          laporanData.filter((item) => item.bulanKey && item.tokoId === tokoIdUser)
+        )
+      }
     } catch (err) {
       console.error(err)
       setError("Gagal memuat laporan bulanan")
@@ -252,9 +384,18 @@ export default function LaporanBulananPage() {
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        await fetchAll()
+      if (!user) {
+        setCurrentUserProfile(null)
+        setTokoList([])
+        setLaporanList([])
+        return
       }
+
+      const profile = await fetchCurrentUserProfile(user.uid, user.email)
+      if (!isAdminProfile(profile)) {
+        setFilterToko(String(profile.tokoId || "").trim())
+      }
+      await fetchAll(profile)
     })
     return () => unsub()
   }, [])
@@ -271,13 +412,13 @@ export default function LaporanBulananPage() {
           metode.nama.toLowerCase().includes(q)
         )
 
-      const matchToko = !filterToko || item.tokoId === filterToko
+      const matchToko = !effectiveTokoId || item.tokoId === effectiveTokoId
       const matchStart = !bulanMulai || item.bulanKey >= bulanMulai
       const matchEnd = !bulanSelesai || item.bulanKey <= bulanSelesai
 
       return matchSearch && matchToko && matchStart && matchEnd
     })
-  }, [laporanList, search, filterToko, bulanMulai, bulanSelesai])
+  }, [laporanList, search, effectiveTokoId, bulanMulai, bulanSelesai])
 
   const totalOmzet = filteredLaporan.reduce((acc, item) => acc + item.omzet, 0)
   const totalTransaksi = filteredLaporan.reduce(
@@ -365,38 +506,38 @@ export default function LaporanBulananPage() {
         className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-  <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-      <BarChart3 size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
-    </div>
+          <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
+              <BarChart3 size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+            </div>
 
-    <div className="min-w-0 self-center sm:self-auto">
-      <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-        Laporan Bulanan
-      </h1>
-      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-        Rekap bulanan · omzet · metode bayar · toko
-      </p>
-    </div>
-  </div>
+            <div className="min-w-0 self-center sm:self-auto">
+              <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+                Laporan Bulanan
+              </h1>
+              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+                Rekap bulanan · omzet · metode bayar · toko
+              </p>
+            </div>
+          </div>
 
-  <motion.button
-    whileHover={{ scale: 1.05 }}
-    whileTap={{ scale: 0.95 }}
-    onClick={fetchAll}
-    disabled={loading}
-    className="flex h-8 items-center justify-center gap-1.5 self-start rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
-  >
-    <motion.span
-      animate={loading ? { rotate: 360 } : {}}
-      transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-    >
-      <RefreshCw size={14} strokeWidth={2.5} />
-    </motion.span>
-    <span className="sm:hidden">Refresh</span>
-    <span className="hidden sm:inline">Refresh</span>
-  </motion.button>
-</div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => fetchAll()}
+            disabled={loading}
+            className="flex h-8 items-center justify-center gap-1.5 self-start rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
+          >
+            <motion.span
+              animate={loading ? { rotate: 360 } : {}}
+              transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+            >
+              <RefreshCw size={14} strokeWidth={2.5} />
+            </motion.span>
+            <span className="sm:hidden">Refresh</span>
+            <span className="hidden sm:inline">Refresh</span>
+          </motion.button>
+        </div>
       </motion.div>
 
       {error ? (
@@ -412,7 +553,7 @@ export default function LaporanBulananPage() {
         transition={{ delay: 0.06 }}
         className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${isAdminUser ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
           <div className="lg:col-span-2">
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
               Cari
@@ -432,19 +573,30 @@ export default function LaporanBulananPage() {
             </div>
           </div>
 
-          <FilterSelect
-            label="Toko"
-            value={filterToko}
-            onChange={setFilterToko}
-            icon={Store}
-          >
-            <option value="">Semua Toko</option>
-            {tokoList.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nama}
-              </option>
-            ))}
-          </FilterSelect>
+          {isAdminUser ? (
+            <FilterSelect
+              label="Toko"
+              value={filterToko}
+              onChange={setFilterToko}
+              icon={Store}
+            >
+              <option value="">Semua Toko</option>
+              {tokoList.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nama}
+                </option>
+              ))}
+            </FilterSelect>
+          ) : (
+            <div>
+              <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Toko Karyawan
+              </label>
+              <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                {currentUserProfile?.tokoNama || "Toko belum terhubung"}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">

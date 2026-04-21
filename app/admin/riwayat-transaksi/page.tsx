@@ -2,6 +2,7 @@
   Halaman admin riwayat transaksi.
   Menampilkan daftar transaksi dengan pagination Firestore,
   filter toko, metode, nama kasir, tanggal awal-akhir, serta detail transaksi.
+  Jika user bukan admin, data otomatis dikunci ke toko user dan kasir user sendiri.
 */
 
 "use client"
@@ -10,6 +11,8 @@ import { useEffect, useMemo, useState } from "react"
 import { auth, db } from "@/lib/firebase"
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -27,7 +30,6 @@ import {
   Wallet,
   RefreshCw,
   CalendarDays,
-  CheckCircle2,
   AlertCircle,
   Boxes,
   ChevronDown,
@@ -101,6 +103,16 @@ type TokoOption = {
   nama: string
 }
 
+type UserProfile = {
+  uid: string
+  nama: string
+  email: string
+  role: string
+  roles: string[]
+  tokoId: string
+  tokoNama: string
+}
+
 const PAGE_SIZE = 20
 
 function formatRupiah(value: number) {
@@ -129,6 +141,20 @@ function getEndOfDayMs(dateString: string) {
   if (!dateString) return null
   const date = new Date(`${dateString}T23:59:59.999`)
   return date.getTime()
+}
+
+function normalizeRoles(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isAdminProfile(profile: UserProfile | null) {
+  if (!profile) return false
+  const role = String(profile.role || "").trim().toLowerCase()
+  if (role === "admin" || role === "superadmin") return true
+  return profile.roles.includes("admin") || profile.roles.includes("superadmin")
 }
 
 function InfoCard({
@@ -212,6 +238,8 @@ export default function RiwayatTransaksiPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [data, setData] = useState<Transaksi[]>([])
   const [tokoList, setTokoList] = useState<TokoOption[]>([])
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null)
+
   const [search, setSearch] = useState("")
   const [filterToko, setFilterToko] = useState("")
   const [filterMetode, setFilterMetode] = useState("")
@@ -223,6 +251,31 @@ export default function RiwayatTransaksiPage() {
   const [hasMore, setHasMore] = useState(false)
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
 
+  const isAdminUser = useMemo(
+    () => isAdminProfile(currentUserProfile),
+    [currentUserProfile]
+  )
+
+  const lockedTokoId = useMemo(
+    () => (isAdminUser ? "" : String(currentUserProfile?.tokoId || "").trim()),
+    [isAdminUser, currentUserProfile]
+  )
+
+  const lockedKasirUid = useMemo(
+    () => (isAdminUser ? "" : String(currentUserProfile?.uid || "").trim()),
+    [isAdminUser, currentUserProfile]
+  )
+
+  const effectiveTokoId = useMemo(
+    () => (isAdminUser ? filterToko : lockedTokoId),
+    [isAdminUser, filterToko, lockedTokoId]
+  )
+
+  const effectiveKasirUid = useMemo(
+    () => (isAdminUser ? filterKasir : lockedKasirUid),
+    [isAdminUser, filterKasir, lockedKasirUid]
+  )
+
   const tanggalAwalMs = useMemo(
     () => getStartOfDayMs(filterTanggalAwal),
     [filterTanggalAwal]
@@ -233,13 +286,53 @@ export default function RiwayatTransaksiPage() {
     [filterTanggalAkhir]
   )
 
+  const fetchCurrentUserProfile = async (uid: string, emailFallback?: string | null) => {
+    try {
+      const snap = await getDoc(doc(db, "users", uid))
+      if (snap.exists()) {
+        const raw = snap.data() as any
+        const profile: UserProfile = {
+          uid,
+          nama: String(raw?.nama || "").trim() || "Tanpa Nama",
+          email: String(raw?.email || "").trim() || String(emailFallback || "").trim() || "-",
+          role: String(raw?.role || "").trim().toLowerCase(),
+          roles: normalizeRoles(raw?.roles),
+          tokoId: String(raw?.tokoId || "").trim(),
+          tokoNama: String(raw?.tokoNama || "").trim(),
+        }
+        setCurrentUserProfile(profile)
+        return profile
+      }
+    } catch (err) {
+      console.error("Gagal mengambil profil user:", err)
+    }
+
+    const fallback: UserProfile = {
+      uid,
+      nama: "Tanpa Nama",
+      email: String(emailFallback || "").trim() || "-",
+      role: "",
+      roles: [],
+      tokoId: "",
+      tokoNama: "",
+    }
+    setCurrentUserProfile(fallback)
+    return fallback
+  }
+
   const buildTransaksiQuery = (
+    tokoIdValue: string,
+    kasirUidValue: string,
     cursor?: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     const constraints: QueryConstraint[] = []
 
-    if (filterToko) {
-      constraints.push(where("tokoId", "==", filterToko))
+    if (tokoIdValue) {
+      constraints.push(where("tokoId", "==", tokoIdValue))
+    }
+
+    if (kasirUidValue) {
+      constraints.push(where("kasirUid", "==", kasirUidValue))
     }
 
     if (filterMetode) {
@@ -301,7 +394,19 @@ export default function RiwayatTransaksiPage() {
     }
   }
 
-  const fetchToko = async () => {
+  const fetchToko = async (profile?: UserProfile | null) => {
+    if (!isAdminProfile(profile || currentUserProfile)) {
+      const tokoId = String(profile?.tokoId || currentUserProfile?.tokoId || "").trim()
+      const tokoNama = String(profile?.tokoNama || currentUserProfile?.tokoNama || "").trim()
+
+      if (tokoId) {
+        setTokoList([{ id: tokoId, nama: tokoNama || "Toko Karyawan" }])
+      } else {
+        setTokoList([])
+      }
+      return
+    }
+
     const tokoSnap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
     const tokoOptions: TokoOption[] = tokoSnap.docs
       .map((d) => {
@@ -316,14 +421,42 @@ export default function RiwayatTransaksiPage() {
     setTokoList(tokoOptions)
   }
 
-  const fetchData = async () => {
+  const fetchData = async (profileOverride?: UserProfile | null) => {
+    const activeProfile = profileOverride || currentUserProfile
+    const admin = isAdminProfile(activeProfile)
+    const tokoIdQuery = admin
+      ? filterToko
+      : String(activeProfile?.tokoId || "").trim()
+    const kasirUidQuery = admin
+      ? filterKasir
+      : String(activeProfile?.uid || "").trim()
+
+    if (!admin && !tokoIdQuery) {
+      setData([])
+      setHasMore(false)
+      setLastDoc(null)
+      setError("Akun ini belum terhubung ke toko")
+      setTokoList([])
+      return
+    }
+
+    if (!admin && !kasirUidQuery) {
+      setData([])
+      setHasMore(false)
+      setLastDoc(null)
+      setError("Akun ini belum memiliki identitas kasir")
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     try {
-      const [transaksiSnap] = await Promise.all([getDocs(buildTransaksiQuery(null)), fetchToko()])
+      await fetchToko(activeProfile)
 
+      const transaksiSnap = await getDocs(buildTransaksiQuery(tokoIdQuery, kasirUidQuery, null))
       const transaksiList = transaksiSnap.docs.map(mapTransaksiDoc)
+
       setData(transaksiList)
       setLastDoc(
         transaksiSnap.docs.length > 0 ? transaksiSnap.docs[transaksiSnap.docs.length - 1] : null
@@ -344,11 +477,17 @@ export default function RiwayatTransaksiPage() {
   const fetchMore = async () => {
     if (!hasMore || !lastDoc || loadingMore) return
 
+    const tokoIdQuery = effectiveTokoId
+    const kasirUidQuery = effectiveKasirUid
+
+    if (!isAdminUser && !tokoIdQuery) return
+    if (!isAdminUser && !kasirUidQuery) return
+
     setLoadingMore(true)
     setError(null)
 
     try {
-      const transaksiSnap = await getDocs(buildTransaksiQuery(lastDoc))
+      const transaksiSnap = await getDocs(buildTransaksiQuery(tokoIdQuery, kasirUidQuery, lastDoc))
       const moreList = transaksiSnap.docs.map(mapTransaksiDoc)
 
       setData((prev) => [...prev, ...moreList])
@@ -366,21 +505,30 @@ export default function RiwayatTransaksiPage() {
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        await fetchData()
+      if (!user) {
+        setCurrentUserProfile(null)
+        setData([])
+        setTokoList([])
+        setHasMore(false)
+        setLastDoc(null)
+        return
       }
+
+      const profile = await fetchCurrentUserProfile(user.uid, user.email)
+      if (!isAdminProfile(profile)) {
+        setFilterToko(String(profile.tokoId || "").trim())
+        setFilterKasir(String(profile.uid || "").trim())
+      }
+      await fetchData(profile)
     })
+
     return () => unsub()
   }, [])
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        await fetchData()
-      }
-    })
-    return () => unsub()
-  }, [filterToko, filterMetode, filterTanggalAwal, filterTanggalAkhir])
+    if (!currentUserProfile) return
+    fetchData()
+  }, [filterToko, filterMetode, filterTanggalAwal, filterTanggalAkhir, filterKasir])
 
   const metodeOptions = useMemo(() => {
     return Array.from(
@@ -389,14 +537,33 @@ export default function RiwayatTransaksiPage() {
   }, [data])
 
   const kasirOptions = useMemo(() => {
-  return Array.from(
-    new Set(data.map((item) => String(item.kasirNama || "").trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b))
-}, [data])
+    return Array.from(
+      new Set(
+        data.map((item) => ({
+          uid: String(item.kasirUid || "").trim(),
+          nama: String(item.kasirNama || "").trim(),
+        }))
+      )
+    )
+  }, [data])
+
+  const kasirOptionsUnique = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const item of data) {
+      const uid = String(item.kasirUid || "").trim()
+      const nama = String(item.kasirNama || "").trim()
+      if (!uid || !nama) continue
+      if (!map.has(uid)) {
+        map.set(uid, nama)
+      }
+    }
+    return Array.from(map.entries())
+      .map(([uid, nama]) => ({ uid, nama }))
+      .sort((a, b) => a.nama.localeCompare(b.nama))
+  }, [data])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
-    const qKasir = filterKasir.toLowerCase().trim()
 
     return data.filter((item) => {
       const matchSearch =
@@ -411,12 +578,9 @@ export default function RiwayatTransaksiPage() {
             x.kodeBarang?.toLowerCase().includes(q)
         )
 
-      const matchKasir =
-        !qKasir || String(item.kasirNama || "").toLowerCase().includes(qKasir)
-
-      return matchSearch && matchKasir
+      return matchSearch
     })
-  }, [data, search, filterKasir])
+  }, [data, search])
 
   const totalTransaksi = filtered.length
   const totalOmzet = filtered.reduce((acc, item) => acc + item.grandTotal, 0)
@@ -452,7 +616,7 @@ export default function RiwayatTransaksiPage() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={fetchData}
+            onClick={() => fetchData()}
             disabled={loading}
             className="flex h-8 items-center justify-center gap-1.5 self-start rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
           >
@@ -515,7 +679,7 @@ export default function RiwayatTransaksiPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${isAdminUser ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
           <div>
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
               Cari
@@ -535,33 +699,55 @@ export default function RiwayatTransaksiPage() {
             </div>
           </div>
 
-          <FilterSelect
-  label="Nama Kasir"
-  value={filterKasir}
-  onChange={setFilterKasir}
-  icon={User2}
->
-  <option value="">Semua Kasir</option>
-  {kasirOptions.map((item) => (
-    <option key={item} value={item}>
-      {item}
-    </option>
-  ))}
-</FilterSelect>
+          {isAdminUser ? (
+            <FilterSelect
+              label="Nama Kasir"
+              value={filterKasir}
+              onChange={setFilterKasir}
+              icon={User2}
+            >
+              <option value="">Semua Kasir</option>
+              {kasirOptionsUnique.map((item) => (
+                <option key={item.uid} value={item.uid}>
+                  {item.nama}
+                </option>
+              ))}
+            </FilterSelect>
+          ) : (
+            <div>
+              <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Nama Kasir
+              </label>
+              <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                {currentUserProfile?.nama || "Kasir Aktif"}
+              </div>
+            </div>
+          )}
 
-          <FilterSelect
-            label="Toko"
-            value={filterToko}
-            onChange={setFilterToko}
-            icon={Store}
-          >
-            <option value="">Semua Toko</option>
-            {tokoList.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nama}
-              </option>
-            ))}
-          </FilterSelect>
+          {isAdminUser ? (
+            <FilterSelect
+              label="Toko"
+              value={filterToko}
+              onChange={setFilterToko}
+              icon={Store}
+            >
+              <option value="">Semua Toko</option>
+              {tokoList.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nama}
+                </option>
+              ))}
+            </FilterSelect>
+          ) : (
+            <div>
+              <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Toko Karyawan
+              </label>
+              <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                {currentUserProfile?.tokoNama || "Toko belum terhubung"}
+              </div>
+            </div>
+          )}
 
           <FilterSelect
             label="Metode"
@@ -678,24 +864,24 @@ export default function RiwayatTransaksiPage() {
                   </div>
                 </div>
 
-              <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[260px]">
-  <div className="flex h-full min-h-[56px] flex-col justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-      Grand Total
-    </p>
-    <p className="text-sm font-black text-slate-800">
-      {formatRupiah(item.grandTotal)}
-    </p>
-  </div>
+                <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[260px]">
+                  <div className="flex h-full min-h-[56px] flex-col justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Grand Total
+                    </p>
+                    <p className="text-sm font-black text-slate-800">
+                      {formatRupiah(item.grandTotal)}
+                    </p>
+                  </div>
 
-  <button
-    onClick={() => setSelectedDetail(item)}
-    className="flex min-h-[56px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition-all hover:opacity-95"
-  >
-    <Eye size={13} strokeWidth={2.7} />
-    Detail
-  </button>
-</div>
+                  <button
+                    onClick={() => setSelectedDetail(item)}
+                    className="flex min-h-[56px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition-all hover:opacity-95"
+                  >
+                    <Eye size={13} strokeWidth={2.7} />
+                    Detail
+                  </button>
+                </div>
               </div>
             </motion.div>
           ))}
