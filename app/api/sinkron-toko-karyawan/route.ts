@@ -1,8 +1,19 @@
 /*
   API sinkron toko karyawan.
   Setelah toko karyawan diubah,
-  API ini akan menyamakan tokoId dan tokoNama pada dokumen users
-  yang terhubung ke karyawan tersebut lewat field karyawanId.
+  API ini akan menyamakan tokoId dan tokoNama pada dokumen karyawan
+  serta dokumen users yang terhubung ke karyawan tersebut lewat field karyawanId.
+
+  Field users yang ikut disinkronkan:
+  - tokoId
+  - tokoNama
+  - permissions.tokoId
+  - permissions.tokoNama
+  - toko.id
+  - toko.nama
+
+  Ini penting karena halaman absensi membaca toko dari permissions.tokoId lebih dulu,
+  lalu fallback ke tokoId dan toko.id.
 */
 
 import { NextResponse } from "next/server"
@@ -40,14 +51,18 @@ async function commitInChunks(items: BatchUpdateItem[]) {
   return updatedCount
 }
 
+function getString(value: unknown) {
+  return String(value || "").trim()
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Body
 
-    const karyawanId = String(body?.karyawanId || "").trim()
-    const tokoId = String(body?.tokoId || "").trim()
-    const tokoNama = String(body?.tokoNama || "").trim()
-    const adminUid = String(body?.adminUid || "").trim()
+    const karyawanId = getString(body?.karyawanId)
+    const tokoId = getString(body?.tokoId)
+    const tokoNama = getString(body?.tokoNama)
+    const adminUid = getString(body?.adminUid)
     const now = Date.now()
 
     if (!karyawanId) {
@@ -77,8 +92,8 @@ export async function POST(req: Request) {
     }
 
     const karyawanData = karyawanSnap.data() as Record<string, unknown>
-    const currentTokoId = String(karyawanData?.tokoId || "").trim()
-    const currentTokoNama = String(karyawanData?.tokoNama || "").trim()
+    const currentTokoId = getString(karyawanData?.tokoId)
+    const currentTokoNama = getString(karyawanData?.tokoNama)
 
     let karyawanUpdatedCount = 0
 
@@ -89,6 +104,7 @@ export async function POST(req: Request) {
         updatedAt: now,
         updatedBy: adminUid || "",
       })
+
       karyawanUpdatedCount = 1
     }
 
@@ -100,16 +116,37 @@ export async function POST(req: Request) {
     const usersUpdates: BatchUpdateItem[] = usersSnap.docs
       .filter((docSnap) => {
         const data = docSnap.data() as Record<string, unknown>
-        const userTokoId = String(data?.tokoId || "").trim()
-        const userTokoNama = String(data?.tokoNama || "").trim()
 
-        return userTokoId !== tokoId || userTokoNama !== tokoNama
+        const permissions = data?.permissions as Record<string, unknown> | undefined
+        const toko = data?.toko as Record<string, unknown> | undefined
+
+        const userTokoId = getString(data?.tokoId)
+        const userTokoNama = getString(data?.tokoNama)
+
+        const permissionTokoId = getString(permissions?.tokoId)
+        const permissionTokoNama = getString(permissions?.tokoNama)
+
+        const nestedTokoId = getString(toko?.id)
+        const nestedTokoNama = getString(toko?.nama)
+
+        return (
+          userTokoId !== tokoId ||
+          userTokoNama !== tokoNama ||
+          permissionTokoId !== tokoId ||
+          permissionTokoNama !== tokoNama ||
+          nestedTokoId !== tokoId ||
+          nestedTokoNama !== tokoNama
+        )
       })
       .map((docSnap) => ({
         ref: docSnap.ref,
         data: {
           tokoId,
           tokoNama,
+          "permissions.tokoId": tokoId,
+          "permissions.tokoNama": tokoNama,
+          "toko.id": tokoId,
+          "toko.nama": tokoNama,
           updatedAt: now,
           updatedBy: adminUid || "",
         },
@@ -134,6 +171,7 @@ export async function POST(req: Request) {
     })
   } catch (error: any) {
     console.error("SYNC_TOKO_KARYAWAN_ERROR:", error)
+
     return NextResponse.json(
       { message: error?.message || "Gagal sinkron toko karyawan" },
       { status: 500 }

@@ -90,11 +90,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         label: "Master Data",
         icon: Database,
         items: [
-          { href: "/admin/tambah-toko", icon: Store, label: "Tambah Toko" },
-          { href: "/admin/tambah-karyawan", icon: Users, label: "Tambah Karyawan" },
-          { href: "/admin/tambah-saldo", icon: Wallet, label: "Tambah Saldo" },
-          { href: "/admin/tambah-barang", icon: Package, label: "Tambah Barang" },
-          { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Tambah Barang Tetap" },
+          { href: "/admin/tambah-toko", icon: Store, label: "Toko" },
+          { href: "/admin/tambah-karyawan", icon: Users, label: "Karyawan" },
+          { href: "/admin/tambah-saldo", icon: Wallet, label: "Saldo" },
+          { href: "/admin/tambah-barang", icon: Package, label: "Barang" },
+          { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Barang Tetap" },
         ],
       },
       {

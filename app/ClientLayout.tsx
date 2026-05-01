@@ -73,20 +73,36 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     }
   }, [])
 
-  useEffect(() => {
-    if (!("serviceWorker" in navigator)) return
+ useEffect(() => {
+  if (!("serviceWorker" in navigator)) return
 
-    const registerSW = async () => {
-      try {
-        await navigator.serviceWorker.register("/sw.js")
-        console.log("Service Worker registered")
-      } catch (error) {
-        console.error("Service Worker registration failed:", error)
+  const setupSW = async () => {
+    try {
+      if (process.env.NODE_ENV !== "production") {
+        const registrations = await navigator.serviceWorker.getRegistrations()
+
+        await Promise.all(
+          registrations.map((registration) => registration.unregister())
+        )
+
+        if ("caches" in window) {
+          const cacheNames = await caches.keys()
+          await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
+        }
+
+        console.log("Service Worker dan cache PWA dibersihkan di mode development")
+        return
       }
-    }
 
-    registerSW()
-  }, [])
+      await navigator.serviceWorker.register("/sw.js")
+      console.log("Service Worker registered")
+    } catch (error) {
+      console.error("Service Worker setup failed:", error)
+    }
+  }
+
+  setupSW()
+}, [])
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
