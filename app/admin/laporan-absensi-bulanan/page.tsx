@@ -1,8 +1,22 @@
 "use client"
 
 /*
-  Halaman ini menampilkan laporan absensi bulanan per toko.
-  Hari libur diambil dinamis dari koleksi pengaturan_jam_absensi per karyawan, tanpa hardcode libur permanen.
+  Halaman ini menampilkan laporan absensi bulanan karyawan.
+  Revisi:
+  - Layout dan logika dikonsistensikan dengan laporan absensi bulanan PTK.
+  - Jadwal dasar dibaca dari pengaturan_jam_absensi/default dan pengaturan_jam_absensi/toko_<tokoId>.
+  - Jadwal individu dibaca dari pengaturan_jam_absensi/karyawan_<karyawanId>.
+  - Prioritas jadwal: default -> toko -> karyawan.
+  - Per tanggal/monthlyOverrides mengalahkan jadwal mingguan.
+  - Mendukung effectiveSchedules agar perubahan jadwal berlaku mulai tanggal tertentu.
+  - Tanggal sebelum effectiveFrom tetap memakai jadwal lama.
+  - Hari efektif, alfa, hadir, dan kode L mengikuti jadwal dinamis.
+  - Semua karyawan wajib tetap muncul walau belum pernah absen.
+  - Karyawan hanya disembunyikan jika ada di karyawan_tidak_wajib_absen.
+  - Data toko memakai fallback toko.id/nama, tokoId, tokoNama, atau string toko.
+  - Ranking laporan memakai poin internal: H 100, T/PC 85, TPC 70, tidak absen pulang 65 dan tampil sebagai ?, S 70, I 60, A 0.
+  - Poin tidak ditampilkan, hanya dipakai untuk menentukan posisi karyawan.
+  - Cache localStorage 5 menit agar tidak reload terus.
 */
 
 import { useEffect, useState } from "react"
@@ -28,10 +42,16 @@ type TokoRef = {
 type BulananDays = {
   karyawanId: string
   namaKaryawan: string
-  toko?: TokoRef
+  toko: TokoRef
   tahun: number
   bulan: number
   days: Record<string, string>
+}
+
+type MasterKaryawan = {
+  id: string
+  nama: string
+  toko: TokoRef
 }
 
 type Summary = {
@@ -43,30 +63,23 @@ type Summary = {
   pulangCepat: number
 }
 
-type UserDoc = {
-  uid?: string
-  karyawanId?: string
-  nama?: string
-  tokoId?: string
-  tokoNama?: string
-  role?: string
-  roles?: string[]
+type DaySchedule = {
+  enabled: boolean
+  jamMasuk: string
+  jamPulang: string
+  lintasTanggal?: boolean
 }
 
-type WeeklyScheduleItem = {
-  enabled?: boolean
-  hari?: number | string
-  day?: number | string
-  dayIndex?: number | string
-  weekday?: number | string
-  name?: string
+type EffectiveSchedule = {
+  effectiveFrom: string
+  weeklySchedule?: Record<string | number, Partial<DaySchedule>>
+  monthlyOverrides?: Record<string, Record<string, Partial<DaySchedule>>>
+  note?: string
+  createdAt?: any
+  createdBy?: string
 }
 
-type PengaturanJamAbsensiDoc = {
-  karyawanId?: string
-  hariLibur?: Array<number | string>
-  weeklySchedule?: WeeklyScheduleItem[] | Record<string, WeeklyScheduleItem>
-}
+type PengaturanMap = Record<string, any>
 
 const CODE_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   H: { label: "Hadir", bg: "bg-emerald-500", text: "text-white" },
@@ -77,7 +90,19 @@ const CODE_CONFIG: Record<string, { label: string; bg: string; text: string }> =
   PC: { label: "Pulang Cepat", bg: "bg-blue-500", text: "text-white" },
   TPC: { label: "Terlambat+PC", bg: "bg-violet-600", text: "text-white" },
   L: { label: "Libur", bg: "bg-slate-200", text: "text-slate-500" },
-  "-": { label: "Tidak Absen Pulang", bg: "bg-slate-500", text: "text-white" },
+  "?": { label: "Tidak Absen Pulang", bg: "bg-slate-500", text: "text-white" },
+}
+
+const POINT_CONFIG: Record<string, number> = {
+  H: 100,
+  T: 85,
+  PC: 85,
+  TPC: 70,
+  "?": 65,
+  "-": 65,
+  S: 70,
+  I: 60,
+  A: 0,
 }
 
 const COLOR_MAP: Record<string, [number, number, number]> = {
@@ -89,25 +114,8 @@ const COLOR_MAP: Record<string, [number, number, number]> = {
   PC: [59, 130, 246],
   TPC: [124, 58, 237],
   L: [226, 232, 240],
+  "?": [100, 116, 139],
   "-": [100, 116, 139],
-}
-
-const DAY_NAME_TO_INDEX: Record<string, number> = {
-  minggu: 0,
-  sunday: 0,
-  ahad: 0,
-  senin: 1,
-  monday: 1,
-  selasa: 2,
-  tuesday: 2,
-  rabu: 3,
-  wednesday: 3,
-  kamis: 4,
-  thursday: 4,
-  jumat: 5,
-  friday: 5,
-  sabtu: 6,
-  saturday: 6,
 }
 
 const loadScript = (src: string): Promise<void> =>
@@ -116,6 +124,7 @@ const loadScript = (src: string): Promise<void> =>
       resolve()
       return
     }
+
     const s = document.createElement("script")
     s.src = src
     s.onload = () => resolve()
@@ -150,72 +159,340 @@ const canCountAlphaForDate = (_dateObj: Date, bulan: number, tahun: number) => {
   return true
 }
 
-const normalizeDayIndex = (value: unknown): number | null => {
-  if (typeof value === "number" && value >= 0 && value <= 6) return value
-
-  if (typeof value === "string") {
-    const trimmed = value.trim().toLowerCase()
-
-    if (trimmed in DAY_NAME_TO_INDEX) return DAY_NAME_TO_INDEX[trimmed]
-
-    const parsed = Number(trimmed)
-    if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 6) return parsed
-  }
-
-  return null
+function formatDateKeyLocal(dateObj: Date) {
+  const yyyy = dateObj.getFullYear()
+  const mm = String(dateObj.getMonth() + 1).padStart(2, "0")
+  const dd = String(dateObj.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
 }
 
-const buildHariLiburSet = (config?: PengaturanJamAbsensiDoc): Set<number> => {
-  const result = new Set<number>()
+function getMonthKey(dateKey: string) {
+  return dateKey.slice(0, 7)
+}
 
-  if (!config) return result
+function createEmptyWeeklySchedule(): Record<number, DaySchedule> {
+  return {
+    0: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+    1: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+    2: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+    3: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+    4: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+    5: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+    6: { enabled: false, jamMasuk: "", jamPulang: "", lintasTanggal: false },
+  }
+}
 
-  for (const item of config.hariLibur ?? []) {
-    const idx = normalizeDayIndex(item)
-    if (idx !== null) result.add(idx)
+function normalizeWeeklySchedule(data: any): Record<number, DaySchedule> {
+  const empty = createEmptyWeeklySchedule()
+
+  if (data?.weeklySchedule && typeof data.weeklySchedule === "object") {
+    const normalized: Record<number, DaySchedule> = { ...empty }
+
+    for (let i = 0; i < 7; i++) {
+      const raw = data.weeklySchedule?.[i] ?? data.weeklySchedule?.[String(i)]
+
+      if (raw) {
+        normalized[i] = {
+          enabled: typeof raw.enabled === "boolean" ? raw.enabled : false,
+          jamMasuk: raw.jamMasuk || "",
+          jamPulang: raw.jamPulang || "",
+          lintasTanggal:
+            typeof raw.lintasTanggal === "boolean" ? raw.lintasTanggal : false,
+        }
+      }
+    }
+
+    return normalized
   }
 
-  const weeklySchedule = config.weeklySchedule
+  const hasLegacy =
+    typeof data?.jamMasuk === "string" ||
+    typeof data?.jamPulang === "string" ||
+    Array.isArray(data?.hariLibur)
 
-  if (Array.isArray(weeklySchedule)) {
-    weeklySchedule.forEach((item, index) => {
-      const dayIndex =
-        normalizeDayIndex(item?.dayIndex) ??
-        normalizeDayIndex(item?.hari) ??
-        normalizeDayIndex(item?.day) ??
-        normalizeDayIndex(item?.weekday) ??
-        normalizeDayIndex(item?.name) ??
-        index
+  if (!hasLegacy) return empty
 
-      if (dayIndex >= 0 && dayIndex <= 6 && item?.enabled === false) {
-        result.add(dayIndex)
-      }
-    })
-  } else if (weeklySchedule && typeof weeklySchedule === "object") {
-    Object.entries(weeklySchedule).forEach(([key, item]) => {
-      const dayIndex =
-        normalizeDayIndex(item?.dayIndex) ??
-        normalizeDayIndex(item?.hari) ??
-        normalizeDayIndex(item?.day) ??
-        normalizeDayIndex(item?.weekday) ??
-        normalizeDayIndex(item?.name) ??
-        normalizeDayIndex(key)
+  const jamMasuk = data?.jamMasuk || ""
+  const jamPulang = data?.jamPulang || ""
+  const hariLibur = Array.isArray(data?.hariLibur) ? data.hariLibur : []
+  const migrated: Record<number, DaySchedule> = { ...empty }
 
-      if (dayIndex !== null && item?.enabled === false) {
-        result.add(dayIndex)
-      }
-    })
+  for (let i = 0; i < 7; i++) {
+    migrated[i] = {
+      enabled: !hariLibur.includes(i),
+      jamMasuk,
+      jamPulang,
+      lintasTanggal: false,
+    }
   }
 
-  return result
+  return migrated
+}
+
+function mergeScheduleData(baseData: any, overrideData: any) {
+  const merged = {
+    ...(baseData || {}),
+    ...(overrideData || {}),
+    weeklySchedule: {
+      ...(baseData?.weeklySchedule || {}),
+      ...(overrideData?.weeklySchedule || {}),
+    },
+    monthlyOverrides: {
+      ...(baseData?.monthlyOverrides || {}),
+      ...(overrideData?.monthlyOverrides || {}),
+    },
+  }
+
+  Object.entries(overrideData?.monthlyOverrides || {}).forEach(([monthKey, dates]) => {
+    merged.monthlyOverrides[monthKey] = {
+      ...(baseData?.monthlyOverrides?.[monthKey] || {}),
+      ...(dates as Record<string, any>),
+    }
+  })
+
+  return merged
+}
+
+function normalizeEffectiveSchedules(data: any): EffectiveSchedule[] {
+  if (!Array.isArray(data?.effectiveSchedules)) return []
+
+  return data.effectiveSchedules
+    .filter((item: any) => {
+      return (
+        item &&
+        typeof item === "object" &&
+        typeof item.effectiveFrom === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(item.effectiveFrom)
+      )
+    })
+    .sort((a: EffectiveSchedule, b: EffectiveSchedule) =>
+      a.effectiveFrom.localeCompare(b.effectiveFrom)
+    )
+}
+
+function removeEffectiveMeta(data: any) {
+  const { effectiveSchedules, ...rest } = data || {}
+  return rest
+}
+
+function resolveEffectiveDataForDate(data: any, dateKey: string) {
+  if (!data) return null
+
+  const base = removeEffectiveMeta(data)
+  const schedules = normalizeEffectiveSchedules(data)
+
+  let resolved = { ...base }
+
+  schedules.forEach((entry) => {
+    if (entry.effectiveFrom <= dateKey) {
+      resolved = mergeScheduleData(resolved, {
+        weeklySchedule: entry.weeklySchedule || {},
+        monthlyOverrides: entry.monthlyOverrides || {},
+      })
+    }
+  })
+
+  return resolved
+}
+
+function normalizeTokoFromData(data: any): TokoRef {
+  const namaRaw = String(
+    data?.toko?.nama ||
+      data?.tokoNama ||
+      data?.namaToko ||
+      (typeof data?.toko === "string" ? data.toko : "") ||
+      "Tanpa Toko"
+  ).trim()
+
+  const idRaw = String(
+    data?.toko?.id ||
+      data?.tokoId ||
+      data?.toko_id ||
+      data?.idToko ||
+      namaRaw ||
+      "tanpa-toko"
+  ).trim()
+
+  const nama = namaRaw || "Tanpa Toko"
+  const id = idRaw || nama || "tanpa-toko"
+
+  return { id, nama }
+}
+
+function normalizeBulananRow(
+  row: any,
+  masterMap: Map<string, MasterKaryawan>
+): BulananDays {
+  const karyawanId = String(row?.karyawanId || row?.ptkId || "").trim()
+  const master = masterMap.get(karyawanId)
+  const toko = master?.toko || normalizeTokoFromData(row)
+
+  return {
+    karyawanId,
+    namaKaryawan: String(
+      row?.namaKaryawan ||
+        row?.namaPtk ||
+        master?.nama ||
+        ""
+    ).trim(),
+    toko,
+    tahun: Number(row?.tahun || 0),
+    bulan: Number(row?.bulan || 0),
+    days: row?.days && typeof row.days === "object" ? row.days : {},
+  }
+}
+
+function getResolvedScheduleData(row: BulananDays, pengaturanMap: PengaturanMap) {
+  const defaultData = pengaturanMap.default
+  const tokoId = String(row.toko?.id || "").trim()
+  const tokoNama = String(row.toko?.nama || "").trim()
+
+  const tokoData =
+    pengaturanMap[`toko_${tokoId}`] ||
+    pengaturanMap[`toko_${tokoNama}`]
+
+  const individuData = pengaturanMap[`karyawan_${row.karyawanId}`]
+
+  let resolvedData: any = defaultData || null
+
+  if (resolvedData && tokoData) {
+    resolvedData = mergeScheduleData(resolvedData, tokoData)
+  } else if (tokoData) {
+    resolvedData = tokoData
+  }
+
+  if (resolvedData && individuData) {
+    resolvedData = mergeScheduleData(resolvedData, individuData)
+  } else if (individuData) {
+    resolvedData = individuData
+  }
+
+  return resolvedData
+}
+
+function getScheduleForDate(data: any, dateObj: Date): DaySchedule | null {
+  if (!data) return null
+
+  const dateKey = formatDateKeyLocal(dateObj)
+  const effectiveData = resolveEffectiveDataForDate(data, dateKey)
+
+  if (!effectiveData) return null
+
+  const weeklySchedule = normalizeWeeklySchedule(effectiveData)
+  const dayIndex = dateObj.getDay()
+  const monthKey = getMonthKey(dateKey)
+
+  const monthlyOverride =
+    effectiveData?.monthlyOverrides?.[monthKey]?.[dateKey] ||
+    effectiveData?.monthlyOverrides?.[monthKey]?.[String(dateKey)]
+
+  if (monthlyOverride && typeof monthlyOverride === "object") {
+    return {
+      enabled:
+        typeof monthlyOverride.enabled === "boolean"
+          ? monthlyOverride.enabled
+          : weeklySchedule[dayIndex]?.enabled ?? false,
+      jamMasuk: monthlyOverride.jamMasuk || weeklySchedule[dayIndex]?.jamMasuk || "",
+      jamPulang:
+        monthlyOverride.jamPulang || weeklySchedule[dayIndex]?.jamPulang || "",
+      lintasTanggal:
+        typeof monthlyOverride.lintasTanggal === "boolean"
+          ? monthlyOverride.lintasTanggal
+          : false,
+    }
+  }
+
+  return (
+    weeklySchedule[dayIndex] || {
+      enabled: false,
+      jamMasuk: "",
+      jamPulang: "",
+      lintasTanggal: false,
+    }
+  )
+}
+
+function isValidWorkSchedule(schedule: DaySchedule | null) {
+  return !!schedule?.enabled && !!schedule?.jamMasuk && !!schedule?.jamPulang
+}
+
+function normalizeDisplayCode(code: string | undefined | null): string {
+  if (code === "-") return "?"
+  return code || ""
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_PREFIX = "laporan_absen_bulanan_karyawan_v2"
+
+type CachePayload = {
+  cachedAt: number
+  bulanan: BulananDays[]
+  summary: Record<string, Summary>
+  pengaturanMap: PengaturanMap
+  tidakWajibMap: Record<string, boolean>
+  tokoList: TokoRef[]
+}
+
+function getCacheKey(uid: string, bulan: number, tahun: number) {
+  return `${CACHE_PREFIX}:${uid}:${tahun}:${bulan}`
+}
+
+function readCachePayload(cacheKey: string): CachePayload | null {
+  if (typeof window === "undefined") return null
+
+  try {
+    const raw = window.localStorage.getItem(cacheKey)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as CachePayload
+    const cachedAt = Number(parsed?.cachedAt || 0)
+    const expired = !cachedAt || Date.now() - cachedAt > CACHE_TTL_MS
+
+    if (expired) {
+      window.localStorage.removeItem(cacheKey)
+      return null
+    }
+
+    return parsed
+  } catch (err) {
+    console.error("Cache laporan absensi karyawan rusak:", err)
+    window.localStorage.removeItem(cacheKey)
+    return null
+  }
+}
+
+function writeCachePayload(cacheKey: string, payload: Omit<CachePayload, "cachedAt">) {
+  if (typeof window === "undefined") return
+
+  try {
+    window.localStorage.setItem(
+      cacheKey,
+      JSON.stringify({
+        ...payload,
+        cachedAt: Date.now(),
+      })
+    )
+  } catch (err) {
+    console.error("Gagal menyimpan cache laporan absensi karyawan:", err)
+  }
+}
+
+function removeCachePayload(cacheKey: string) {
+  if (typeof window === "undefined") return
+
+  try {
+    window.localStorage.removeItem(cacheKey)
+  } catch (err) {
+    console.error("Gagal menghapus cache laporan absensi karyawan:", err)
+  }
 }
 
 export default function LaporanAbsenBulananPage() {
   const [loading, setLoading] = useState(true)
   const [bulanan, setBulanan] = useState<BulananDays[]>([])
   const [summary, setSummary] = useState<Record<string, Summary>>({})
+  const [pengaturanMap, setPengaturanMap] = useState<PengaturanMap>({})
   const [tidakWajibMap, setTidakWajibMap] = useState<Record<string, boolean>>({})
-  const [pengaturanJamMap, setPengaturanJamMap] = useState<Record<string, PengaturanJamAbsensiDoc>>({})
   const [tokoFilter, setTokoFilter] = useState<string>("")
   const [tokoList, setTokoList] = useState<TokoRef[]>([])
   const [bulanFilter, setBulanFilter] = useState<number>(new Date().getMonth() + 1)
@@ -225,174 +502,287 @@ export default function LaporanAbsenBulananPage() {
   const tahun = tahunFilter
 
   useEffect(() => {
-    const fetchData = async () => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+    const applyCachePayload = (payload: CachePayload) => {
+      setTidakWajibMap(payload.tidakWajibMap || {})
+      setBulanan(payload.bulanan || [])
+      setTokoList(payload.tokoList || [])
+      setPengaturanMap(payload.pengaturanMap || {})
+      setSummary(payload.summary || {})
+    }
+
+    const fetchData = async (cacheKey: string, options?: { showLoading?: boolean }) => {
       const user = auth.currentUser
       if (!user) return
-      setLoading(true)
+
+      if (options?.showLoading !== false) {
+        setLoading(true)
+      }
 
       try {
+        const snapTidakWajib = await getDocs(collection(db, "karyawan_tidak_wajib_absen"))
+        const mapTidakWajib: Record<string, boolean> = {}
+
+        snapTidakWajib.docs.forEach((d) => {
+          mapTidakWajib[d.id] = true
+          const data = d.data() as any
+          if (data.karyawanId) mapTidakWajib[String(data.karyawanId)] = true
+        })
+
+        setTidakWajibMap(mapTidakWajib)
+
+        const snapKaryawan = await getDocs(collection(db, "karyawan"))
+        const masterKaryawan: MasterKaryawan[] = snapKaryawan.docs
+          .map((d) => {
+            const data = d.data() as any
+            const toko = normalizeTokoFromData(data)
+
+            return {
+              id: String(data.karyawanId || d.id || "").trim(),
+              nama: String(data.nama ?? data.namaKaryawan ?? data.displayName ?? "").trim(),
+              toko,
+            }
+          })
+          .filter((item) => item.id && item.nama)
+
+        const masterMap = new Map<string, MasterKaryawan>()
+        masterKaryawan.forEach((item) => {
+          masterMap.set(item.id, item)
+        })
+
         const qBulanan = query(
           collection(db, "absensi_karyawan_bulanan"),
           where("tahun", "==", tahun),
           where("bulan", "==", bulanFilter)
         )
+        const snapBulanan = await getDocs(qBulanan)
+        const bulananData = snapBulanan.docs
+          .map((d) => normalizeBulananRow(d.data(), masterMap))
+          .filter((row) => row.karyawanId && row.namaKaryawan)
+
+        const bulananByKaryawanId = new Map<string, BulananDays>()
+
+        bulananData.forEach((row) => {
+          if (!row.karyawanId) return
+          const master = masterMap.get(row.karyawanId)
+
+          bulananByKaryawanId.set(row.karyawanId, {
+            ...row,
+            namaKaryawan: master?.nama || row.namaKaryawan,
+            toko: master?.toko || row.toko,
+          })
+        })
+
+        masterKaryawan.forEach((karyawan) => {
+          if (mapTidakWajib[karyawan.id]) return
+          if (bulananByKaryawanId.has(karyawan.id)) return
+
+          bulananByKaryawanId.set(karyawan.id, {
+            karyawanId: karyawan.id,
+            namaKaryawan: karyawan.nama,
+            toko: karyawan.toko,
+            tahun,
+            bulan: bulanFilter,
+            days: {},
+          })
+        })
+
+        const mergedBulanan = Array.from(bulananByKaryawanId.values())
+          .filter((row) => !mapTidakWajib[row.karyawanId])
+          .sort((a, b) => {
+            const ai = `${a.toko?.nama ?? ""}__${a.namaKaryawan ?? ""}`
+            const bi = `${b.toko?.nama ?? ""}__${b.namaKaryawan ?? ""}`
+            return ai.localeCompare(bi, "id")
+          })
+
+        setBulanan(mergedBulanan)
+
+        const tokoMap: Record<string, TokoRef> = {}
+
+        mergedBulanan.forEach((row) => {
+          const toko = row.toko || { id: "tanpa-toko", nama: "Tanpa Toko" }
+          const key = toko.id || toko.nama || "tanpa-toko"
+          tokoMap[key] = toko
+        })
+
+        const sortedTokoList = Object.values(tokoMap).sort((a, b) =>
+          String(a.nama ?? "").localeCompare(String(b.nama ?? ""), "id")
+        )
+
+        setTokoList(sortedTokoList)
+
+        const snapPengaturan = await getDocs(collection(db, "pengaturan_jam_absensi"))
+        const nextPengaturanMap: PengaturanMap = {}
+
+        snapPengaturan.docs.forEach((docSnap) => {
+          nextPengaturanMap[docSnap.id] = docSnap.data()
+        })
+
+        setPengaturanMap(nextPengaturanMap)
 
         const qSummary = query(
           collection(db, "absensi_karyawan_summary"),
           where("tahun", "==", tahun),
           where("bulan", "==", bulanFilter)
         )
-
-        const [snapBulanan, snapSummary, snapUsers, snapTidakWajib, snapPengaturanJam] = await Promise.all([
-          getDocs(qBulanan),
-          getDocs(qSummary),
-          getDocs(collection(db, "users")),
-          getDocs(collection(db, "karyawan_tidak_wajib_absen")),
-          getDocs(collection(db, "pengaturan_jam_absensi")),
-        ])
-
-        const userMapByKaryawanId: Record<string, UserDoc> = {}
-        const tokoMap: Record<string, TokoRef> = {}
-
-        snapUsers.docs.forEach((d) => {
-          const data = d.data() as UserDoc
-          const karyawanId = data.karyawanId
-          if (karyawanId) {
-            userMapByKaryawanId[karyawanId] = data
-          }
-          if (data.tokoId && data.tokoNama) {
-            tokoMap[data.tokoId] = { id: data.tokoId, nama: data.tokoNama }
-          }
-        })
-
-        const bulananData = snapBulanan.docs.map((d) => {
-          const data = d.data() as any
-          const karyawanId = data.karyawanId ?? data.ptkId ?? d.id
-          const userData = userMapByKaryawanId[karyawanId]
-
-          return {
-            karyawanId,
-            namaKaryawan: data.namaKaryawan ?? data.namaPtk ?? userData?.nama ?? "-",
-            toko:
-              data.toko?.id && data.toko?.nama
-                ? { id: data.toko.id, nama: data.toko.nama }
-                : userData?.tokoId && userData?.tokoNama
-                ? { id: userData.tokoId, nama: userData.tokoNama }
-                : undefined,
-            tahun: data.tahun,
-            bulan: data.bulan,
-            days: data.days ?? {},
-          } as BulananDays
-        })
-
+        const snapSummary = await getDocs(qSummary)
         const summaryMap: Record<string, Summary> = {}
+
         snapSummary.docs.forEach((d) => {
           const data = d.data() as any
-          const karyawanId = data.karyawanId ?? data.ptkId ?? d.id
+          const karyawanId = String(data.karyawanId || data.ptkId || "").trim()
+          if (!karyawanId) return
+
           summaryMap[karyawanId] = {
             karyawanId,
-            hadir: data.hadir ?? 0,
-            izin: data.izin ?? 0,
-            sakit: data.sakit ?? 0,
-            terlambat: data.terlambat ?? 0,
-            pulangCepat: data.pulangCepat ?? 0,
+            hadir: Number(data.hadir ?? 0),
+            izin: Number(data.izin ?? 0),
+            sakit: Number(data.sakit ?? 0),
+            terlambat: Number(data.terlambat ?? 0),
+            pulangCepat: Number(data.pulangCepat ?? 0),
           }
         })
 
-        const mapTidakWajib: Record<string, boolean> = {}
-        snapTidakWajib.docs.forEach((d) => {
-          mapTidakWajib[d.id] = true
-          const data = d.data() as any
-          if (data.karyawanId) mapTidakWajib[data.karyawanId] = true
-        })
-
-        const mapPengaturanJam: Record<string, PengaturanJamAbsensiDoc> = {}
-        snapPengaturanJam.docs.forEach((d) => {
-          const data = d.data() as PengaturanJamAbsensiDoc
-          const karyawanId = data.karyawanId ?? d.id
-          if (karyawanId) {
-            mapPengaturanJam[karyawanId] = data
-          }
-        })
-
-        bulananData.forEach((row) => {
-          if (row.toko?.id && row.toko?.nama) {
-            tokoMap[row.toko.id] = row.toko
-          }
-        })
-
-        setBulanan(bulananData)
         setSummary(summaryMap)
-        setTidakWajibMap(mapTidakWajib)
-        setPengaturanJamMap(mapPengaturanJam)
-        setTokoList(Object.values(tokoMap).sort((a, b) => a.nama.localeCompare(b.nama)))
+
+        writeCachePayload(cacheKey, {
+          bulanan: mergedBulanan,
+          summary: summaryMap,
+          pengaturanMap: nextPengaturanMap,
+          tidakWajibMap: mapTidakWajib,
+          tokoList: sortedTokoList,
+        })
       } catch (err) {
         console.error(err)
-        setBulanan([])
-        setSummary({})
-        setTidakWajibMap({})
-        setPengaturanJamMap({})
-        setTokoList([])
+
+        if (options?.showLoading !== false) {
+          setBulanan([])
+          setSummary({})
+          setPengaturanMap({})
+          setTidakWajibMap({})
+          setTokoList([])
+        }
       } finally {
-        setLoading(false)
+        if (options?.showLoading !== false) {
+          setLoading(false)
+        }
       }
     }
 
     const unsub = auth.onAuthStateChanged((u) => {
-      if (u) fetchData()
+      if (!u) return
+
+      const cacheKey = getCacheKey(u.uid, bulanFilter, tahun)
+      const cached = readCachePayload(cacheKey)
+
+      if (cached) {
+        applyCachePayload(cached)
+        setLoading(false)
+
+        const remainingMs = Math.max(CACHE_TTL_MS - (Date.now() - cached.cachedAt), 0)
+
+        refreshTimer = setTimeout(() => {
+          removeCachePayload(cacheKey)
+          fetchData(cacheKey, { showLoading: false })
+        }, remainingMs)
+
+        return
+      }
+
+      fetchData(cacheKey, { showLoading: true })
     })
 
-    return () => unsub()
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer)
+      unsub()
+    }
   }, [bulanFilter, tahunFilter, tahun])
 
   const daysInMonth = new Date(tahun, bulanFilter, 0).getDate()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const isLibur = (karyawanId: string, dateObj: Date) => {
-    const config = pengaturanJamMap[karyawanId]
-    if (!config) return false
+  const getScheduleStatus = (row: BulananDays, dateObj: Date) => {
+    const resolvedData = getResolvedScheduleData(row, pengaturanMap)
 
-    const hariLiburSet = buildHariLiburSet(config)
-    return hariLiburSet.has(dateObj.getDay())
+    if (!resolvedData) {
+      return {
+        configured: false,
+        isLibur: false,
+        schedule: null as DaySchedule | null,
+      }
+    }
+
+    const schedule = getScheduleForDate(resolvedData, dateObj)
+
+    if (!schedule) {
+      return {
+        configured: false,
+        isLibur: false,
+        schedule: null as DaySchedule | null,
+      }
+    }
+
+    return {
+      configured: true,
+      isLibur: !isValidWorkSchedule(schedule),
+      schedule,
+    }
   }
 
-  const hitungEfektif = (karyawanId: string): number => {
+  const isHariKerjaEfektif = (row: BulananDays, dateObj: Date) => {
+    const status = getScheduleStatus(row, dateObj)
+    return status.configured && !status.isLibur
+  }
+
+  const hitungEfektif = (row: BulananDays): number => {
     let n = 0
+
     for (let d = 1; d <= daysInMonth; d++) {
       const dateObj = new Date(tahun, bulanFilter - 1, d)
       dateObj.setHours(0, 0, 0, 0)
+
       if (dateObj > today) continue
       if (!canCountAlphaForDate(dateObj, bulanFilter, tahun)) continue
-      if (!isLibur(karyawanId, dateObj)) n++
+      if (!isHariKerjaEfektif(row, dateObj)) continue
+
+      n++
     }
+
     return n
   }
 
   const hitungHadir = (row: BulananDays): number => {
     let n = 0
+
     for (let d = 1; d <= daysInMonth; d++) {
       const dateObj = new Date(tahun, bulanFilter - 1, d)
       dateObj.setHours(0, 0, 0, 0)
-      if (dateObj > today || isLibur(row.karyawanId, dateObj)) continue
-      const code = row.days?.[String(d).padStart(2, "0")]
-      if (["H", "T", "PC", "TPC", "-"].includes(code)) n++
+
+      if (dateObj > today || !isHariKerjaEfektif(row, dateObj)) continue
+
+      const code = normalizeDisplayCode(row.days?.[String(d).padStart(2, "0")])
+      if (["H", "T", "PC", "TPC", "?"].includes(code)) n++
     }
+
     return n
   }
 
   const hitungAlfa = (row: BulananDays): number => {
     let n = 0
+
     for (let d = 1; d <= daysInMonth; d++) {
       const dateObj = new Date(tahun, bulanFilter - 1, d)
       dateObj.setHours(0, 0, 0, 0)
 
-      if (dateObj > today || isLibur(row.karyawanId, dateObj)) continue
+      if (dateObj > today || !isHariKerjaEfektif(row, dateObj)) continue
       if (!canCountAlphaForDate(dateObj, bulanFilter, tahun)) continue
 
       const code = row.days?.[String(d).padStart(2, "0")]
       if (!code) n++
     }
+
     return n
   }
 
@@ -401,38 +791,91 @@ export default function LaporanAbsenBulananPage() {
     dateObj.setHours(0, 0, 0, 0)
 
     if (dateObj > today) return ""
-    if (isLibur(row.karyawanId, dateObj)) return "L"
 
-    const existingCode = row.days?.[String(dayNum).padStart(2, "0")]
+    const status = getScheduleStatus(row, dateObj)
+
+    if (!status.configured) return ""
+    if (status.isLibur) return "L"
+
+    const existingCode = normalizeDisplayCode(row.days?.[String(dayNum).padStart(2, "0")])
     if (existingCode) return existingCode
 
     if (!canCountAlphaForDate(dateObj, bulanFilter, tahun)) return ""
+
     return "A"
   }
 
   const hitungPersen = (row: BulananDays): number => {
-    const efektif = hitungEfektif(row.karyawanId)
+    const efektif = hitungEfektif(row)
     if (efektif === 0) return 0
     return Math.round((hitungHadir(row) / efektif) * 100)
   }
 
   const hitungPersenIzin = (row: BulananDays): number => {
-    const efektif = hitungEfektif(row.karyawanId)
+    const efektif = hitungEfektif(row)
     const izin = summary[row.karyawanId]?.izin ?? 0
     if (efektif === 0) return 0
     return Math.round((izin / efektif) * 100)
   }
 
   const hitungPersenSakit = (row: BulananDays): number => {
-    const efektif = hitungEfektif(row.karyawanId)
+    const efektif = hitungEfektif(row)
     const sakit = summary[row.karyawanId]?.sakit ?? 0
     if (efektif === 0) return 0
     return Math.round((sakit / efektif) * 100)
   }
 
-  const filteredBulanan = bulanan.filter(
-    (row) => (!tokoFilter || row.toko?.id === tokoFilter) && !tidakWajibMap[row.karyawanId]
-  )
+  const hitungTotalPoin = (row: BulananDays): number => {
+    let total = 0
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const code = getCode(row, d)
+      if (!code || code === "L") continue
+      total += POINT_CONFIG[code] ?? 0
+    }
+
+    return total
+  }
+
+  const hitungNilaiPoin = (row: BulananDays): number => {
+    const efektif = hitungEfektif(row)
+    if (efektif === 0) return 0
+    return Math.round(hitungTotalPoin(row) / efektif)
+  }
+
+  const filteredBulanan = bulanan
+    .filter(
+      (row) =>
+        (!tokoFilter || row.toko?.id === tokoFilter) &&
+        !tidakWajibMap[row.karyawanId]
+    )
+    .sort((a, b) => {
+      const nilaiA = hitungNilaiPoin(a)
+      const nilaiB = hitungNilaiPoin(b)
+      if (nilaiB !== nilaiA) return nilaiB - nilaiA
+
+      const persenA = hitungPersen(a)
+      const persenB = hitungPersen(b)
+      if (persenB !== persenA) return persenB - persenA
+
+      const hadirA = hitungHadir(a)
+      const hadirB = hitungHadir(b)
+      if (hadirB !== hadirA) return hadirB - hadirA
+
+      const alfaA = hitungAlfa(a)
+      const alfaB = hitungAlfa(b)
+      if (alfaA !== alfaB) return alfaA - alfaB
+
+      const tokoA = String(a.toko?.nama || "")
+      const tokoB = String(b.toko?.nama || "")
+      const tokoCompare = tokoA.localeCompare(tokoB, "id")
+      if (tokoCompare !== 0) return tokoCompare
+
+      return String(a.namaKaryawan || "").localeCompare(
+        String(b.namaKaryawan || ""),
+        "id"
+      )
+    })
 
   const namaToko = tokoList.find((i) => i.id === tokoFilter)?.nama ?? ""
   const bulanNama = new Date(tahun, bulanFilter - 1).toLocaleString("id-ID", {
@@ -449,20 +892,35 @@ export default function LaporanAbsenBulananPage() {
 
     filteredBulanan.forEach((row) => {
       const s = summary[row.karyawanId]
+
       totalHadir += hitungHadir(row)
       totalIzin += s?.izin ?? 0
       totalSakit += s?.sakit ?? 0
       totalAlfa += hitungAlfa(row)
-      totalEfektif += hitungEfektif(row.karyawanId)
+      totalEfektif += hitungEfektif(row)
     })
 
-    const persen = totalEfektif > 0 ? Math.round((totalHadir / totalEfektif) * 100) : 0
+    const persen =
+      totalEfektif > 0 ? Math.round((totalHadir / totalEfektif) * 100) : 0
+
     return { totalHadir, totalIzin, totalSakit, totalAlfa, totalEfektif, persen }
   })()
 
   const buildTableData = () => {
     const dayHeaders = Array.from({ length: daysInMonth }, (_, i) => String(i + 1))
-    const header = ["No", "Nama Karyawan", "% Hadir", "% Izin", "% Sakit", "Hadir", "Izin", "Sakit", "Alfa", ...dayHeaders]
+
+    const header = [
+      "No",
+      "Nama Karyawan",
+      "% Hadir",
+      "% Izin",
+      "% Sakit",
+      "Hadir",
+      "Izin",
+      "Sakit",
+      "Alfa",
+      ...dayHeaders,
+    ]
 
     const rows = filteredBulanan.map((row, idx) => {
       const s = summary[row.karyawanId]
@@ -492,6 +950,7 @@ export default function LaporanAbsenBulananPage() {
 
   const handleDownloadPDF = async () => {
     setDownloading("pdf")
+
     try {
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js")
@@ -503,6 +962,7 @@ export default function LaporanAbsenBulananPage() {
       doc.setFontSize(14)
       doc.setTextColor(30, 41, 59)
       doc.text("LAPORAN ABSENSI BULANAN KARYAWAN", 14, 15)
+
       doc.setFontSize(9)
       doc.setFont("helvetica", "normal")
       doc.setTextColor(100, 116, 139)
@@ -522,12 +982,25 @@ export default function LaporanAbsenBulananPage() {
       doc.setFillColor(248, 250, 252)
       doc.roundedRect(14, 35, 400, 14, 2, 2, "FD")
 
-      const statsItems: Array<{ label: string; val: string; color: [number, number, number] }> = [
-        { label: "Total Karyawan", val: String(filteredBulanan.length), color: [30, 41, 59] },
+      const statsItems: Array<{
+        label: string
+        val: string
+        color: [number, number, number]
+      }> = [
+        {
+          label: "Total Karyawan",
+          val: String(filteredBulanan.length),
+          color: [30, 41, 59],
+        },
         {
           label: "% Kehadiran",
           val: `${agg.persen}%`,
-          color: agg.persen >= 90 ? [5, 150, 105] : agg.persen >= 75 ? [161, 98, 7] : [190, 18, 60],
+          color:
+            agg.persen >= 90
+              ? [5, 150, 105]
+              : agg.persen >= 75
+                ? [161, 98, 7]
+                : [190, 18, 60],
         },
         { label: "Hadir", val: String(agg.totalHadir), color: [5, 150, 105] },
         { label: "Izin", val: String(agg.totalIzin), color: [161, 98, 7] },
@@ -538,10 +1011,12 @@ export default function LaporanAbsenBulananPage() {
 
       statsItems.forEach((item, i) => {
         const x = 17 + i * 58
+
         doc.setFont("helvetica", "bold")
         doc.setFontSize(8)
         doc.setTextColor(...item.color)
         doc.text(item.val, x, 42)
+
         doc.setFont("helvetica", "normal")
         doc.setFontSize(6)
         doc.setTextColor(148, 163, 184)
@@ -590,29 +1065,40 @@ export default function LaporanAbsenBulananPage() {
               doc.setTextColor(...rgb)
             }
           }
+
           if (data.section === "body" && data.column.index === 3) {
             const pct = parseInt(String(data.cell.raw ?? "").replace("%", ""), 10)
             if (!isNaN(pct) && pct > 0) doc.setTextColor(161, 98, 7)
             else doc.setTextColor(148, 163, 184)
           }
+
           if (data.section === "body" && data.column.index === 4) {
             const pct = parseInt(String(data.cell.raw ?? "").replace("%", ""), 10)
             if (!isNaN(pct) && pct > 0) doc.setTextColor(220, 38, 38)
             else doc.setTextColor(148, 163, 184)
           }
+
           if (data.section === "body" && data.column.index >= 9) {
             const val = String(data.cell.raw ?? "")
             const rgb = COLOR_MAP[val]
+
             if (rgb) {
               ;(doc as any).setFillColor(...rgb)
               doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, "F")
+
               const isLight = val === "I" || val === "L"
-              doc.setTextColor(isLight ? 30 : 255, isLight ? 41 : 255, isLight ? 59 : 255)
+              doc.setTextColor(
+                isLight ? 30 : 255,
+                isLight ? 41 : 255,
+                isLight ? 59 : 255
+              )
               doc.setFontSize(6.5)
-              doc.text(val, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + 0.5, {
-                align: "center",
-                baseline: "middle",
-              })
+              doc.text(
+                val,
+                data.cell.x + data.cell.width / 2,
+                data.cell.y + data.cell.height / 2 + 0.5,
+                { align: "center", baseline: "middle" }
+              )
               data.cell.text = []
             }
           }
@@ -630,11 +1116,13 @@ export default function LaporanAbsenBulananPage() {
 
       Object.entries(CODE_CONFIG).forEach(([code]) => {
         const rgb = COLOR_MAP[code] ?? [200, 200, 200]
+
         ;(doc as any).setFillColor(...rgb)
         doc.rect(lx, ly - 3, 5, 4, "F")
         doc.setTextColor(30, 41, 59)
         doc.setFont("helvetica", "normal")
         doc.text(`${code} = ${CODE_CONFIG[code].label}`, lx + 6, ly)
+
         lx += 40
         if (lx > 380) {
           lx = 14
@@ -642,7 +1130,9 @@ export default function LaporanAbsenBulananPage() {
         }
       })
 
-      doc.save(`Absensi_${namaToko.replace(/\s+/g, "_")}_${bulanNama.replace(/\s+/g, "_")}.pdf`)
+      doc.save(
+        `Absensi_${namaToko.replace(/\s+/g, "_")}_${bulanNama.replace(/\s+/g, "_")}.pdf`
+      )
     } catch (err) {
       console.error("PDF error:", err)
       alert("Gagal membuat PDF. Silakan coba lagi.")
@@ -653,8 +1143,10 @@ export default function LaporanAbsenBulananPage() {
 
   const handleDownloadXLS = async () => {
     setDownloading("xls")
+
     try {
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js")
+
       const XLSX = (window as any).XLSX
       const wb = XLSX.utils.book_new()
       const tgl = new Date().toLocaleDateString("id-ID", {
@@ -737,14 +1229,25 @@ export default function LaporanAbsenBulananPage() {
           agg.totalEfektif,
         ],
         [],
-        ["No", "Nama Karyawan", "% Hadir", "% Izin", "% Sakit", "Hadir", "Izin", "Sakit", "Alfa", "Hari Efektif"],
+        [
+          "No",
+          "Nama Karyawan",
+          "% Hadir",
+          "% Izin",
+          "% Sakit",
+          "Hadir",
+          "Izin",
+          "Sakit",
+          "Alfa",
+          "Hari Efektif",
+        ],
       ]
 
       filteredBulanan.forEach((row, idx) => {
         const s = summary[row.karyawanId]
         const hadir = hitungHadir(row)
         const alfa = hitungAlfa(row)
-        const efektif = hitungEfektif(row.karyawanId)
+        const efektif = hitungEfektif(row)
         const persen = hitungPersen(row)
         const persenIzin = hitungPersenIzin(row)
         const persenSakit = hitungPersenSakit(row)
@@ -798,7 +1301,11 @@ export default function LaporanAbsenBulananPage() {
       ]
 
       XLSX.utils.book_append_sheet(wb, ws2, "Summary")
-      XLSX.writeFile(wb, `Absensi_${namaToko.replace(/\s+/g, "_")}_${bulanNama.replace(/\s+/g, "_")}.xlsx`)
+
+      XLSX.writeFile(
+        wb,
+        `Absensi_${namaToko.replace(/\s+/g, "_")}_${bulanNama.replace(/\s+/g, "_")}.xlsx`
+      )
     } catch (err) {
       console.error("XLS error:", err)
       alert("Gagal membuat file Excel. Silakan coba lagi.")
@@ -808,29 +1315,34 @@ export default function LaporanAbsenBulananPage() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-5 text-slate-900">
+    <div className="relative min-h-screen space-y-4 bg-white p-3 pb-28 text-slate-900 sm:space-y-5 sm:p-4 lg:p-5">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative overflow-hidden rounded-xl border-l-4 border-l-violet-500 border-t border-r border-b border-slate-200 bg-white p-4 sm:p-5 shadow-sm"
+        className="relative overflow-hidden rounded-xl border-l-4 border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
       >
-        <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 shadow-lg shadow-violet-200/50 sm:h-14 sm:w-14">
-    <ClipboardList size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
-  </div>
+        <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
+              <ClipboardList size={28} className="text-white sm:h-8 sm:w-8" strokeWidth={2.5} />
+            </div>
 
-  <div className="min-w-0 self-center sm:self-auto">
-    <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-      Laporan Absensi Bulanan
-    </h1>
-    <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-      Rekap kehadiran per individu karyawan
-    </p>
-  </div>
-</div>
-        <div className="absolute right-0 top-0 opacity-[0.03] pointer-events-none">
-          <Cpu size={140} strokeWidth={1} />
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                Laporan Absensi Bulanan
+              </h1>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+                Rekap kehadiran per individu karyawan
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-0 opacity-[0.05]">
+          <Cpu size={170} className="text-white" strokeWidth={1} />
         </div>
       </motion.div>
 
@@ -838,24 +1350,32 @@ export default function LaporanAbsenBulananPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, delay: 0.1 }}
-        className="rounded-xl border-l-4 border-l-purple-500 border-t border-r border-b border-slate-200 bg-white p-4 shadow-sm"
+        className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <div className="flex items-center gap-2 mb-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10">
-            <Filter size={14} className="text-purple-600" strokeWidth={2.5} />
+        <div className="mb-3 flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
+            <Filter size={14} className="text-emerald-600" strokeWidth={2.5} />
           </div>
-          <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Filter Laporan</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
+            Filter Laporan
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="sm:col-span-1">
-            <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Toko</label>
+            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+              Toko
+            </label>
             <div className="relative">
-              <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" strokeWidth={2} />
+              <Building2
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                strokeWidth={2}
+              />
               <select
                 value={tokoFilter}
                 onChange={(e) => setTokoFilter(e.target.value)}
-                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white pl-8 pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-purple-300 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
                 <option value="">Pilih Toko</option>
                 {tokoList.map((i) => (
@@ -864,17 +1384,23 @@ export default function LaporanAbsenBulananPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" strokeWidth={2.5} />
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                strokeWidth={2.5}
+              />
             </div>
           </div>
 
           <div>
-            <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Bulan</label>
+            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+              Bulan
+            </label>
             <div className="relative">
               <select
                 value={bulanFilter}
                 onChange={(e) => setBulanFilter(Number(e.target.value))}
-                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-purple-300 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
                 {Array.from({ length: 12 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>
@@ -882,42 +1408,58 @@ export default function LaporanAbsenBulananPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" strokeWidth={2.5} />
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                strokeWidth={2.5}
+              />
             </div>
           </div>
 
           <div>
-            <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Tahun</label>
+            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+              Tahun
+            </label>
             <div className="relative">
               <select
                 value={tahunFilter}
                 onChange={(e) => setTahunFilter(Number(e.target.value))}
-                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-purple-300 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
               </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" strokeWidth={2.5} />
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                strokeWidth={2.5}
+              />
             </div>
           </div>
         </div>
       </motion.div>
 
       {loading && (
-        <div className="flex items-center justify-center py-16">
+        <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white py-16 shadow-sm">
           <div className="flex flex-col items-center gap-3">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-violet-500"
+              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
             />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Memuat data...</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Memuat data...
+            </p>
           </div>
         </div>
       )}
 
       {!loading && !tokoFilter && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-16 gap-3">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-16 shadow-sm"
+        >
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
             <Building2 size={28} className="text-slate-300" strokeWidth={2} />
           </div>
@@ -939,80 +1481,105 @@ export default function LaporanAbsenBulananPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
             >
-              <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 bg-slate-50">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-violet-500/10">
-                  <TrendingUp size={12} className="text-violet-600" strokeWidth={2.5} />
+              <div className="flex items-center gap-2 border-b border-slate-100 bg-white/80 px-4 py-3">
+                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50">
+                  <TrendingUp size={12} className="text-emerald-600" strokeWidth={2.5} />
                 </div>
                 <span className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">
                   Ringkasan Kehadiran · {namaToko} · {bulanNama}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-slate-100">
-                <div className="col-span-2 sm:col-span-1 flex flex-col items-center justify-center p-4 gap-1">
+              <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-5 sm:divide-y-0">
+                <div className="col-span-2 flex flex-col items-center justify-center gap-1 p-4 sm:col-span-1">
                   <span className={`text-3xl font-black tabular-nums ${pctTextColor(agg.persen)}`}>
                     {agg.persen}%
                   </span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Kehadiran</span>
-                  <div className="w-full h-1.5 rounded-full bg-slate-100 mt-1 overflow-hidden">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Kehadiran
+                  </span>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
                       className={`h-full rounded-full transition-all duration-700 ${pctBarColor(agg.persen)}`}
                       style={{ width: `${agg.persen}%` }}
                     />
                   </div>
-                  <span className="text-[8px] text-slate-400 text-center">
+                  <span className="text-center text-[8px] text-slate-400">
                     {agg.totalHadir} hadir dari {agg.totalEfektif} hari efektif
                   </span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center p-4 gap-0.5">
-                  <span className="text-xl font-black text-emerald-600 tabular-nums">{agg.totalHadir}</span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Hadir</span>
+                <div className="flex flex-col items-center justify-center gap-0.5 p-4">
+                  <span className="text-xl font-black tabular-nums text-emerald-600">
+                    {agg.totalHadir}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Hadir
+                  </span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center p-4 gap-0.5">
-                  <span className="text-xl font-black text-yellow-600 tabular-nums">{agg.totalIzin}</span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Izin</span>
+                <div className="flex flex-col items-center justify-center gap-0.5 p-4">
+                  <span className="text-xl font-black tabular-nums text-yellow-600">
+                    {agg.totalIzin}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Izin
+                  </span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center p-4 gap-0.5">
-                  <span className="text-xl font-black text-red-500 tabular-nums">{agg.totalSakit}</span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Sakit</span>
+                <div className="flex flex-col items-center justify-center gap-0.5 p-4">
+                  <span className="text-xl font-black tabular-nums text-red-500">
+                    {agg.totalSakit}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Sakit
+                  </span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center p-4 gap-0.5">
-                  <span className="text-xl font-black text-rose-700 tabular-nums">{agg.totalAlfa}</span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Alfa</span>
+                <div className="flex flex-col items-center justify-center gap-0.5 p-4">
+                  <span className="text-xl font-black tabular-nums text-rose-700">
+                    {agg.totalAlfa}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Alfa
+                  </span>
                 </div>
               </div>
             </motion.div>
           )}
 
-          <div className="flex items-start justify-between flex-wrap gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black text-slate-700 uppercase tracking-wide">{namaToko}</p>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">
+                {namaToko}
+              </p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 {bulanNama} · {filteredBulanan.length} Karyawan
               </p>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(CODE_CONFIG).map(([code, cfg]) => (
-                  <span key={code} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black ${cfg.bg} ${cfg.text}`}>
+                  <span
+                    key={code}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-black ${cfg.bg} ${cfg.text}`}
+                  >
                     {code}
-                    <span className="font-normal opacity-80 hidden sm:inline">= {cfg.label}</span>
+                    <span className="hidden font-normal opacity-80 sm:inline">
+                      = {cfg.label}
+                    </span>
                   </span>
                 ))}
               </div>
 
-              <div className="flex items-center gap-2 ml-0 sm:ml-2">
+              <div className="ml-0 flex items-center gap-2 sm:ml-2">
                 <button
                   onClick={handleDownloadPDF}
                   disabled={!!downloading || filteredBulanan.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-xl border-2 border-red-200 bg-red-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-red-600 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {downloading === "pdf" ? (
                     <motion.span
@@ -1029,7 +1596,7 @@ export default function LaporanAbsenBulananPage() {
                 <button
                   onClick={handleDownloadXLS}
                   disabled={!!downloading || filteredBulanan.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-emerald-700 transition-all hover:bg-emerald-100 hover:border-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {downloading === "xls" ? (
                     <motion.span
@@ -1046,23 +1613,39 @@ export default function LaporanAbsenBulananPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <table className="min-w-full text-xs">
               <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="sticky left-0 z-10 bg-slate-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap w-8">#</th>
-                  <th className="sticky left-8 z-10 bg-slate-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap min-w-[180px]">
+                <tr className="bg-emerald-800 text-white">
+                  <th className="sticky left-0 z-10 w-8 whitespace-nowrap bg-emerald-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em]">
+                    #
+                  </th>
+                  <th className="sticky left-8 z-10 min-w-[180px] whitespace-nowrap bg-emerald-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em]">
                     Nama Karyawan
                   </th>
-                  <th className="px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap min-w-[120px]" colSpan={3}>
+                  <th
+                    className="min-w-[120px] whitespace-nowrap px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em]"
+                    colSpan={3}
+                  >
                     % Kehadiran / Izin / Sakit
                   </th>
-                  <th className="px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap">Hdr</th>
-                  <th className="px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap">Izn</th>
-                  <th className="px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap">Skt</th>
-                  <th className="px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em] whitespace-nowrap">Alf</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em]">
+                    Hdr
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em]">
+                    Izn
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em]">
+                    Skt
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-center text-[9px] font-black uppercase tracking-[0.12em]">
+                    Alf
+                  </th>
                   {Array.from({ length: daysInMonth }, (_, i) => (
-                    <th key={i} className="px-1.5 py-2.5 text-center text-[9px] font-black whitespace-nowrap w-7 bg-slate-800">
+                    <th
+                      key={i}
+                      className="w-7 whitespace-nowrap bg-emerald-800 px-1.5 py-2.5 text-center text-[9px] font-black"
+                    >
                       {i + 1}
                     </th>
                   ))}
@@ -1072,7 +1655,10 @@ export default function LaporanAbsenBulananPage() {
               <tbody>
                 {filteredBulanan.length === 0 && (
                   <tr>
-                    <td colSpan={9 + daysInMonth} className="px-4 py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    <td
+                      colSpan={9 + daysInMonth}
+                      className="px-4 py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400"
+                    >
                       Tidak ada data untuk toko ini
                     </td>
                   </tr>
@@ -1092,10 +1678,13 @@ export default function LaporanAbsenBulananPage() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.2, delay: idx * 0.03 }}
-                      className="border-t border-slate-100 hover:bg-slate-50/70 transition-colors"
+                      className="border-t border-slate-100 transition-colors hover:bg-slate-50/70"
                     >
-                      <td className="sticky left-0 z-10 bg-white px-3 py-2 text-center font-bold text-slate-400">{idx + 1}</td>
-                      <td className="sticky left-8 z-10 bg-white px-3 py-2 font-bold text-slate-800 whitespace-nowrap border-r border-slate-100">
+                      <td className="sticky left-0 z-10 bg-white px-3 py-2 text-center font-bold text-slate-400">
+                        {idx + 1}
+                      </td>
+
+                      <td className="sticky left-8 z-10 whitespace-nowrap border-r border-slate-100 bg-white px-3 py-2 font-bold text-slate-800">
                         {row.namaKaryawan}
                       </td>
 
@@ -1108,7 +1697,9 @@ export default function LaporanAbsenBulananPage() {
                       <td className="px-1.5 py-2 text-center">
                         <span
                           className={`inline-flex items-center justify-center rounded-lg border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
-                            persenIzin > 0 ? "bg-yellow-50 border-yellow-200 text-yellow-700" : "bg-slate-50 border-slate-200 text-slate-400"
+                            persenIzin > 0
+                              ? "bg-yellow-50 border-yellow-200 text-yellow-700"
+                              : "bg-slate-50 border-slate-200 text-slate-400"
                           }`}
                         >
                           {persenIzin}%
@@ -1118,17 +1709,30 @@ export default function LaporanAbsenBulananPage() {
                       <td className="px-1.5 py-2 text-center">
                         <span
                           className={`inline-flex items-center justify-center rounded-lg border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
-                            persenSakit > 0 ? "bg-red-50 border-red-200 text-red-600" : "bg-slate-50 border-slate-200 text-slate-400"
+                            persenSakit > 0
+                              ? "bg-red-50 border-red-200 text-red-600"
+                              : "bg-slate-50 border-slate-200 text-slate-400"
                           }`}
                         >
                           {persenSakit}%
                         </span>
                       </td>
 
-                      <td className="px-2 py-2 text-center font-black text-emerald-600">{hadir}</td>
-                      <td className="px-2 py-2 text-center font-black text-yellow-600">{s?.izin ?? 0}</td>
-                      <td className="px-2 py-2 text-center font-black text-red-500">{s?.sakit ?? 0}</td>
-                      <td className="px-2 py-2 text-center font-black text-rose-700">{alfa}</td>
+                      <td className="px-2 py-2 text-center font-black text-emerald-600">
+                        {hadir}
+                      </td>
+
+                      <td className="px-2 py-2 text-center font-black text-yellow-600">
+                        {s?.izin ?? 0}
+                      </td>
+
+                      <td className="px-2 py-2 text-center font-black text-red-500">
+                        {s?.sakit ?? 0}
+                      </td>
+
+                      <td className="px-2 py-2 text-center font-black text-rose-700">
+                        {alfa}
+                      </td>
 
                       {Array.from({ length: daysInMonth }, (_, i) => {
                         const dayNum = i + 1
@@ -1156,9 +1760,9 @@ export default function LaporanAbsenBulananPage() {
                 })}
 
                 {filteredBulanan.length > 0 && (
-                  <tr className="border-t-2 border-slate-300 bg-slate-800">
-                    <td className="sticky left-0 z-10 bg-slate-800 px-3 py-2.5 text-center" />
-                    <td className="sticky left-8 z-10 bg-slate-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-white border-r border-slate-700">
+                  <tr className="border-t-2 border-emerald-300 bg-emerald-800">
+                    <td className="sticky left-0 z-10 bg-emerald-800 px-3 py-2.5 text-center" />
+                    <td className="sticky left-8 z-10 border-r border-emerald-700 bg-emerald-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-white">
                       Total {filteredBulanan.length} Karyawan
                     </td>
                     <td className="px-1.5 py-2.5 text-center">
@@ -1167,19 +1771,33 @@ export default function LaporanAbsenBulananPage() {
                       </span>
                     </td>
                     <td className="px-1.5 py-2.5 text-center">
-                      <span className="inline-flex items-center justify-center rounded-lg border px-1.5 py-0.5 text-[10px] font-black tabular-nums bg-yellow-50 border-yellow-200 text-yellow-700">
-                        {agg.totalEfektif > 0 ? Math.round((agg.totalIzin / agg.totalEfektif) * 100) : 0}%
+                      <span className="inline-flex items-center justify-center rounded-lg border border-yellow-200 bg-yellow-50 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-yellow-700">
+                        {agg.totalEfektif > 0
+                          ? Math.round((agg.totalIzin / agg.totalEfektif) * 100)
+                          : 0}
+                        %
                       </span>
                     </td>
                     <td className="px-1.5 py-2.5 text-center">
-                      <span className="inline-flex items-center justify-center rounded-lg border px-1.5 py-0.5 text-[10px] font-black tabular-nums bg-red-50 border-red-200 text-red-600">
-                        {agg.totalEfektif > 0 ? Math.round((agg.totalSakit / agg.totalEfektif) * 100) : 0}%
+                      <span className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-red-600">
+                        {agg.totalEfektif > 0
+                          ? Math.round((agg.totalSakit / agg.totalEfektif) * 100)
+                          : 0}
+                        %
                       </span>
                     </td>
-                    <td className="px-2 py-2.5 text-center text-xs font-black text-emerald-400">{agg.totalHadir}</td>
-                    <td className="px-2 py-2.5 text-center text-xs font-black text-yellow-400">{agg.totalIzin}</td>
-                    <td className="px-2 py-2.5 text-center text-xs font-black text-red-400">{agg.totalSakit}</td>
-                    <td className="px-2 py-2.5 text-center text-xs font-black text-rose-400">{agg.totalAlfa}</td>
+                    <td className="px-2 py-2.5 text-center text-xs font-black text-emerald-400">
+                      {agg.totalHadir}
+                    </td>
+                    <td className="px-2 py-2.5 text-center text-xs font-black text-yellow-400">
+                      {agg.totalIzin}
+                    </td>
+                    <td className="px-2 py-2.5 text-center text-xs font-black text-red-400">
+                      {agg.totalSakit}
+                    </td>
+                    <td className="px-2 py-2.5 text-center text-xs font-black text-rose-400">
+                      {agg.totalAlfa}
+                    </td>
                     {Array.from({ length: daysInMonth }, (_, i) => (
                       <td key={i} className="px-0.5 py-1.5" />
                     ))}

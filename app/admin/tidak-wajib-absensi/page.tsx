@@ -1,9 +1,13 @@
-"use client"
+// Halaman khusus untuk mengatur karyawan yang tidak wajib melakukan absensi.
+// Revisi:
+// - Layout dikonsistensikan dengan halaman PTK Tidak Wajib Absen.
+// - Header emerald, statistik 3 kartu, filter collapse, toast fixed kanan atas.
+// - Pagination 10/25/50/100/ALL.
+// - Tampilan mobile memakai card, desktop memakai tabel.
+// - Toggle status update lokal tanpa refetch penuh.
+// - Identitas karyawan cukup menampilkan nama dan email, tanpa ID.
 
-/*
-  Halaman ini untuk mengatur daftar karyawan yang tidak wajib absen.
-  Revisi tampilan: layout dibuat lebih konsisten, dan identitas karyawan cukup menampilkan nama tanpa ID.
-*/
+"use client"
 
 import React, { useEffect, useMemo, useState } from "react"
 import { auth, db } from "@/lib/firebase"
@@ -12,6 +16,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  increment,
   orderBy,
   query,
   serverTimestamp,
@@ -19,20 +24,28 @@ import {
 } from "firebase/firestore"
 import {
   AlertCircle,
-  Check,
+  CalendarOff,
+  CheckCircle2,
+  ChevronDown,
   Cpu,
+  ListFilter,
+  Mail,
   RefreshCw,
   Search,
+  ShieldCheck,
+  ShieldOff,
+  Store,
   Users,
   UserX,
 } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
+import { AnimatePresence, motion } from "framer-motion"
 
 type Karyawan = {
   id: string
   nama: string
   email: string
   status: string
+  tokoNama: string
 }
 
 type KaryawanTidakWajibAbsen = {
@@ -40,421 +53,835 @@ type KaryawanTidakWajibAbsen = {
   karyawanId: string
   nama: string
   email: string
+  tokoNama: string
+}
+
+type FilterStatus = "semua" | "tidak_wajib" | "wajib"
+
+const LIMIT_OPTIONS = [
+  { value: 10, label: "10" },
+  { value: 25, label: "25" },
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 0, label: "ALL" },
+]
+
+function FilterSelect({
+  value,
+  onChange,
+  children,
+  label,
+  icon: Icon,
+}: {
+  value: string | number
+  onChange: (v: string) => void
+  children: React.ReactNode
+  label: string
+  icon?: any
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </label>
+
+      <div className="relative">
+        {Icon && (
+          <Icon
+            size={13}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            strokeWidth={2.3}
+          />
+        )}
+
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
+            Icon ? "pl-8" : "pl-3"
+          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+        >
+          {children}
+        </select>
+
+        <ChevronDown
+          size={13}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+          strokeWidth={2.5}
+        />
+      </div>
+    </div>
+  )
 }
 
 export default function KaryawanTidakWajibAbsenPage() {
+  const [data, setData] = useState<Karyawan[]>([])
   const [loading, setLoading] = useState(true)
-  const [savingId, setSavingId] = useState<string | null>(null)
+  const [loadingId, setLoadingId] = useState<string | null>(null)
 
-  const [karyawanList, setKaryawanList] = useState<Karyawan[]>([])
-  const [tidakWajibMap, setTidakWajibMap] = useState<Record<string, KaryawanTidakWajibAbsen>>({})
+  const [tidakWajibMap, setTidakWajibMap] = useState<
+    Record<string, KaryawanTidakWajibAbsen>
+  >({})
 
   const [search, setSearch] = useState("")
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [filterToko, setFilterToko] = useState("")
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("semua")
+  const [showFilter, setShowFilter] = useState(false)
 
-  const showSuccess = (msg: string) => {
-    setSuccessMsg(msg)
-    setTimeout(() => setSuccessMsg(null), 2500)
+  const [limitVal, setLimitVal] = useState(10)
+  const [page, setPage] = useState(1)
+
+  const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null)
+
+  const showToast = (type: "ok" | "err", msg: string) => {
+    setToast({ type, msg })
+    setTimeout(() => setToast(null), 2200)
   }
 
-  const loadKaryawan = async () => {
-    const snap = await getDocs(query(collection(db, "karyawan"), orderBy("nama", "asc")))
-    const rows: Karyawan[] = snap.docs.map((d) => {
-      const x = d.data() as any
-      return {
-        id: d.id,
-        nama: x.nama ?? "",
-        email: x.email ?? "",
-        status: x.status ?? "aktif",
-      }
-    })
+  const fetchData = async () => {
+    const user = auth.currentUser
+    if (!user) return
 
-    setKaryawanList(rows.filter((k) => k.status === "aktif" || !k.status))
-  }
-
-  const loadTidakWajibAbsen = async () => {
-    const snap = await getDocs(
-      query(collection(db, "karyawan_tidak_wajib_absen"), orderBy("nama", "asc"))
-    )
-
-    const mapped: Record<string, KaryawanTidakWajibAbsen> = {}
-
-    snap.docs.forEach((d) => {
-      const x = d.data() as any
-      const karyawanId = x.karyawanId ?? d.id
-
-      mapped[karyawanId] = {
-        id: d.id,
-        karyawanId,
-        nama: x.nama ?? "",
-        email: x.email ?? "",
-      }
-    })
-
-    setTidakWajibMap(mapped)
-  }
-
-  const loadAll = async () => {
     setLoading(true)
-    setError(null)
 
     try {
-      await Promise.all([loadKaryawan(), loadTidakWajibAbsen()])
-    } catch (e) {
-      console.error(e)
-      setError("Gagal memuat data.")
+      const karyawanRef = query(collection(db, "karyawan"), orderBy("nama", "asc"))
+      const karyawanSnap = await getDocs(karyawanRef)
+
+      const list: Karyawan[] = karyawanSnap.docs
+        .map((docSnap) => {
+          const d = docSnap.data() as any
+
+          return {
+            id: docSnap.id,
+            nama: d.nama || "",
+            email: d.email || "",
+            status: d.status || "aktif",
+            tokoNama: d.tokoNama || d.toko?.nama || "Tanpa Toko",
+          }
+        })
+        .filter((item) => item.status === "aktif" || !item.status)
+
+      const tidakWajibSnap = await getDocs(
+        query(collection(db, "karyawan_tidak_wajib_absen"), orderBy("nama", "asc"))
+      )
+
+      const map: Record<string, KaryawanTidakWajibAbsen> = {}
+
+      tidakWajibSnap.docs.forEach((docSnap) => {
+        const d = docSnap.data() as any
+        const karyawanId = d.karyawanId || docSnap.id
+
+        map[karyawanId] = {
+          id: docSnap.id,
+          karyawanId,
+          nama: d.nama || "",
+          email: d.email || "",
+          tokoNama: d.tokoNama || d.toko?.nama || "",
+        }
+      })
+
+      setData(list)
+      setTidakWajibMap(map)
+    } catch (err) {
+      console.error("Gagal memuat data karyawan:", err)
+      showToast("err", "Gagal memuat data karyawan")
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      if (u) loadAll()
+    const unsub = auth.onAuthStateChanged((user) => {
+      if (user) {
+        fetchData()
+      } else {
+        setData([])
+        setTidakWajibMap({})
+        setLoading(false)
+      }
     })
 
     return () => unsub()
   }, [])
 
-  const handleToggle = async (karyawan: Karyawan, checked: boolean) => {
+  const tokoOptions = useMemo(() => {
+    const setToko = new Set<string>()
+
+    data.forEach((item) => {
+      if (item.tokoNama) setToko.add(item.tokoNama)
+    })
+
+    return Array.from(setToko).sort((a, b) => a.localeCompare(b, "id"))
+  }, [data])
+
+  const filtered = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
+
+    return data.filter((item) => {
+      const isTidakWajib = !!tidakWajibMap[item.id]
+
+      const matchSearch =
+        !keyword ||
+        item.nama.toLowerCase().includes(keyword) ||
+        item.email.toLowerCase().includes(keyword) ||
+        item.tokoNama.toLowerCase().includes(keyword)
+
+      const matchToko = filterToko ? item.tokoNama === filterToko : true
+
+      const matchStatus =
+        filterStatus === "semua"
+          ? true
+          : filterStatus === "tidak_wajib"
+            ? isTidakWajib
+            : !isTidakWajib
+
+      return matchSearch && matchToko && matchStatus
+    })
+  }, [data, search, filterToko, filterStatus, tidakWajibMap])
+
+  const totalTidakWajib = useMemo(() => {
+    return data.filter((item) => tidakWajibMap[item.id]).length
+  }, [data, tidakWajibMap])
+
+  const totalWajib = data.length - totalTidakWajib
+  const totalPages = limitVal === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / limitVal))
+
+  const paged = useMemo(() => {
+    if (limitVal === 0) return filtered
+
+    const start = (page - 1) * limitVal
+    const end = start + limitVal
+
+    return filtered.slice(start, end)
+  }, [filtered, page, limitVal])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const toggleTidakWajib = async (karyawan: Karyawan) => {
     const user = auth.currentUser
+
     if (!user) {
-      setError("User belum login.")
+      showToast("err", "User belum login")
       return
     }
 
-    setSavingId(karyawan.id)
-    setError(null)
+    if (loadingId) return
+
+    setLoadingId(karyawan.id)
+
+    const isActive = !!tidakWajibMap[karyawan.id]
+    const statusRef = doc(db, "karyawan_tidak_wajib_absen", karyawan.id)
+    const counterRef = doc(db, "counter_karyawan_tidak_wajib_absen", "global")
 
     try {
-      const ref = doc(db, "karyawan_tidak_wajib_absen", karyawan.id)
+      if (isActive) {
+        await deleteDoc(statusRef)
 
-      if (checked) {
-        await setDoc(ref, {
+        await setDoc(
+          counterRef,
+          {
+            total: increment(-1),
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          },
+          { merge: true }
+        )
+
+        setTidakWajibMap((prev) => {
+          const copy = { ...prev }
+          delete copy[karyawan.id]
+          return copy
+        })
+
+        showToast("ok", "Karyawan berhasil diwajibkan absen kembali")
+        return
+      }
+
+      await setDoc(
+        statusRef,
+        {
           karyawanId: karyawan.id,
           nama: karyawan.nama,
-          email: karyawan.email ?? "",
+          email: karyawan.email || "",
+          tokoNama: karyawan.tokoNama || "",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           updatedBy: user.uid,
-        })
+        },
+        { merge: true }
+      )
 
-        setTidakWajibMap((prev) => ({
-          ...prev,
-          [karyawan.id]: {
-            id: karyawan.id,
-            karyawanId: karyawan.id,
-            nama: karyawan.nama,
-            email: karyawan.email ?? "",
-          },
-        }))
+      await setDoc(
+        counterRef,
+        {
+          total: increment(1),
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+        },
+        { merge: true }
+      )
 
-        showSuccess(`${karyawan.nama} ditandai tidak wajib absen.`)
-      } else {
-        await deleteDoc(ref)
+      setTidakWajibMap((prev) => ({
+        ...prev,
+        [karyawan.id]: {
+          id: karyawan.id,
+          karyawanId: karyawan.id,
+          nama: karyawan.nama,
+          email: karyawan.email || "",
+          tokoNama: karyawan.tokoNama || "",
+        },
+      }))
 
-        setTidakWajibMap((prev) => {
-          const next = { ...prev }
-          delete next[karyawan.id]
-          return next
-        })
-
-        showSuccess(`${karyawan.nama} dihapus dari daftar tidak wajib absen.`)
-      }
-    } catch (e) {
-      console.error(e)
-      setError("Gagal menyimpan perubahan.")
+      showToast("ok", "Karyawan berhasil ditandai tidak wajib absen")
+    } catch (err) {
+      console.error("Gagal mengubah status tidak wajib absen:", err)
+      showToast("err", "Gagal mengubah status karyawan")
     } finally {
-      setSavingId(null)
+      setLoadingId(null)
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim()
-    if (!q) return karyawanList
-
-    return karyawanList.filter((k) =>
-      `${k.nama} ${k.email}`.toLowerCase().includes(q)
-    )
-  }, [karyawanList, search])
-
-  const totalTidakWajib = Object.keys(tidakWajibMap).length
-  const totalWajib = karyawanList.length - totalTidakWajib
-
   return (
-    <div className="space-y-4 sm:space-y-5 text-slate-900">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border-l-4 border-l-rose-500 border-t border-r border-b border-slate-200 bg-white p-4 sm:p-5 shadow-sm"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-  <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-    <div className="flex h-11 w-11 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-400 to-pink-500 shadow-lg shadow-rose-200/50">
-      <UserX size={22} className="text-white sm:w-7 sm:h-7" strokeWidth={2.5} />
-    </div>
-
-    <div className="min-w-0 self-center sm:self-auto">
-      <h1 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
-        Karyawan Tidak Wajib Absen
-      </h1>
-      <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-        Daftar karyawan yang tidak wajib melakukan absensi harian.
-      </p>
-    </div>
-  </div>
-
-  <div className="flex items-center justify-end gap-2">
-    <motion.button
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      onClick={loadAll}
-      disabled={loading}
-      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
-      title="Reload"
-    >
-      <motion.span
-        animate={loading ? { rotate: 360 } : {}}
-        transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-      >
-        <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
-      </motion.span>
-    </motion.button>
-  </div>
-</div>
-
-        <div className="absolute right-0 top-0 opacity-[0.03] pointer-events-none">
-          <Cpu size={140} strokeWidth={1} />
-        </div>
-      </motion.div>
+    <div className="relative min-h-screen bg-white text-slate-900">
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
+        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
+        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
+      </div>
 
       <AnimatePresence>
-        {successMsg && (
+        {toast && (
           <motion.div
-            initial={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200"
+            className={`fixed right-4 top-4 z-[70] rounded-2xl border px-4 py-3 shadow-lg ${
+              toast.type === "ok"
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-red-200 bg-red-50"
+            }`}
           >
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
-              <Check size={11} className="text-white" strokeWidth={3} />
-            </div>
-            <p className="text-[11px] font-bold text-emerald-700">{successMsg}</p>
-          </motion.div>
-        )}
+            <div className="flex items-center gap-2">
+              {toast.type === "ok" ? (
+                <CheckCircle2
+                  size={16}
+                  className="text-emerald-600"
+                  strokeWidth={2.5}
+                />
+              ) : (
+                <AlertCircle
+                  size={16}
+                  className="text-red-600"
+                  strokeWidth={2.5}
+                />
+              )}
 
-        {error && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200"
-          >
-            <AlertCircle size={13} className="text-red-500" strokeWidth={2.5} />
-            <p className="text-[11px] font-bold text-red-600">{error}</p>
+              <p
+                className={`text-xs font-black ${
+                  toast.type === "ok" ? "text-emerald-700" : "text-red-700"
+                }`}
+              >
+                {toast.msg}
+              </p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.06 }}
-        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-      >
-        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">
-          Cari Karyawan
-        </label>
-
-        <div className="relative">
-          <Search
-            size={13}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            strokeWidth={2}
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Nama / Email..."
-            className="w-full rounded-xl border-2 border-slate-200 bg-white pl-8 pr-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 placeholder:font-normal transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-          />
-        </div>
-      </motion.div>
-
-      {loading && (
-        <div className="flex justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-rose-500"
-            />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Memuat data...
-            </p>
-          </div>
-        </div>
-      )}
-
-      {!loading && filtered.length === 0 && (
+      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center py-16 gap-3"
-        >
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-            <Users size={28} className="text-slate-300" strokeWidth={2} />
-          </div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Tidak ada data karyawan
-          </p>
-        </motion.div>
-      )}
-
-      {!loading && filtered.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          transition={{ duration: 0.4 }}
+          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {["No", "Nama", "Email", "Status Absensi"].map((h) => (
-                    <th
-                      key={h}
-                      className={`px-4 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 whitespace-nowrap ${
-                        h === "No" || h === "Status Absensi" ? "text-center" : "text-left"
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
+              <CalendarOff
+                size={28}
+                className="text-white sm:h-8 sm:w-8"
+                strokeWidth={2.5}
+              />
+            </div>
 
-              <tbody>
-                {filtered.map((k, i) => {
-                  const checked = !!tidakWajibMap[k.id]
-                  const saving = savingId === k.id
-
-                  return (
-                    <motion.tr
-                      key={k.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.02 }}
-                      className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="px-4 py-3 text-center font-bold text-slate-400">{i + 1}</td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">
-                            <span className="text-[11px] font-black text-slate-500">
-                              {k.nama.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <p className="font-black text-slate-800 text-[12px]">{k.nama}</p>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3 font-semibold text-slate-500 text-[11px]">
-                        {k.email || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-3">
-                          <span
-                            className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black border ${
-                              checked
-                                ? "bg-rose-50 border-rose-200 text-rose-600"
-                                : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                            }`}
-                          >
-                            {checked ? "TIDAK WAJIB" : "WAJIB"}
-                          </span>
-
-                          <label className="inline-flex items-center justify-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={saving}
-                              onChange={(e) => handleToggle(k, e.target.checked)}
-                              className="h-5 w-5 rounded border-slate-300 text-rose-500 focus:ring-rose-500 disabled:opacity-50"
-                            />
-                          </label>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                Karyawan Tidak Wajib Absen
+              </h1>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+                Atur karyawan yang dikecualikan dari kewajiban absensi.
+              </p>
+            </div>
           </div>
 
-          <div className="sm:hidden p-3 space-y-3">
-            {filtered.map((k, i) => {
-              const checked = !!tidakWajibMap[k.id]
-              const saving = savingId === k.id
+          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl" />
+          <div className="pointer-events-none absolute right-0 top-0 opacity-[0.05]">
+            <Cpu size={170} className="text-white" strokeWidth={1} />
+          </div>
+        </motion.div>
 
-              return (
-                <motion.div
-                  key={k.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">
-                        <span className="text-sm font-black text-slate-500">
-                          {k.nama.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-800 truncate">{k.nama}</p>
-                        <p className="text-[10px] font-semibold text-slate-400 truncate">
-                          {k.email || "-"}
-                        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28 }}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                <Users size={21} strokeWidth={2.5} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Total Karyawan
+                </p>
+                <p className="text-2xl font-black text-slate-800">{data.length}</p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, delay: 0.04 }}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <ShieldCheck size={21} strokeWidth={2.5} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Wajib Absen
+                </p>
+                <p className="text-2xl font-black text-emerald-600">{totalWajib}</p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, delay: 0.08 }}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+                <ShieldOff size={21} strokeWidth={2.5} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Tidak Wajib
+                </p>
+                <p className="text-2xl font-black text-rose-600">{totalTidakWajib}</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+        >
+          <button
+            type="button"
+            onClick={() => setShowFilter((prev) => !prev)}
+            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <Search size={18} strokeWidth={2.5} />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-700">
+                  Pencarian & Filter
+                </p>
+              </div>
+            </div>
+
+            <ChevronDown
+              size={18}
+              strokeWidth={2.5}
+              className={`shrink-0 text-slate-400 transition-transform ${
+                showFilter ? "rotate-180" : "rotate-0"
+              }`}
+            />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {showFilter && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="overflow-hidden border-t border-slate-100"
+              >
+                <div className="p-4">
+                  <div className="grid gap-3 md:grid-cols-5">
+                    <div className="md:col-span-2">
+                      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        Cari Karyawan
+                      </label>
+
+                      <div className="relative">
+                        <Search
+                          size={16}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                          strokeWidth={2.5}
+                        />
+
+                        <input
+                          placeholder="Cari nama, email, toko..."
+                          value={search}
+                          onChange={(e) => {
+                            setSearch(e.target.value)
+                            setPage(1)
+                          }}
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                        />
                       </div>
                     </div>
 
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={saving}
-                      onChange={(e) => handleToggle(k, e.target.checked)}
-                      className="h-5 w-5 rounded border-slate-300 text-rose-500 focus:ring-rose-500 disabled:opacity-50 flex-shrink-0"
-                    />
-                  </div>
-
-                  <div className="mt-3 pt-3 border-t border-slate-100">
-                    <span
-                      className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black border ${
-                        checked
-                          ? "bg-rose-50 border-rose-200 text-rose-600"
-                          : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                      }`}
+                    <FilterSelect
+                      value={filterToko}
+                      onChange={(v) => {
+                        setFilterToko(v)
+                        setPage(1)
+                      }}
+                      label="Filter Toko"
+                      icon={Store}
                     >
-                      {checked ? "TIDAK WAJIB ABSEN" : "WAJIB ABSEN"}
-                    </span>
-                  </div>
-                </motion.div>
-              )
-            })}
-          </div>
+                      <option value="">Semua toko</option>
+                      {tokoOptions.map((toko) => (
+                        <option key={toko} value={toko}>
+                          {toko}
+                        </option>
+                      ))}
+                    </FilterSelect>
 
-          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60">
-            <p className="text-[10px] font-bold text-slate-400">
-              Menampilkan {filtered.length} dari {karyawanList.length} karyawan
-            </p>
+                    <FilterSelect
+                      value={filterStatus}
+                      onChange={(v) => {
+                        setFilterStatus(v as FilterStatus)
+                        setPage(1)
+                      }}
+                      label="Status"
+                      icon={ShieldCheck}
+                    >
+                      <option value="semua">Semua status</option>
+                      <option value="wajib">Wajib absen</option>
+                      <option value="tidak_wajib">Tidak wajib absen</option>
+                    </FilterSelect>
+
+                    <FilterSelect
+                      value={limitVal}
+                      onChange={(v) => {
+                        setLimitVal(Number(v))
+                        setPage(1)
+                      }}
+                      label="Tampil"
+                      icon={ListFilter}
+                    >
+                      {LIMIT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </FilterSelect>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              onClick={fetchData}
+              type="button"
+              disabled={loading}
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw
+                size={12}
+                className={loading ? "animate-spin" : ""}
+                strokeWidth={2.5}
+              />
+              Refresh
+            </motion.button>
           </div>
         </motion.div>
-      )}
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.05 }}
+          className="space-y-2"
+        >
+          <div className="hidden rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm lg:block">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-700">
+              Daftar Karyawan Absensi
+            </p>
+          </div>
+
+          {loading ? (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+            >
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
+                className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-emerald-500"
+              />
+
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                Memuat data karyawan...
+              </p>
+            </motion.div>
+          ) : paged.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                <CalendarOff size={28} className="text-slate-300" strokeWidth={2} />
+              </div>
+
+              <p className="text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+                Data karyawan belum tersedia
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="w-full space-y-2 lg:hidden">
+                {paged.map((item) => {
+                  const isTidakWajib = !!tidakWajibMap[item.id]
+                  const isLoading = loadingId === item.id
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex w-full items-start justify-between gap-2 overflow-hidden rounded-2xl border border-l-4 bg-white p-3 shadow-sm ${
+                        isTidakWajib
+                          ? "border-slate-200 border-l-rose-400"
+                          : "border-slate-200 border-l-emerald-400"
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${
+                              isTidakWajib
+                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            }`}
+                          >
+                            {isTidakWajib ? "Tidak Wajib Absen" : "Wajib Absen"}
+                          </span>
+                        </div>
+
+                        <p className="mt-2 break-words text-sm font-black leading-tight text-slate-800">
+                          {item.nama || "-"}
+                        </p>
+
+                        <p className="mt-0.5 break-words text-[10px] font-semibold uppercase leading-tight tracking-wide text-slate-400">
+                          {item.email || "-"} · {item.tokoNama || "-"}
+                        </p>
+                      </div>
+
+                      <motion.button
+                        whileTap={{ scale: 0.94 }}
+                        transition={{ duration: 0.12, ease: "easeOut" }}
+                        onClick={() => toggleTidakWajib(item)}
+                        disabled={!!loadingId}
+                        className={`inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border px-2.5 text-[9px] font-black uppercase tracking-[0.06em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                          isTidakWajib
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        }`}
+                      >
+                        {isLoading ? (
+                          <>
+                            <RefreshCw
+                              size={12}
+                              className="animate-spin"
+                              strokeWidth={2.5}
+                            />
+                            Proses
+                          </>
+                        ) : isTidakWajib ? (
+                          <>
+                            <ShieldCheck size={12} strokeWidth={2.5} />
+                            Wajibkan
+                          </>
+                        ) : (
+                          <>
+                            <ShieldOff size={12} strokeWidth={2.5} />
+                            Nonaktif
+                          </>
+                        )}
+                      </motion.button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:block">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-sm">
+                    <thead className="border-b border-slate-100 bg-slate-50/70">
+                      <tr>
+                        {["No", "Nama Karyawan", "Email", "Toko", "Status", "Aksi"].map(
+                          (head, index) => (
+                            <th
+                              key={head}
+                              className={`px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 ${
+                                index === 0 || index >= 4 ? "text-center" : "text-left"
+                              }`}
+                            >
+                              {head}
+                            </th>
+                          )
+                        )}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {paged.map((item, idx) => {
+                        const isTidakWajib = !!tidakWajibMap[item.id]
+                        const isLoading = loadingId === item.id
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className="border-b border-slate-100 hover:bg-slate-50/50"
+                          >
+                            <td className="px-4 py-3 text-center text-xs font-bold text-slate-400">
+                              {limitVal === 0 ? idx + 1 : (page - 1) * limitVal + idx + 1}
+                            </td>
+
+                            <td className="px-4 py-3 font-black text-slate-800">
+                              {item.nama || "-"}
+                            </td>
+
+                            <td className="px-4 py-3 text-xs font-semibold text-slate-600">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Mail size={12} className="text-slate-400" strokeWidth={2.4} />
+                                {item.email || "-"}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 text-xs font-semibold text-slate-600">
+                              {item.tokoNama || "-"}
+                            </td>
+
+                            <td className="px-4 py-3 text-center">
+                              <span
+                                className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase ${
+                                  isTidakWajib
+                                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                }`}
+                              >
+                                {isTidakWajib ? "Tidak Wajib" : "Wajib"}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 text-center">
+                              <motion.button
+                                whileTap={{ scale: 0.97 }}
+                                transition={{ duration: 0.12, ease: "easeOut" }}
+                                onClick={() => toggleTidakWajib(item)}
+                                disabled={!!loadingId}
+                                className={`inline-flex h-9 min-w-[132px] items-center justify-center gap-1.5 rounded-full border px-3 text-[10px] font-black uppercase tracking-[0.06em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                                  isTidakWajib
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                }`}
+                              >
+                                {isLoading ? (
+                                  <>
+                                    <RefreshCw
+                                      size={13}
+                                      className="animate-spin"
+                                      strokeWidth={2.5}
+                                    />
+                                    Memproses
+                                  </>
+                                ) : isTidakWajib ? (
+                                  <>
+                                    <ShieldCheck size={13} strokeWidth={2.5} />
+                                    Wajibkan
+                                  </>
+                                ) : (
+                                  <>
+                                    <ShieldOff size={13} strokeWidth={2.5} />
+                                    Tidak Wajib
+                                  </>
+                                )}
+                              </motion.button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </motion.div>
+
+        {!loading && filtered.length > 0 && limitVal !== 0 && totalPages > 1 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.15 }}
+            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Halaman {page} dari {totalPages}
+            </p>
+
+            <div className="flex gap-2">
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.12, ease: "easeOut" }}
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.06em] text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Prev
+              </motion.button>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.12, ease: "easeOut" }}
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page === totalPages}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.06em] text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-[10px] font-bold uppercase leading-relaxed tracking-widest text-amber-700">
+            Catatan: Karyawan yang ditandai tidak wajib absen dapat dikecualikan dari perhitungan alfa di sistem absensi.
+          </p>
+        </div>
+      </main>
     </div>
   )
 }

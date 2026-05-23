@@ -1,13 +1,13 @@
 /*
-  Halaman admin restock gabungan.
+  Halaman admin pembelian barang gabungan.
   Menampilkan:
   - barang fisik yang stoknya <= stok minimum
   - saldo digital yang jumlahSaldo <= jumlahMinimum
 
   Fitur:
-  - restock langsung dari halaman ini
-  - simpan riwayat restock barang ke koleksi riwayat_restock_barang
-  - simpan riwayat restock saldo digital ke koleksi riwayat_restock_saldo_digital
+  - pembelian barang langsung dari halaman ini
+  - simpan riwayat pembelian barang ke koleksi riwayat_pembelian_barang
+  - simpan riwayat pembelian saldo digital ke koleksi riwayat_pembelian_saldo_digital
 */
 
 "use client"
@@ -19,10 +19,12 @@ import {
   collection,
   doc,
   getDocs,
+  increment,
   limit,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore"
 import { useRouter } from "next/navigation"
@@ -34,6 +36,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Coins,
+  Cpu,
   Package,
   PencilLine,
   RefreshCw,
@@ -84,7 +87,7 @@ type Toko = {
   nama: string
 }
 
-type RestockItem =
+type PembelianItem =
   | {
       type: "barang"
       id: string
@@ -120,7 +123,7 @@ type RestockItem =
       badgeLabel: string
     }
 
-type RiwayatRestockRow = {
+type RiwayatPembelianRow = {
   id: string
   jenis: "barang" | "saldo"
   nama: string
@@ -136,10 +139,11 @@ const ITEMS_OPTIONS = [
   { value: 10, label: "10" },
   { value: 25, label: "25" },
   { value: 50, label: "50" },
+  { value: 100, label: "100" },
   { value: 0, label: "Semua" },
 ]
 
-const EMPTY_RESTOCK_FORM = {
+const EMPTY_PEMBELIAN_FORM = {
   jumlahTambah: "",
   catatan: "",
 }
@@ -160,8 +164,95 @@ function formatDateTime(value?: number) {
   }).format(new Date(value))
 }
 
-function formatNilai(item: RestockItem, value: number) {
+function formatNilai(item: PembelianItem, value: number) {
   return item.type === "saldo" ? formatRupiah(value) : String(value)
+}
+
+
+function getLocalTanggalMeta() {
+  const now = new Date()
+  const tahun = now.getFullYear()
+  const bulan = now.getMonth() + 1
+  const tanggal = `${tahun}-${String(bulan).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`
+  const bulanKey = `${tahun}-${String(bulan).padStart(2, "0")}`
+
+  return { tanggal, tahun, bulan, bulanKey }
+}
+
+function safeFieldKey(value: string) {
+  return String(value || "unknown")
+    .trim()
+    .replace(/[.~*/[\]]/g, "_")
+    .replace(/\s+/g, "_") || "unknown"
+}
+
+async function updateLaporanPembelianAggregate(params: {
+  jenis: "barang" | "saldo"
+  item: PembelianItem
+  jumlahTambah: number
+}) {
+  const { jenis, item, jumlahTambah } = params
+  const { tanggal, tahun, bulan, bulanKey } = getLocalTanggalMeta()
+
+  const isBarang = jenis === "barang"
+  const tokoKey = safeFieldKey(item.tokoId || item.tokoNama || "tanpa_toko")
+  const kategoriKey = safeFieldKey(item.kategoriId || item.kategoriNama || "tanpa_kategori")
+
+  const base = {
+    tanggal,
+    tahun,
+    bulan,
+    bulanKey,
+    updatedAt: serverTimestamp(),
+  }
+
+  const counterPayload = isBarang
+    ? {
+        totalTransaksi: increment(1),
+        totalPembelianBarang: increment(1),
+        totalKuantitasBarang: increment(jumlahTambah),
+        [`perToko.${tokoKey}.tokoId`]: item.tokoId || "",
+        [`perToko.${tokoKey}.tokoNama`]: item.tokoNama || "-",
+        [`perToko.${tokoKey}.totalTransaksi`]: increment(1),
+        [`perToko.${tokoKey}.totalKuantitasBarang`]: increment(jumlahTambah),
+        [`perKategori.${kategoriKey}.kategoriId`]: item.kategoriId || "",
+        [`perKategori.${kategoriKey}.kategoriNama`]: item.kategoriNama || "-",
+        [`perKategori.${kategoriKey}.totalTransaksi`]: increment(1),
+        [`perKategori.${kategoriKey}.totalKuantitasBarang`]: increment(jumlahTambah),
+      }
+    : {
+        totalTransaksi: increment(1),
+        totalTopupSaldo: increment(1),
+        totalNominalSaldo: increment(jumlahTambah),
+        [`perKategori.saldo_digital.kategoriId`]: "saldo-digital",
+        [`perKategori.saldo_digital.kategoriNama`]: "Saldo Digital",
+        [`perKategori.saldo_digital.totalTransaksi`]: increment(1),
+        [`perKategori.saldo_digital.totalNominalSaldo`]: increment(jumlahTambah),
+      }
+
+  await Promise.all([
+    setDoc(
+      doc(db, "laporan_pembelian_barang_harian", tanggal),
+      {
+        ...base,
+        ...counterPayload,
+      },
+      { merge: true }
+    ),
+    setDoc(
+      doc(db, "laporan_pembelian_barang_bulanan", bulanKey),
+      {
+        tahun,
+        bulan,
+        bulanKey,
+        updatedAt: serverTimestamp(),
+        ...counterPayload,
+      },
+      { merge: true }
+    ),
+  ])
 }
 
 function FilterSelect({
@@ -195,9 +286,9 @@ function FilterSelect({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
+          className={`w-full appearance-none rounded-2xl border-2 border-slate-200 bg-white ${
             Icon ? "pl-8" : "pl-3"
-          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20`}
+          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
         >
           {children}
         </select>
@@ -236,7 +327,7 @@ function FormInput({
       <div className="relative">
         <input
           {...props}
-          className={`w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 ${
+          className={`w-full rounded-2xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
             rightSlot ? "pr-24" : ""
           }`}
         />
@@ -268,20 +359,20 @@ function FormTextarea({
 
       <textarea
         {...props}
-        className="min-h-[110px] w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+        className="min-h-[110px] w-full rounded-2xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
       />
     </div>
   )
 }
 
-export default function RestockBarangPage() {
+export default function PembelianBarangPage() {
   const router = useRouter()
 
   const [barangList, setBarangList] = useState<Barang[]>([])
   const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([])
   const [kategoriList, setKategoriList] = useState<KategoriBarang[]>([])
   const [tokoList, setTokoList] = useState<Toko[]>([])
-  const [riwayatList, setRiwayatList] = useState<RiwayatRestockRow[]>([])
+  const [riwayatList, setRiwayatList] = useState<RiwayatPembelianRow[]>([])
 
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
@@ -294,8 +385,8 @@ export default function RestockBarangPage() {
   const [page, setPage] = useState(1)
 
   const [showModal, setShowModal] = useState(false)
-  const [selectedItem, setSelectedItem] = useState<RestockItem | null>(null)
-  const [restockForm, setRestockForm] = useState(EMPTY_RESTOCK_FORM)
+  const [selectedItem, setSelectedItem] = useState<PembelianItem | null>(null)
+  const [pembelianForm, setPembelianForm] = useState(EMPTY_PEMBELIAN_FORM)
 
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -396,19 +487,19 @@ export default function RestockBarangPage() {
   const fetchRiwayat = async () => {
     try {
       const qBarang = query(
-        collection(db, "riwayat_restock_barang"),
+        collection(db, "riwayat_pembelian_barang"),
         orderBy("createdAt", "desc"),
         limit(10)
       )
       const qSaldo = query(
-        collection(db, "riwayat_restock_saldo_digital"),
+        collection(db, "riwayat_pembelian_saldo_digital"),
         orderBy("createdAt", "desc"),
         limit(10)
       )
 
       const [snapBarang, snapSaldo] = await Promise.all([getDocs(qBarang), getDocs(qSaldo)])
 
-      const listBarang: RiwayatRestockRow[] = snapBarang.docs.map((d) => {
+      const listBarang: RiwayatPembelianRow[] = snapBarang.docs.map((d) => {
         const x = d.data() as any
         return {
           id: d.id,
@@ -416,7 +507,7 @@ export default function RestockBarangPage() {
           nama: x?.namaBarang || "",
           sumber: x?.supplier || x?.tokoNama || "-",
           stokSebelum: Number(x?.stokSebelum || 0),
-          jumlahTambah: Number(x?.jumlahTambah || 0),
+          jumlahTambah: Number(x?.jumlahBeli || x?.jumlahTambah || 0),
           stokSesudah: Number(x?.stokSesudah || 0),
           catatan: x?.catatan || "",
           createdAt:
@@ -426,7 +517,7 @@ export default function RestockBarangPage() {
         }
       })
 
-      const listSaldo: RiwayatRestockRow[] = snapSaldo.docs.map((d) => {
+      const listSaldo: RiwayatPembelianRow[] = snapSaldo.docs.map((d) => {
         const x = d.data() as any
         return {
           id: d.id,
@@ -434,7 +525,7 @@ export default function RestockBarangPage() {
           nama: x?.namaSaldo || "",
           sumber: x?.keterangan || "Saldo Digital",
           stokSebelum: Number(x?.saldoSebelum || 0),
-          jumlahTambah: Number(x?.jumlahTambah || 0),
+          jumlahTambah: Number(x?.jumlahTopup || x?.jumlahTambah || 0),
           stokSesudah: Number(x?.saldoSesudah || 0),
           catatan: x?.catatan || "",
           createdAt:
@@ -467,7 +558,7 @@ export default function RestockBarangPage() {
       ])
     } catch (error) {
       console.error(error)
-      setError("Gagal memuat data restock")
+      setError("Gagal memuat data pembelian")
     } finally {
       setLoading(false)
     }
@@ -482,8 +573,8 @@ export default function RestockBarangPage() {
     return () => unsub()
   }, [])
 
-  const restockItems = useMemo<RestockItem[]>(() => {
-    const barangNeedRestock: RestockItem[] = barangList
+  const pembelianItems = useMemo<PembelianItem[]>(() => {
+    const barangNeedPembelian: PembelianItem[] = barangList
       .filter((item) => item.jenisBarang === "fisik")
       .filter((item) => item.stok <= item.stokMinimum)
       .map((item) => ({
@@ -504,7 +595,7 @@ export default function RestockBarangPage() {
         badgeLabel: "Barang",
       }))
 
-    const saldoNeedRestock: RestockItem[] = saldoList
+    const saldoNeedPembelian: PembelianItem[] = saldoList
       .filter((item) => item.aktif)
       .filter((item) => item.jumlahSaldo <= item.jumlahMinimum)
       .map((item) => ({
@@ -525,13 +616,13 @@ export default function RestockBarangPage() {
         badgeLabel: "Saldo",
       }))
 
-    return [...barangNeedRestock, ...saldoNeedRestock]
+    return [...barangNeedPembelian, ...saldoNeedPembelian]
   }, [barangList, saldoList])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
 
-    return restockItems
+    return pembelianItems
       .filter((item) => {
         const matchSearch =
           !q ||
@@ -557,10 +648,10 @@ export default function RestockBarangPage() {
         if (b.kekurangan !== a.kekurangan) return b.kekurangan - a.kekurangan
         return a.nama.localeCompare(b.nama)
       })
-  }, [restockItems, search, filterKategori, filterToko, filterJenis])
+  }, [pembelianItems, search, filterKategori, filterToko, filterJenis])
 
-  const totalBarangRestock = filtered.filter((item) => item.type === "barang").length
-  const totalSaldoRestock = filtered.filter((item) => item.type === "saldo").length
+  const totalBarangPembelian = filtered.filter((item) => item.type === "barang").length
+  const totalSaldoPembelian = filtered.filter((item) => item.type === "saldo").length
   const totalKekuranganBarang = filtered
     .filter((item) => item.type === "barang")
     .reduce((sum, item) => sum + item.kekurangan, 0)
@@ -578,27 +669,27 @@ export default function RestockBarangPage() {
 
   const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
 
-  const openRestockModal = (item: RestockItem) => {
+  const openPembelianModal = (item: PembelianItem) => {
     setSelectedItem(item)
-    setRestockForm(EMPTY_RESTOCK_FORM)
+    setPembelianForm(EMPTY_PEMBELIAN_FORM)
     setError(null)
     setShowModal(true)
   }
 
-  const closeRestockModal = () => {
+  const closePembelianModal = () => {
     setShowModal(false)
     setSelectedItem(null)
-    setRestockForm(EMPTY_RESTOCK_FORM)
+    setPembelianForm(EMPTY_PEMBELIAN_FORM)
     setError(null)
   }
 
-  const handleSubmitRestock = async (e: React.FormEvent) => {
+  const handleSubmitPembelian = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const user = auth.currentUser
     if (!user || !selectedItem) return
 
-    const jumlahTambah = Number(restockForm.jumlahTambah || 0)
+    const jumlahTambah = Number(pembelianForm.jumlahTambah || 0)
     if (Number.isNaN(jumlahTambah) || jumlahTambah <= 0) {
       setError("Jumlah tambah harus lebih dari 0")
       return
@@ -618,18 +709,36 @@ export default function RestockBarangPage() {
           updatedBy: user.uid,
         })
 
-        await addDoc(collection(db, "riwayat_restock_barang"), {
+        const { tanggal, tahun, bulan, bulanKey } = getLocalTanggalMeta()
+
+        await addDoc(collection(db, "riwayat_pembelian_barang"), {
+          jenis: "barang",
           barangId: selectedItem.id,
           namaBarang: selectedItem.nama,
+          kodeBarang: selectedItem.kodeRef,
+          kategoriId: selectedItem.kategoriId,
+          kategoriNama: selectedItem.kategoriNama,
           tokoId: selectedItem.tokoId,
           tokoNama: selectedItem.tokoNama,
           supplier: selectedItem.supplier,
+          satuan: selectedItem.satuanLabel,
           stokSebelum,
+          jumlahBeli: jumlahTambah,
           jumlahTambah,
           stokSesudah,
-          catatan: restockForm.catatan.trim(),
+          catatan: pembelianForm.catatan.trim(),
+          tanggal,
+          tahun,
+          bulan,
+          bulanKey,
           createdAt: serverTimestamp(),
           createdBy: user.uid,
+        })
+
+        await updateLaporanPembelianAggregate({
+          jenis: "barang",
+          item: selectedItem,
+          jumlahTambah,
         })
       } else {
         const saldoSebelum = Number(selectedItem.stokSekarang || 0)
@@ -641,54 +750,68 @@ export default function RestockBarangPage() {
           updatedBy: user.uid,
         })
 
-        await addDoc(collection(db, "riwayat_restock_saldo_digital"), {
+        const { tanggal, tahun, bulan, bulanKey } = getLocalTanggalMeta()
+
+        await addDoc(collection(db, "riwayat_pembelian_saldo_digital"), {
+          jenis: "saldo",
           saldoId: selectedItem.id,
           namaSaldo: selectedItem.nama,
           saldoSebelum,
+          jumlahTopup: jumlahTambah,
           jumlahTambah,
           saldoSesudah,
           keterangan: selectedItem.subtitle,
-          catatan: restockForm.catatan.trim(),
+          catatan: pembelianForm.catatan.trim(),
+          tanggal,
+          tahun,
+          bulan,
+          bulanKey,
           createdAt: serverTimestamp(),
           createdBy: user.uid,
         })
+
+        await updateLaporanPembelianAggregate({
+          jenis: "saldo",
+          item: selectedItem,
+          jumlahTambah,
+        })
       }
 
-      closeRestockModal()
+      closePembelianModal()
       await Promise.all([fetchBarang(), fetchSaldo(), fetchRiwayat()])
       setSuccessMsg(
         selectedItem.type === "barang"
-          ? "Restock barang berhasil disimpan"
-          : "Restock saldo berhasil disimpan"
+          ? "Pembelian barang berhasil disimpan"
+          : "Pembelian saldo berhasil disimpan"
       )
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (error) {
       console.error(error)
-      setError("Gagal menyimpan restock")
+      setError("Gagal menyimpan pembelian")
     } finally {
       setSubmitLoading(false)
     }
   }
 
   return (
-    <div className="space-y-4 text-slate-900 sm:space-y-5">
+    <div className="relative min-h-screen space-y-4 bg-white p-3 pb-28 text-slate-900 sm:space-y-5 sm:p-4 lg:p-5">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm sm:p-5"
+        className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-200/50 sm:h-14 sm:w-14">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
               <AlertTriangle size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
             </div>
 
             <div className="min-w-0 self-center sm:self-auto">
-              <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Restock Barang
+              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                Pembelian Barang
               </h1>
-              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Barang fisik dan saldo digital yang sudah menyentuh batas minimum
+              <p className="mt-1 hidden text-xs font-semibold leading-relaxed text-emerald-50/85 sm:block sm:text-sm">
+                Barang fisik dan saldo digital yang perlu ditambah stoknya
               </p>
             </div>
           </div>
@@ -698,7 +821,7 @@ export default function RestockBarangPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => router.push("/admin/tambah-barang")}
-              className="flex h-8 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-slate-700 shadow-sm transition-all hover:bg-slate-50"
+              className="flex h-8 items-center justify-center rounded-full border border-white/20 bg-white/10 px-3 text-white transition-all hover:bg-white/15"
             >
               <Package size={13} strokeWidth={3} />
               <span className="ml-1.5 text-[10px] font-black uppercase tracking-wide">
@@ -710,7 +833,7 @@ export default function RestockBarangPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => router.push("/admin/tambah-saldo")}
-              className="flex h-8 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-slate-700 shadow-sm transition-all hover:bg-slate-50"
+              className="flex h-8 items-center justify-center rounded-full border border-white/20 bg-white/10 px-3 text-white transition-all hover:bg-white/15"
             >
               <Wallet size={13} strokeWidth={3} />
               <span className="ml-1.5 text-[10px] font-black uppercase tracking-wide">
@@ -723,17 +846,23 @@ export default function RestockBarangPage() {
               whileTap={{ scale: 0.95 }}
               onClick={fetchAll}
               disabled={loading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/15 disabled:opacity-50"
               title="Refresh"
             >
               <motion.span
                 animate={loading ? { rotate: 360 } : {}}
                 transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
               >
-                <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
+                <RefreshCw size={14} className="text-white" strokeWidth={2.5} />
               </motion.span>
             </motion.button>
           </div>
+        </div>
+
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-0 opacity-[0.05]">
+          <Cpu size={170} className="text-white" strokeWidth={1} />
         </div>
       </motion.div>
 
@@ -743,7 +872,7 @@ export default function RestockBarangPage() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
+            className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
           >
             <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
               <AlertTriangle size={11} className="text-white" strokeWidth={3} />
@@ -759,7 +888,7 @@ export default function RestockBarangPage() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5"
+            className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5"
           >
             <AlertCircle size={14} className="flex-shrink-0 text-red-500" strokeWidth={2.5} />
             <p className="text-[11px] font-bold text-red-600">{error}</p>
@@ -772,17 +901,17 @@ export default function RestockBarangPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.04 }}
-          className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm"
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100">
-              <Package size={20} className="text-amber-600" strokeWidth={2.5} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50">
+              <Package size={20} className="text-emerald-600" strokeWidth={2.5} />
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Barang Restock
+                Barang Pembelian
               </p>
-              <p className="mt-1 text-xl font-black text-slate-800">{totalBarangRestock}</p>
+              <p className="mt-1 text-xl font-black text-slate-800">{totalBarangPembelian}</p>
             </div>
           </div>
         </motion.div>
@@ -791,11 +920,11 @@ export default function RestockBarangPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.08 }}
-          className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-red-500 bg-white p-4 shadow-sm"
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-100">
-              <Boxes size={20} className="text-red-600" strokeWidth={2.5} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50">
+              <Boxes size={20} className="text-emerald-600" strokeWidth={2.5} />
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -810,17 +939,17 @@ export default function RestockBarangPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12 }}
-          className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-cyan-500 bg-white p-4 shadow-sm"
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-100">
-              <Wallet size={20} className="text-cyan-600" strokeWidth={2.5} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100">
+              <Wallet size={20} className="text-emerald-600" strokeWidth={2.5} />
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Saldo Restock
+                Saldo Pembelian
               </p>
-              <p className="mt-1 text-xl font-black text-slate-800">{totalSaldoRestock}</p>
+              <p className="mt-1 text-xl font-black text-slate-800">{totalSaldoPembelian}</p>
             </div>
           </div>
         </motion.div>
@@ -829,11 +958,11 @@ export default function RestockBarangPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.16 }}
-          className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-violet-500 bg-white p-4 shadow-sm"
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100">
-              <Coins size={20} className="text-violet-600" strokeWidth={2.5} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50">
+              <Coins size={20} className="text-emerald-600" strokeWidth={2.5} />
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -851,12 +980,12 @@ export default function RestockBarangPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
-        className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="sm:col-span-2 lg:col-span-2">
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Cari Item Restock
+              Cari Item Pembelian
             </label>
             <div className="relative">
               <Search
@@ -871,7 +1000,7 @@ export default function RestockBarangPage() {
                   setPage(1)
                 }}
                 placeholder="Nama, barcode, supplier, saldo, toko..."
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                className="w-full rounded-2xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
           </div>
@@ -949,10 +1078,10 @@ export default function RestockBarangPage() {
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-amber-500"
+              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
             />
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Memuat data restock...
+              Memuat data pembelian...
             </p>
           </div>
         </div>
@@ -968,7 +1097,7 @@ export default function RestockBarangPage() {
             <ShieldAlert size={28} className="text-slate-300" strokeWidth={2} />
           </div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Tidak ada item yang perlu direstock
+            Tidak ada item yang perlu dibeli
           </p>
         </motion.div>
       )}
@@ -982,7 +1111,7 @@ export default function RestockBarangPage() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03 }}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -995,7 +1124,7 @@ export default function RestockBarangPage() {
                   <span
                     className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-black ${
                       item.type === "saldo"
-                        ? "bg-cyan-100 text-cyan-700"
+                        ? "bg-emerald-100 text-emerald-700"
                         : "bg-red-100 text-red-700"
                     }`}
                   >
@@ -1018,7 +1147,7 @@ export default function RestockBarangPage() {
                 </div>
 
                 <div className="mt-3 grid grid-cols-3 gap-2">
-                  <div className="rounded-xl bg-slate-50 p-2">
+                  <div className="rounded-2xl bg-slate-50 p-2">
                     <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                       Sekarang
                     </p>
@@ -1027,7 +1156,7 @@ export default function RestockBarangPage() {
                     </p>
                   </div>
 
-                  <div className="rounded-xl bg-amber-50 p-2">
+                  <div className="rounded-2xl bg-amber-50 p-2">
                     <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">
                       Minimum
                     </p>
@@ -1036,7 +1165,7 @@ export default function RestockBarangPage() {
                     </p>
                   </div>
 
-                  <div className="rounded-xl bg-red-50 p-2">
+                  <div className="rounded-2xl bg-red-50 p-2">
                     <p className="text-[9px] font-black uppercase tracking-widest text-red-500">
                       Kurang
                     </p>
@@ -1047,11 +1176,11 @@ export default function RestockBarangPage() {
                 </div>
 
                 <button
-                  onClick={() => openRestockModal(item)}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 py-2 text-xs font-black text-white shadow-sm"
+                  onClick={() => openPembelianModal(item)}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-2 text-xs font-black text-white shadow-sm"
                 >
                   <PencilLine size={13} strokeWidth={2.5} />
-                  Restock Sekarang
+                  Beli Sekarang
                 </button>
               </motion.div>
             ))}
@@ -1101,7 +1230,7 @@ export default function RestockBarangPage() {
                         <span
                           className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-black ${
                             item.type === "saldo"
-                              ? "bg-cyan-100 text-cyan-700"
+                              ? "bg-emerald-100 text-emerald-700"
                               : "bg-red-100 text-red-700"
                           }`}
                         >
@@ -1125,7 +1254,7 @@ export default function RestockBarangPage() {
                             </div>
                           </>
                         ) : (
-                          <div className="inline-flex items-center gap-1 rounded-lg bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-700">
+                          <div className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">
                             <Wallet size={11} strokeWidth={2.5} />
                             Saldo Digital
                           </div>
@@ -1153,11 +1282,11 @@ export default function RestockBarangPage() {
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
                           <button
-                            onClick={() => openRestockModal(item)}
-                            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white shadow-sm"
+                            onClick={() => openPembelianModal(item)}
+                            className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white shadow-sm"
                           >
                             <PencilLine size={13} strokeWidth={2.5} />
-                            Restock
+                            Pembelian
                           </button>
                         </div>
                       </td>
@@ -1168,10 +1297,8 @@ export default function RestockBarangPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <p className="text-xs font-bold text-slate-500">
-              Halaman {page} dari {totalPages}
-            </p>
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div />
 
             <div className="flex items-center gap-2">
               <button
@@ -1194,15 +1321,16 @@ export default function RestockBarangPage() {
         </>
       )}
 
+
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18 }}
-        className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
       >
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-black text-slate-800">Riwayat Restock Terbaru</h2>
+            <h2 className="text-sm font-black text-slate-800">Riwayat Pembelian Terbaru</h2>
             <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
               Barang fisik dan saldo digital
             </p>
@@ -1210,15 +1338,15 @@ export default function RestockBarangPage() {
         </div>
 
         {riwayatList.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Belum ada riwayat restock.</p>
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold text-slate-500">Belum ada riwayat pembelian.</p>
           </div>
         ) : (
           <div className="space-y-2">
             {riwayatList.slice(0, 8).map((item) => (
               <div
                 key={`${item.jenis}-${item.id}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -1227,7 +1355,7 @@ export default function RestockBarangPage() {
                       <span
                         className={`inline-flex rounded-lg px-2 py-1 text-[10px] font-black ${
                           item.jenis === "saldo"
-                            ? "bg-cyan-100 text-cyan-700"
+                            ? "bg-emerald-100 text-emerald-700"
                             : "bg-emerald-100 text-emerald-700"
                         }`}
                       >
@@ -1263,7 +1391,7 @@ export default function RestockBarangPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onMouseDown={(e) => {
-              if (e.target === e.currentTarget) closeRestockModal()
+              if (e.target === e.currentTarget) closePembelianModal()
             }}
           >
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
@@ -1275,15 +1403,15 @@ export default function RestockBarangPage() {
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             >
-              <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 py-4">
+              <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-6 py-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/20">
                     <PencilLine size={18} className="text-white" strokeWidth={2.5} />
                   </div>
 
                   <div>
                     <h2 className="text-base font-black leading-none text-white">
-                      Restock {selectedItem.type === "saldo" ? "Saldo" : "Barang"}
+                      Pembelian {selectedItem.type === "saldo" ? "Saldo" : "Barang"}
                     </h2>
                     <p className="mt-0.5 text-[10px] font-semibold text-white/70">
                       {selectedItem.nama}
@@ -1292,14 +1420,14 @@ export default function RestockBarangPage() {
                 </div>
 
                 <button
-                  onClick={closeRestockModal}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white transition-colors hover:bg-white/30"
+                  onClick={closePembelianModal}
+                  className="flex h-8 w-8 items-center justify-center rounded-2xl bg-white/20 text-white transition-colors hover:bg-white/30"
                 >
                   <X size={16} strokeWidth={2.5} />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmitRestock} className="flex-1 overflow-y-auto">
+              <form onSubmit={handleSubmitPembelian} className="flex-1 overflow-y-auto">
                 <div className="space-y-5 p-6">
                   <AnimatePresence>
                     {error && (
@@ -1307,7 +1435,7 @@ export default function RestockBarangPage() {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5"
+                        className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2.5"
                       >
                         <AlertCircle size={14} className="flex-shrink-0 text-red-500" strokeWidth={2.5} />
                         <p className="text-[11px] font-bold text-red-600">{error}</p>
@@ -1316,7 +1444,7 @@ export default function RestockBarangPage() {
                   </AnimatePresence>
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-4">
+                    <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-4">
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                         Sekarang
                       </p>
@@ -1325,7 +1453,7 @@ export default function RestockBarangPage() {
                       </p>
                     </div>
 
-                    <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+                    <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-4">
                       <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">
                         Minimum
                       </p>
@@ -1334,7 +1462,7 @@ export default function RestockBarangPage() {
                       </p>
                     </div>
 
-                    <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4">
+                    <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-4">
                       <p className="text-[9px] font-black uppercase tracking-widest text-red-500">
                         Kurang
                       </p>
@@ -1344,11 +1472,11 @@ export default function RestockBarangPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border-2 border-cyan-100 bg-cyan-50 px-4 py-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-cyan-600">
+                  <div className="rounded-2xl border-2 border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
                       Detail Item
                     </p>
-                    <p className="mt-1 text-xs font-semibold text-cyan-700">
+                    <p className="mt-1 text-xs font-semibold text-emerald-700">
                       {selectedItem.type === "barang"
                         ? `${selectedItem.kategoriNama} · ${selectedItem.tokoNama} · ${selectedItem.supplier}`
                         : `${selectedItem.nama} · saldo digital`}
@@ -1361,9 +1489,9 @@ export default function RestockBarangPage() {
                       required
                       icon={selectedItem.type === "saldo" ? Wallet : Package}
                       inputMode="numeric"
-                      value={restockForm.jumlahTambah}
+                      value={pembelianForm.jumlahTambah}
                       onChange={(e: any) =>
-                        setRestockForm((prev) => ({
+                        setPembelianForm((prev) => ({
                           ...prev,
                           jumlahTambah: e.target.value.replace(/[^\d]/g, ""),
                         }))
@@ -1373,26 +1501,26 @@ export default function RestockBarangPage() {
                         <span
                           className={`rounded-lg px-2.5 py-1 text-[10px] font-black ${
                             selectedItem.type === "saldo"
-                              ? "bg-cyan-50 text-cyan-700"
+                              ? "bg-emerald-50 text-emerald-700"
                               : "bg-emerald-50 text-emerald-700"
                           }`}
                         >
                           {selectedItem.type === "saldo"
-                            ? formatRupiah(Number(restockForm.jumlahTambah || 0))
-                            : Number(restockForm.jumlahTambah || 0)}
+                            ? formatRupiah(Number(pembelianForm.jumlahTambah || 0))
+                            : Number(pembelianForm.jumlahTambah || 0)}
                         </span>
                       }
                     />
 
-                    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-4">
+                    <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4">
                       <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">
-                        Hasil Setelah Restock
+                        Hasil Setelah Pembelian
                       </p>
                       <p className="mt-1 text-sm font-black text-emerald-700">
                         {formatNilai(
                           selectedItem,
                           Number(selectedItem.stokSekarang || 0) +
-                            Number(restockForm.jumlahTambah || 0)
+                            Number(pembelianForm.jumlahTambah || 0)
                         )}
                       </p>
                     </div>
@@ -1401,11 +1529,11 @@ export default function RestockBarangPage() {
                       <FormTextarea
                         label="Catatan"
                         icon={AlertCircle}
-                        value={restockForm.catatan}
+                        value={pembelianForm.catatan}
                         onChange={(e: any) =>
-                          setRestockForm((prev) => ({ ...prev, catatan: e.target.value }))
+                          setPembelianForm((prev) => ({ ...prev, catatan: e.target.value }))
                         }
-                        placeholder="Opsional. Contoh: restock dari supplier utama / topup saldo dari aplikasi."
+                        placeholder="Opsional. Contoh: pembelian dari supplier utama / topup saldo dari aplikasi."
                       />
                     </div>
                   </div>
@@ -1414,8 +1542,8 @@ export default function RestockBarangPage() {
                 <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
                   <button
                     type="button"
-                    onClick={closeRestockModal}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100"
+                    onClick={closePembelianModal}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100"
                   >
                     Batal
                   </button>
@@ -1423,9 +1551,9 @@ export default function RestockBarangPage() {
                   <button
                     type="submit"
                     disabled={submitLoading}
-                    className="rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50"
+                    className="rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50"
                   >
-                    {submitLoading ? "Menyimpan..." : "Simpan Restock"}
+                    {submitLoading ? "Menyimpan..." : "Simpan Pembelian"}
                   </button>
                 </div>
               </form>

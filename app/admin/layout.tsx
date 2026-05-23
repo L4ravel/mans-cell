@@ -5,6 +5,7 @@
   Revisi:
   - hapus mekanisme scale desktop berbasis zoom
   - badge menghitung total item restock dari barang fisik + saldo digital
+  - badge orange menghitung pengajuan izin/sakit karyawan yang pending approval
   - sidebar dikelompokkan ulang agar lebih rapi
   - role karyawan diizinkan masuk layout
   - role karyawan hanya bisa akses kelompok Transaksi + Terima Barang
@@ -23,6 +24,7 @@ import {
   getDoc,
   getDocs,
   query,
+  where,
 } from "firebase/firestore"
 import {
   Home,
@@ -82,6 +84,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authLoading, setAuthLoading] = useState(true)
   const [isAuthorized, setIsAuthorized] = useState(false)
   const [restockCount, setRestockCount] = useState(0)
+  const [approvalCount, setApprovalCount] = useState(0)
   const [userRole, setUserRole] = useState<UserRole>("")
 
   const allMenuGroups: MenuGroup[] = useMemo(
@@ -150,7 +153,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             label: "Laporan Absensi Karyawan",
           },
           { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
-          { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
+             { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
+          {
+            href: "/admin/persetujuan-absensi-karyawan",
+            icon: ClipboardList,
+            label: "Persetujuan Absensi",
+          },
           {
             href: "/admin/laporan-absensi-bulanan",
             icon: ClipboardList,
@@ -226,6 +234,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         "/admin/laporan-absensi-karyawan",
         "/admin/pengaturan-jam",
         "/admin/tidak-wajib-absensi",
+        "/admin/persetujuan-absensi-karyawan",
         "/admin/laporan-absensi-bulanan",
       ]
     }
@@ -277,6 +286,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     } catch (error) {
       console.error("Gagal memuat notifikasi restock:", error)
       setRestockCount(0)
+    }
+  }
+
+  const fetchApprovalCount = async () => {
+    try {
+      const snap = await getDocs(
+        query(
+          collection(db, "absensi_karyawan"),
+          where("approvalStatus", "==", "pending"),
+          where("status", "in", ["izin", "sakit"])
+        )
+      )
+
+      setApprovalCount(snap.size)
+    } catch (error) {
+      console.error("Gagal memuat notifikasi persetujuan absensi:", error)
+      setApprovalCount(0)
     }
   }
 
@@ -338,6 +364,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/dashboard-absensi") ||
       currentPath.startsWith("/admin/pengaturan-jam") ||
       currentPath.startsWith("/admin/tidak-wajib-absensi") ||
+      currentPath.startsWith("/admin/persetujuan-absensi-karyawan") ||
       currentPath.startsWith("/admin/laporan-absensi-bulanan") ||
       currentPath.startsWith("/admin/laporan-absensi-karyawan")
     ) {
@@ -397,7 +424,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         setUserRole(role)
         setIsAuthorized(true)
-        await fetchRestockCount()
+
+        if (role === "admin") {
+          await Promise.all([fetchRestockCount(), fetchApprovalCount()])
+        } else {
+          await fetchRestockCount()
+          setApprovalCount(0)
+        }
       } catch (error) {
         console.error("Gagal validasi user admin/karyawan:", error)
         setUserRole("")
@@ -416,8 +449,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!hasHydrated || !isAuthorized) return
+
+    if (userRole === "admin") {
+      fetchRestockCount()
+      fetchApprovalCount()
+      return
+    }
+
     fetchRestockCount()
-  }, [pathname, hasHydrated, isAuthorized])
+    setApprovalCount(0)
+  }, [pathname, hasHydrated, isAuthorized, userRole])
 
   useEffect(() => {
     if (!hasHydrated) return
@@ -610,6 +651,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         const ItemIcon = item.icon
                         const active = isActive(item.href)
                         const isRestockMenu = item.href === "/admin/restock-barang"
+                        const isApprovalMenu = item.href === "/admin/persetujuan-absensi-karyawan"
 
                         return (
                           <motion.div
@@ -653,6 +695,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                   }`}
                                 >
                                   {restockCount}
+                                </span>
+                              )}
+                              {isApprovalMenu && approvalCount > 0 && (
+                                <span
+                                  className={`ml-auto inline-flex min-w-[1.35rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                                    active
+                                      ? "bg-white text-orange-600"
+                                      : "bg-orange-500 text-white"
+                                  }`}
+                                >
+                                  {approvalCount}
                                 </span>
                               )}
                             </Link>
