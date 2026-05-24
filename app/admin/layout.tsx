@@ -1,14 +1,11 @@
 /* 
-  Layout admin desktop tanpa pengunci zoom.
-  Desktop kembali normal responsif, mobile tetap seperti sebelumnya.
-
+  Layout Admin Mans-Cell.
   Revisi:
-  - hapus mekanisme scale desktop berbasis zoom
-  - badge menghitung total item restock dari barang fisik + saldo digital
-  - badge orange menghitung pengajuan izin/sakit karyawan yang pending approval
-  - sidebar dikelompokkan ulang agar lebih rapi
-  - role karyawan diizinkan masuk layout
-  - role karyawan hanya bisa akses kelompok Transaksi + Terima Barang
+  - sidebar dirapikan menjadi Data Master, Transaksi Kasir, Transaksi Admin, Laporan, dan Absensi Karyawan
+  - sub menu Absensi Karyawan tetap seperti struktur awal
+  - layout dibuat konsisten dengan style PTK: container utama putih bersih
+  - warna biru muda hanya dipakai sebagai aksen aktif, icon, hover, dan badge
+  - badge restock dan approval tetap aktif
 */
 
 "use client"
@@ -40,6 +37,10 @@ import {
   Users,
   Package,
   Building2,
+  Tag,
+  Ruler,
+  Truck,
+  Wifi,
   KeyRound,
   LogOut,
   Calendar,
@@ -90,56 +91,55 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const allMenuGroups: MenuGroup[] = useMemo(
     () => [
       {
-        label: "Master Data",
+        label: "Data Master",
         icon: Database,
         items: [
-          { href: "/admin/tambah-toko", icon: Store, label: "Toko" },
-          { href: "/admin/tambah-karyawan", icon: Users, label: "Karyawan" },
-          { href: "/admin/tambah-saldo", icon: Wallet, label: "Saldo" },
-          { href: "/admin/tambah-barang", icon: Package, label: "Barang" },
-          { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Barang Tetap" },
-        ],
-      },
-      {
-        label: "Stok & Distribusi",
-        icon: Boxes,
-        items: [
-          { href: "/admin/restock-barang", icon: AlertTriangle, label: "Restock Barang" },
-          { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
-          { href: "/admin/terima-barang", icon: ArrowDownToLine, label: "Terima Barang" },
-          { href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
-        ],
-      },
-      {
-        label: "Pelanggan & Akun",
-        icon: UserPlus,
-        items: [
-          { href: "/admin/tambah-pelanggan", icon: Users, label: "Pelanggan" },
+          { href: "/admin/tambah-toko", icon: Store, label: "Data Toko" },
+          { href: "/admin/tambah-karyawan", icon: Users, label: "Data Karyawan" },
+          { href: "/admin/tambah-pelanggan", icon: Users, label: "Data Pelanggan" },
           { href: "/admin/akun-pelanggan", icon: UserPlus, label: "Akun Pelanggan" },
           { href: "/admin/buat-akun", icon: KeyRound, label: "Akun Karyawan" },
+          { href: "/admin/tambah-kategori", icon: Tag, label: "Kategori Barang" },
+          { href: "/admin/tambah-satuan", icon: Ruler, label: "Satuan Barang" },
+          { href: "/admin/tambah-supplier", icon: Truck, label: "Supplier" },
+          { href: "/admin/tambah-saldo", icon: Wallet, label: "Saldo Digital" },
+          { href: "/admin/tambah-provider", icon: Wifi, label: "Provider Digital" },
+          { href: "/admin/tambah-barang", icon: Package, label: "Data Barang" },
+          { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Aset Tetap" },
         ],
       },
       {
-        label: "Keuangan & Laporan",
-        icon: BarChart3,
-        items: [
-          { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
-          { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
-          { href: "/admin/laporan-keuntungan-bulanan", icon: BarChart3, label: "Laporan Keuntungan Bulanan" },
-          { href: "/admin/laporan-keuntungan-harian", icon: BarChart3, label: "Laporan Keuntungan Harian" },
-          { href: "/admin/laporan-setelah-modal-tetap", icon: BarChart3, label: "Laporan Setelah Modal Tetap" },
-        ],
-      },
-      {
-        label: "Transaksi",
+        label: "Transaksi Kasir",
         icon: ShoppingCart,
         items: [
           { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
           { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
           { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
           { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
-          { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
-          { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
+          { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian Kasir" },
+          { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan Kasir" },
+        ],
+      },
+      {
+        label: "Transaksi Admin",
+        icon: Boxes,
+        items: [
+          { href: "/admin/restock-barang", icon: AlertTriangle, label: "Pembelian Barang" },
+          { href: "/admin/transfer-barang", icon: ArrowRightLeft, label: "Transfer Barang" },
+          { href: "/admin/terima-barang", icon: ArrowDownToLine, label: "Terima Barang" },
+          { href: "/admin/mutasi-stok", icon: Boxes, label: "Mutasi Stok" },
+          { href: "/admin/pengeluaran", icon: Wallet, label: "Pengeluaran" },
+        ],
+      },
+      {
+        label: "Laporan",
+        icon: BarChart3,
+        items: [
+          { href: "/admin/laporan-pengeluaran", icon: BarChart3, label: "Laporan Pengeluaran" },
+          { href: "/admin/laporan-pembelian-barang", icon: BarChart3, label: "Laporan Pembelian Barang" },
+          { href: "/admin/laporan-keuntungan-bulanan", icon: BarChart3, label: "Laporan Keuntungan Bulanan" },
+          { href: "/admin/laporan-keuntungan-harian", icon: BarChart3, label: "Laporan Keuntungan Harian" },
+          { href: "/admin/laporan-setelah-modal-tetap", icon: BarChart3, label: "Laporan Setelah Modal Tetap" },
         ],
       },
       {
@@ -153,7 +153,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             label: "Laporan Absensi Karyawan",
           },
           { href: "/admin/pengaturan-jam", icon: Calendar, label: "Pengaturan Jam" },
-             { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
+          { href: "/admin/tidak-wajib-absensi", icon: UserX, label: "Tidak Wajib Absensi" },
           {
             href: "/admin/persetujuan-absensi-karyawan",
             icon: ClipboardList,
@@ -176,19 +176,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (userRole === "karyawan") {
       return [
         {
-          label: "Transaksi",
+          label: "Transaksi Kasir",
           icon: ShoppingCart,
           items: [
             { href: "/admin/transaksi", icon: ShoppingCart, label: "Transaksi Kasir" },
             { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
             { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
             { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
-            { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian" },
-            { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan" },
+            { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian Kasir" },
+            { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan Kasir" },
           ],
         },
         {
-          label: "Stok & Distribusi",
+          label: "Transaksi Admin",
           icon: Boxes,
           items: [
             { href: "/admin/terima-barang", icon: ArrowDownToLine, label: "Terima Barang" },
@@ -221,6 +221,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         "/admin/buat-akun",
         "/admin/pengeluaran",
         "/admin/laporan-pengeluaran",
+        "/admin/laporan-pembelian-barang",
         "/admin/laporan-keuntungan-bulanan",
         "/admin/laporan-keuntungan-harian",
         "/admin/laporan-setelah-modal-tetap",
@@ -312,41 +313,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (
       currentPath.startsWith("/admin/tambah-toko") ||
       currentPath.startsWith("/admin/tambah-karyawan") ||
+      currentPath.startsWith("/admin/tambah-pelanggan") ||
+      currentPath.startsWith("/admin/akun-pelanggan") ||
+      currentPath.startsWith("/admin/buat-akun") ||
       currentPath.startsWith("/admin/tambah-saldo") ||
+      currentPath.startsWith("/admin/tambah-provider") ||
       currentPath.startsWith("/admin/tambah-barang") ||
       currentPath.startsWith("/admin/tambah-kategori") ||
       currentPath.startsWith("/admin/tambah-satuan") ||
       currentPath.startsWith("/admin/tambah-supplier") ||
       currentPath.startsWith("/admin/tambah-barang-tetap")
     ) {
-      nextOpenGroup.push("Master Data")
-    }
-
-    if (
-      currentPath.startsWith("/admin/restock-barang") ||
-      currentPath.startsWith("/admin/transfer-barang") ||
-      currentPath.startsWith("/admin/terima-barang") ||
-      currentPath.startsWith("/admin/mutasi-stok")
-    ) {
-      nextOpenGroup.push("Stok & Distribusi")
-    }
-
-    if (
-      currentPath.startsWith("/admin/tambah-pelanggan") ||
-      currentPath.startsWith("/admin/akun-pelanggan") ||
-      currentPath.startsWith("/admin/buat-akun")
-    ) {
-      nextOpenGroup.push("Pelanggan & Akun")
-    }
-
-    if (
-      currentPath.startsWith("/admin/pengeluaran") ||
-      currentPath.startsWith("/admin/laporan-pengeluaran") ||
-      currentPath.startsWith("/admin/laporan-keuntungan-bulanan") ||
-      currentPath.startsWith("/admin/laporan-keuntungan-harian") ||
-      currentPath.startsWith("/admin/laporan-setelah-modal-tetap")
-    ) {
-      nextOpenGroup.push("Keuangan & Laporan")
+      nextOpenGroup.push("Data Master")
     }
 
     if (
@@ -357,7 +335,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/laporan-harian") ||
       currentPath.startsWith("/admin/laporan-bulanan")
     ) {
-      nextOpenGroup.push("Transaksi")
+      nextOpenGroup.push("Transaksi Kasir")
+    }
+
+    if (
+      currentPath.startsWith("/admin/restock-barang") ||
+      currentPath.startsWith("/admin/transfer-barang") ||
+      currentPath.startsWith("/admin/terima-barang") ||
+      currentPath.startsWith("/admin/mutasi-stok") ||
+      currentPath.startsWith("/admin/pengeluaran")
+    ) {
+      nextOpenGroup.push("Transaksi Admin")
+    }
+
+    if (
+      currentPath.startsWith("/admin/laporan-pengeluaran") ||
+      currentPath.startsWith("/admin/laporan-pembelian-barang") ||
+      currentPath.startsWith("/admin/laporan-keuntungan-bulanan") ||
+      currentPath.startsWith("/admin/laporan-keuntungan-harian") ||
+      currentPath.startsWith("/admin/laporan-setelah-modal-tetap")
+    ) {
+      nextOpenGroup.push("Laporan")
     }
 
     if (
@@ -496,18 +494,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [hasHydrated])
 
   const isActive = (href: string) => {
-    if (href === "/admin/tambah-barang") {
-      return (
-        pathname === "/admin/tambah-barang" ||
-        pathname === "/admin/tambah-kategori" ||
-        pathname === "/admin/tambah-satuan" ||
-        pathname === "/admin/tambah-supplier"
-      )
-    }
-
-    if (href === "/admin/tambah-saldo") {
-      return pathname === "/admin/tambah-saldo" || pathname === "/admin/tambah-provider"
-    }
+    if (href === "/admin/tambah-barang") return pathname === "/admin/tambah-barang"
+    if (href === "/admin/tambah-saldo") return pathname === "/admin/tambah-saldo"
+    if (href === "/admin/tambah-provider") return pathname === "/admin/tambah-provider"
+    if (href === "/admin/tambah-kategori") return pathname === "/admin/tambah-kategori"
+    if (href === "/admin/tambah-satuan") return pathname === "/admin/tambah-satuan"
+    if (href === "/admin/tambah-supplier") return pathname === "/admin/tambah-supplier"
 
     if (href === "/admin/dashboard-absensi") return pathname === "/admin/dashboard-absensi"
     if (href === "/admin/transaksi") return pathname === "/admin/transaksi"
@@ -534,19 +526,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
-        <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
+      <div className="min-h-screen flex items-center justify-center bg-white p-6">
+        <div className="w-full max-w-sm rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-100/80">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50">
-              <Cpu className="text-blue-600" size={20} strokeWidth={2.2} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-100 bg-white">
+              <Cpu className="text-sky-600" size={20} strokeWidth={2.2} />
             </div>
             <div>
               <p className="text-sm font-bold text-slate-800">Memuat panel...</p>
               <p className="text-xs text-slate-500">Sedang cek autentikasi dan role user</p>
             </div>
           </div>
-          <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />
+          <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-slate-50">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-sky-500" />
           </div>
         </div>
       </div>
@@ -567,15 +559,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200
             ${
               pathname === "/admin"
-                ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                ? "bg-gradient-to-r from-sky-400 to-cyan-400 text-white shadow-lg shadow-sky-500/20"
+                : "text-slate-600 hover:bg-sky-50 hover:text-sky-800"
             }
           `}
         >
           <div
             className={`
               flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200
-              ${pathname === "/admin" ? "bg-white/20" : "bg-slate-100 group-hover:bg-slate-200"}
+              ${pathname === "/admin" ? "bg-white/20" : "bg-sky-50 text-sky-700 group-hover:bg-sky-100"}
             `}
           >
             <Home size={15} strokeWidth={2.5} />
@@ -603,8 +595,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   flex w-full items-center justify-between rounded-xl px-3 py-2.5 transition-all duration-200
                   ${
                     hasActiveChild
-                      ? "bg-blue-50 text-blue-700"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                      ? "bg-sky-50 text-sky-700"
+                      : "text-slate-600 hover:bg-sky-50 hover:text-sky-800"
                   }
                 `}
               >
@@ -614,8 +606,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200
                       ${
                         hasActiveChild
-                          ? "bg-gradient-to-br from-blue-400 to-cyan-500 text-white shadow-sm"
-                          : "bg-slate-100"
+                          ? "bg-gradient-to-br from-sky-400 to-cyan-400 text-white shadow-sm shadow-sky-500/10"
+                          : "bg-slate-50"
                       }
                     `}
                   >
@@ -667,8 +659,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200
                                 ${
                                   active
-                                    ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-sm"
-                                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                                    ? "bg-gradient-to-r from-sky-400 to-cyan-400 text-white shadow-sm shadow-sky-500/10"
+                                    : "text-slate-600 hover:bg-sky-50 hover:text-sky-800"
                                 }
                               `}
                             >
@@ -690,7 +682,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 <span
                                   className={`ml-auto inline-flex min-w-[1.35rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
                                     active
-                                      ? "bg-white text-blue-600"
+                                      ? "bg-white text-sky-600"
                                       : "bg-orange-500 text-white"
                                   }`}
                                 >
@@ -721,7 +713,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         })}
       </nav>
 
-      <div className="border-t border-slate-200 bg-slate-50/50 p-3">
+      <div className="border-t border-slate-100 bg-white p-3">
         <button
           type="button"
           onClick={handleLogout}
@@ -740,35 +732,35 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-slate-100 p-3 sm:p-4 lg:p-5">
+    <div className="relative min-h-screen overflow-x-hidden bg-white p-3 sm:p-4 lg:p-5">
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-        <div className="absolute left-0 top-1/4 h-72 w-72 rounded-full bg-cyan-200/20 blur-[90px]" />
-        <div className="absolute bottom-1/3 right-0 h-72 w-72 rounded-full bg-blue-200/20 blur-[90px]" />
-        <div className="absolute left-1/2 top-0 h-56 w-56 -translate-x-1/2 rounded-full bg-indigo-200/15 blur-[80px]" />
+        <div className="absolute left-0 top-1/4 h-72 w-72 rounded-full bg-white/70 blur-[90px]" />
+        <div className="absolute bottom-1/3 right-0 h-72 w-72 rounded-full bg-slate-100/70 blur-[90px]" />
+        <div className="absolute left-1/2 top-0 h-56 w-56 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[80px]" />
       </div>
 
       <aside
         className={`
           fixed top-3 bottom-3 left-3 z-[60] flex w-72 flex-col
-          rounded-3xl border border-slate-200 bg-white shadow-2xl
+          rounded-[2rem] border border-white/80 bg-white shadow-[0_22px_70px_rgba(15,23,42,0.08)] ring-1 ring-slate-100/80
           transition-transform duration-300 ease-in-out
           lg:hidden
           ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)]"}
         `}
       >
-        <div className="relative flex h-16 items-center gap-3 overflow-hidden rounded-t-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4">
+        <div className="relative flex h-16 items-center gap-3 overflow-hidden rounded-t-[2rem] border-b border-slate-100 bg-white px-4">
           <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
-            <Cpu size={64} strokeWidth={1} className="text-cyan-600" />
+            <Cpu size={64} strokeWidth={1} className="text-sky-600" />
           </div>
 
-          <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <Store className="text-blue-600" size={18} strokeWidth={2.5} />
+          <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+            <Store className="text-sky-600" size={18} strokeWidth={2.5} />
           </div>
 
           <div className="relative min-w-0 flex-1">
             <div className="text-sm font-black leading-none tracking-tight text-slate-800">
               Mans-Cell{" "}
-              <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-sky-400 to-cyan-500 bg-clip-text text-transparent">
                 {roleLabel}
               </span>
             </div>
@@ -780,7 +772,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+            className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
             aria-label="Tutup sidebar"
           >
             <X size={15} strokeWidth={2.5} />
@@ -791,8 +783,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       <div className="relative z-10 lg:hidden">
-        <div className="flex min-h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-          <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4">
+        <div className="flex min-h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-none ring-1 ring-slate-100/80">
+          <header className="flex h-16 items-center justify-between border-b border-slate-100 bg-white px-4">
             <button
               type="button"
               onClick={() => setSidebarOpen((prev) => !prev)}
@@ -807,14 +799,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </button>
 
             <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-cyan-400 text-white">
                 <User size={14} strokeWidth={2.5} />
               </div>
               <span className="text-sm font-bold">{roleLabel}</span>
             </div>
           </header>
 
-          <main className="flex-1 overflow-auto bg-slate-50/30 p-4">
+          <main className="flex-1 overflow-auto bg-white p-4">
             <div className="w-full">{children}</div>
           </main>
         </div>
@@ -825,25 +817,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="relative flex min-h-[calc(100vh-1.5rem)] w-full gap-4 xl:gap-5">
             <aside
               className={`
-                relative hidden flex-col rounded-3xl border border-slate-200 bg-white shadow-xl
+                relative hidden flex-col rounded-[2rem] border border-slate-100 bg-white shadow-none ring-1 ring-slate-100/80
                 transition-all duration-300 ease-in-out lg:flex
                 ${sidebarCollapsed ? "w-20" : "w-72"}
               `}
             >
-              <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-3xl border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5">
+              <div className="relative flex h-20 items-center gap-3 overflow-hidden rounded-tl-[2rem] border-b border-slate-100 bg-white px-5">
                 <div className="pointer-events-none absolute right-2 top-1 opacity-[0.05]">
-                  <Cpu size={72} strokeWidth={1} className="text-cyan-600" />
+                  <Cpu size={72} strokeWidth={1} className="text-sky-600" />
                 </div>
 
-                <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <Store className="text-blue-600" size={20} strokeWidth={2.5} />
+                <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                  <Store className="text-sky-600" size={20} strokeWidth={2.5} />
                 </div>
 
                 {!sidebarCollapsed && (
                   <div className="relative min-w-0">
                     <div className="text-base font-black leading-none tracking-tight text-slate-800">
                       Mans-Cell{" "}
-                      <span className="bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
+                      <span className="bg-gradient-to-r from-sky-400 to-cyan-500 bg-clip-text text-transparent">
                         {roleLabel}
                       </span>
                     </div>
@@ -870,8 +862,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <NavMenu />
             </aside>
 
-            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl lg:rounded-l-none lg:border-l-0">
-              <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-4 lg:h-20 lg:px-8">
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-none ring-1 ring-slate-100/80 lg:rounded-l-none lg:border-l-0">
+              <header className="flex h-16 items-center justify-between border-b border-slate-100 bg-white px-4 lg:h-20 lg:px-8">
                 <button
                   type="button"
                   onClick={() => setSidebarOpen((prev) => !prev)}
@@ -889,7 +881,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
                 <div className="ml-auto flex items-center gap-3">
                   <div className="hidden items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:flex">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-cyan-400 text-white">
                       <User size={14} strokeWidth={2.5} />
                     </div>
                     <span className="text-sm font-bold">{roleLabel}</span>
@@ -897,7 +889,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </div>
               </header>
 
-              <main className="flex-1 overflow-auto bg-slate-50/30 p-4 sm:p-6 lg:p-8">
+              <main className="flex-1 overflow-auto bg-white p-4 sm:p-6 lg:p-8">
                 <div className="w-full">{children}</div>
               </main>
             </div>

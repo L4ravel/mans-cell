@@ -33,6 +33,7 @@ import {
   TrendingUp,
   Wallet,
   Ruler,
+  Download,
 } from "lucide-react"
 import { motion } from "framer-motion"
 
@@ -173,6 +174,269 @@ function uniqueStringList(values: any[]): string[] {
   return Array.from(map.values())
 }
 
+
+const EXCEL_BORDER = {
+  top: { style: "thin", color: { rgb: "CBD5E1" } },
+  right: { style: "thin", color: { rgb: "CBD5E1" } },
+  bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+  left: { style: "thin", color: { rgb: "CBD5E1" } },
+}
+
+const excelTitleStyle = {
+  font: { bold: true, sz: 14, color: { rgb: "FFFFFF" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  fill: { fgColor: { rgb: "047857" } },
+}
+
+const excelSubTitleStyle = {
+  font: { bold: true, sz: 11, color: { rgb: "064E3B" } },
+  alignment: { horizontal: "left", vertical: "center", wrapText: true },
+  fill: { fgColor: { rgb: "D1FAE5" } },
+}
+
+const excelHeaderStyle = {
+  font: { bold: true, color: { rgb: "0F172A" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  fill: { fgColor: { rgb: "E2F0D9" } },
+}
+
+const excelHeaderDarkStyle = {
+  font: { bold: true, color: { rgb: "FFFFFF" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  fill: { fgColor: { rgb: "059669" } },
+}
+
+const excelDataLeftStyle = {
+  alignment: { horizontal: "left", vertical: "center", wrapText: false },
+}
+
+const excelDataCenterStyle = {
+  alignment: { horizontal: "center", vertical: "center", wrapText: false },
+}
+
+const excelDataRightStyle = {
+  alignment: { horizontal: "right", vertical: "center", wrapText: false },
+}
+
+const excelMoneyStyle = {
+  alignment: { horizontal: "right", vertical: "center", wrapText: false },
+  numFmt: '"Rp" #,##0',
+}
+
+const excelNumberStyle = {
+  alignment: { horizontal: "center", vertical: "center", wrapText: false },
+  numFmt: "#,##0",
+}
+
+function safeSheetName(value: string, fallback = "Sheet") {
+  const clean = String(value || fallback)
+    .replace(/[\\/?*[\]:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  return (clean || fallback).slice(0, 31)
+}
+
+function ensureExcelCell(ws: any, addr: string) {
+  if (!ws[addr]) ws[addr] = { t: "s", v: "" }
+  return ws[addr]
+}
+
+function applyExcelCellStyle(ws: any, addr: string, style: any) {
+  const cell = ensureExcelCell(ws, addr)
+  cell.s = {
+    ...(cell.s || {}),
+    ...style,
+    border: EXCEL_BORDER,
+  }
+}
+
+function applyExcelBorderRange(params: {
+  ws: any
+  XLSX: any
+  startRow: number
+  endRow: number
+  startCol: number
+  endCol: number
+  baseStyle?: any
+}) {
+  const { ws, XLSX, startRow, endRow, startCol, endCol, baseStyle } = params
+
+  for (let r = startRow; r <= endRow; r += 1) {
+    for (let c = startCol; c <= endCol; c += 1) {
+      applyExcelCellStyle(ws, XLSX.utils.encode_cell({ r, c }), baseStyle || excelDataLeftStyle)
+    }
+  }
+}
+
+
+function finalizeWorkbookExcelBorders(XLSX: any, workbook: any) {
+  if (!workbook?.SheetNames?.length) return
+
+  workbook.SheetNames.forEach((sheetName: string) => {
+    const ws = workbook.Sheets?.[sheetName]
+    if (!ws || !ws["!ref"]) return
+
+    const range = XLSX.utils.decode_range(ws["!ref"])
+
+    for (let r = range.s.r; r <= range.e.r; r += 1) {
+      for (let c = range.s.c; c <= range.e.c; c += 1) {
+        const addr = XLSX.utils.encode_cell({ r, c })
+
+        if (!ws[addr]) {
+          ws[addr] = { t: "s", v: "" }
+        }
+
+        ws[addr].s = {
+          ...(ws[addr].s || {}),
+          border: EXCEL_BORDER,
+          alignment: {
+            vertical: "center",
+            wrapText: true,
+            ...(ws[addr].s?.alignment || {}),
+          },
+        }
+      }
+    }
+  })
+}
+
+async function downloadWorkbookXlsx(workbook: any, filename: string) {
+  const XLSX = await import("xlsx-js-style")
+  finalizeWorkbookExcelBorders(XLSX, workbook)
+  const ab = XLSX.write(workbook, { type: "array", bookType: "xlsx" })
+  const blob = new Blob([ab], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+type ExcelTableColumn<T> = {
+  key: keyof T | string
+  label: string
+  width: number
+  align?: "left" | "center" | "right"
+  money?: boolean
+  number?: boolean
+}
+
+function makeExcelTableSheet<T extends Record<string, any>>(params: {
+  XLSX: any
+  title: string
+  subtitle?: string
+  columns: ExcelTableColumn<T>[]
+  rows: T[]
+}) {
+  const { XLSX, title, subtitle, columns, rows } = params
+  const aoa: any[][] = []
+
+  aoa.push([title])
+  aoa.push([subtitle || `Total data: ${rows.length}`])
+  aoa.push([])
+  aoa.push(["No", ...columns.map((col) => col.label)])
+
+  rows.forEach((row, index) => {
+    aoa.push([
+      index + 1,
+      ...columns.map((col) => {
+        const value = row[String(col.key)]
+        if (col.money || col.number) return Number(value || 0)
+        return String(value ?? "")
+      }),
+    ])
+  })
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const lastCol = columns.length
+  const lastRow = Math.max(3 + rows.length, 3)
+
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+  ]
+  ws["!cols"] = [{ wch: 6 }, ...columns.map((col) => ({ wch: col.width }))]
+  ws["!freeze"] = { xSplit: 1, ySplit: 4 }
+
+  applyExcelCellStyle(ws, "A1", excelTitleStyle)
+  applyExcelCellStyle(ws, "A2", excelSubTitleStyle)
+
+  applyExcelBorderRange({
+    ws,
+    XLSX,
+    startRow: 3,
+    endRow: lastRow,
+    startCol: 0,
+    endCol: lastCol,
+    baseStyle: excelDataLeftStyle,
+  })
+
+  for (let c = 0; c <= lastCol; c += 1) {
+    applyExcelCellStyle(ws, XLSX.utils.encode_cell({ r: 3, c }), c === 0 ? excelHeaderDarkStyle : excelHeaderStyle)
+  }
+
+  for (let r = 4; r <= lastRow; r += 1) {
+    applyExcelCellStyle(ws, XLSX.utils.encode_cell({ r, c: 0 }), excelDataCenterStyle)
+
+    columns.forEach((col, index) => {
+      const addr = XLSX.utils.encode_cell({ r, c: index + 1 })
+      if (col.money) applyExcelCellStyle(ws, addr, excelMoneyStyle)
+      else if (col.number) applyExcelCellStyle(ws, addr, excelNumberStyle)
+      else if (col.align === "center") applyExcelCellStyle(ws, addr, excelDataCenterStyle)
+      else if (col.align === "right") applyExcelCellStyle(ws, addr, excelDataRightStyle)
+      else applyExcelCellStyle(ws, addr, excelDataLeftStyle)
+    })
+  }
+
+  return ws
+}
+
+function makeExcelSummarySheet(params: {
+  XLSX: any
+  title: string
+  subtitle: string
+  rows: Array<[string, string | number]>
+}) {
+  const { XLSX, title, subtitle, rows } = params
+  const aoa = [[title], [subtitle], [], ["Keterangan", "Nilai"], ...rows]
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const lastRow = aoa.length - 1
+
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },
+  ]
+  ws["!cols"] = [{ wch: 34 }, { wch: 36 }]
+
+  applyExcelCellStyle(ws, "A1", excelTitleStyle)
+  applyExcelCellStyle(ws, "A2", excelSubTitleStyle)
+  applyExcelCellStyle(ws, "A4", excelHeaderDarkStyle)
+  applyExcelCellStyle(ws, "B4", excelHeaderStyle)
+
+  applyExcelBorderRange({
+    ws,
+    XLSX,
+    startRow: 4,
+    endRow: lastRow,
+    startCol: 0,
+    endCol: 1,
+    baseStyle: excelDataLeftStyle,
+  })
+
+  for (let r = 4; r <= lastRow; r += 1) {
+    const bAddr = XLSX.utils.encode_cell({ r, c: 1 })
+    const value = rows[r - 4]?.[1]
+    if (typeof value === "number") applyExcelCellStyle(ws, bAddr, excelMoneyStyle)
+  }
+
+  return ws
+}
+
+
 function InfoCard({
   icon: Icon,
   label,
@@ -187,7 +451,7 @@ function InfoCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-white shadow-sm">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 text-white shadow-sm">
           <Icon size={18} strokeWidth={2.5} />
         </div>
         <div className="min-w-0">
@@ -237,7 +501,7 @@ function FilterSelect({
           onChange={(e) => onChange(e.target.value)}
           className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
             Icon ? "pl-8" : "pl-3"
-          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20`}
+          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
         >
           {children}
         </select>
@@ -863,45 +1127,227 @@ export default function LaporanKeuntunganBersihPage() {
   const satuanAktifLabel =
     satuanBarangList.find((item) => item.id === filterSatuan)?.nama || "Semua Satuan"
 
+
+  const tokoAktifLabel = tokoList.find((item) => item.id === filterToko)?.nama || "Semua Toko"
+
+  const handleExportExcel = async () => {
+    if (filteredRekap.length === 0) {
+      setError("Tidak ada data laporan untuk diexport")
+      return
+    }
+
+    setError(null)
+
+    try {
+      const XLSX = await import("xlsx-js-style")
+      const wb = XLSX.utils.book_new()
+      const periodeText = `${formatBulanKey(bulanMulai)} - ${formatBulanKey(bulanSelesai)}`
+      const subtitle = `Periode: ${periodeText} • Toko: ${tokoAktifLabel} • Kategori: ${kategoriAktifLabel} • Satuan: ${satuanAktifLabel}`
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelSummarySheet({
+          XLSX,
+          title: "LAPORAN KEUNTUNGAN BERSIH",
+          subtitle,
+          rows: [
+            ["Periode", periodeText],
+            ["Toko", tokoAktifLabel],
+            ["Kategori Barang", kategoriAktifLabel],
+            ["Satuan", satuanAktifLabel],
+            ["Total Penghasilan Kotor", totalPenghasilanKotor],
+            ["Total Pengeluaran", totalPengeluaran],
+            ["Total Keuntungan Bersih", totalKeuntunganBersih],
+            ["Total Omzet", totalOmzet],
+            ["Total Transaksi", totalTransaksi],
+            ["Total Qty Terjual", totalQtyTerjual],
+            ["Keuntungan Bulan Ini", keuntunganBulanIni],
+            ["Jumlah Rekap", filteredRekap.length],
+          ],
+        }),
+        "Ringkasan"
+      )
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelTableSheet<RekapKeuntunganBersih>({
+          XLSX,
+          title: "REKAP KEUNTUNGAN BERSIH",
+          subtitle,
+          columns: [
+            { key: "bulanKey", label: "Bulan", width: 16, align: "center" },
+            { key: "tokoNama", label: "Toko", width: 28 },
+            { key: "kategoriNama", label: "Kategori", width: 24 },
+            { key: "satuanNama", label: "Satuan", width: 18, align: "center" },
+            { key: "penghasilanKotor", label: "Penghasilan Kotor", width: 20, money: true },
+            { key: "pengeluaran", label: "Pengeluaran", width: 18, money: true },
+            { key: "keuntunganBersih", label: "Keuntungan Bersih", width: 20, money: true },
+            { key: "omzet", label: "Omzet", width: 18, money: true },
+            { key: "jumlahTransaksi", label: "Transaksi", width: 12, number: true },
+            { key: "jumlahQtyTerjual", label: "Qty Terjual", width: 12, number: true },
+            { key: "jumlahDataPengeluaran", label: "Data Pengeluaran", width: 16, number: true },
+          ],
+          rows: filteredRekap.map((item) => ({
+            ...item,
+            bulanKey: formatBulanKey(item.bulanKey),
+          })),
+        }),
+        "Rekap Bersih"
+      )
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelTableSheet<any>({
+          XLSX,
+          title: "CHART DATA BULANAN",
+          subtitle,
+          columns: [
+            { key: "bulanKey", label: "Bulan", width: 18, align: "center" },
+            { key: "penghasilanKotor", label: "Penghasilan Kotor", width: 20, money: true },
+            { key: "pengeluaran", label: "Pengeluaran", width: 18, money: true },
+            { key: "keuntunganBersih", label: "Keuntungan Bersih", width: 20, money: true },
+          ],
+          rows: chartData.map((item) => ({
+            ...item,
+            bulanKey: formatBulanKey(item.bulanKey),
+          })),
+        }),
+        "Data Bulanan"
+      )
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelTableSheet<any>({
+          XLSX,
+          title: "RANKING TOKO",
+          subtitle,
+          columns: [
+            { key: "tokoNama", label: "Toko", width: 30 },
+            { key: "penghasilanKotor", label: "Penghasilan Kotor", width: 20, money: true },
+            { key: "pengeluaran", label: "Pengeluaran", width: 18, money: true },
+            { key: "keuntunganBersih", label: "Keuntungan Bersih", width: 20, money: true },
+            { key: "bulanAktif", label: "Bulan Aktif", width: 14, number: true },
+          ],
+          rows: rankingToko,
+        }),
+        "Ranking Toko"
+      )
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelTableSheet<any>({
+          XLSX,
+          title: "RANKING KATEGORI BARANG",
+          subtitle,
+          columns: [
+            { key: "kategoriNama", label: "Kategori", width: 30 },
+            { key: "penghasilanKotor", label: "Penghasilan Kotor", width: 20, money: true },
+            { key: "pengeluaran", label: "Pengeluaran", width: 18, money: true },
+            { key: "keuntunganBersih", label: "Keuntungan Bersih", width: 20, money: true },
+            { key: "omzet", label: "Omzet", width: 18, money: true },
+            { key: "qtyTerjual", label: "Qty Terjual", width: 14, number: true },
+            { key: "jumlahTransaksi", label: "Transaksi", width: 14, number: true },
+          ],
+          rows: rankingKategoriBarang,
+        }),
+        "Ranking Kategori"
+      )
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelTableSheet<any>({
+          XLSX,
+          title: "RANKING SATUAN",
+          subtitle,
+          columns: [
+            { key: "satuanNama", label: "Satuan", width: 20, align: "center" },
+            { key: "namaBarangText", label: "Referensi Barang", width: 42 },
+            { key: "penghasilanKotor", label: "Penghasilan Kotor", width: 20, money: true },
+            { key: "keuntunganBersih", label: "Keuntungan Bersih", width: 20, money: true },
+            { key: "omzet", label: "Omzet", width: 18, money: true },
+            { key: "qtyTerjual", label: "Qty Terjual", width: 14, number: true },
+            { key: "jumlahTransaksi", label: "Transaksi", width: 14, number: true },
+          ],
+          rows: rankingSatuanBarang.map((item) => ({
+            ...item,
+            namaBarangText: item.namaBarangList.join(", "),
+          })),
+        }),
+        "Ranking Satuan"
+      )
+
+      await downloadWorkbookXlsx(
+        wb,
+        `laporan_keuntungan_bersih_${bulanMulai}_${bulanSelesai}_${safeSheetName(tokoAktifLabel, "semua_toko").replace(/\s+/g, "_").toLowerCase()}.xlsx`
+      )
+    } catch (err) {
+      console.error(err)
+      setError("Gagal membuat file Excel laporan")
+    }
+  }
+
   return (
-    <div className="space-y-4 text-slate-900 sm:space-y-5">
+    <div className="relative min-h-screen bg-white text-slate-900">
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
+        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
+        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
+      </div>
+
+      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:space-y-5 sm:p-4 lg:p-5">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
+        className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-              <BarChart3 size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
+              <BarChart3 size={24} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
             </div>
 
             <div className="min-w-0 self-center sm:self-auto">
-              <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                 Laporan Keuntungan Bersih
               </h1>
-              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
                 Keuntungan kategori barang jualan · bersih setelah pengeluaran · filter satuan
               </p>
             </div>
           </div>
 
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={fetchAll}
-            disabled={loading}
-            className="flex h-8 items-center justify-center gap-1.5 self-start rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
-          >
-            <motion.span
-              animate={loading ? { rotate: 360 } : {}}
-              transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              onClick={handleExportExcel}
+              disabled={loading || filteredRekap.length === 0}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 text-[10px] font-black uppercase tracking-wide text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCw size={14} strokeWidth={2.5} />
-            </motion.span>
-            <span>Refresh</span>
-          </motion.button>
+              <Download size={13} strokeWidth={2.8} />
+              <span>Excel</span>
+            </motion.button>
+
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              onClick={fetchAll}
+              disabled={loading}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 text-[10px] font-black uppercase tracking-wide text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <motion.span
+                animate={loading ? { rotate: 360 } : {}}
+                transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
+              >
+                <RefreshCw size={14} className="text-white" strokeWidth={2.8} />
+              </motion.span>
+              <span>Refresh</span>
+            </motion.button>
+          </div>
         </div>
+
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl" />
       </motion.div>
 
       {error ? (
@@ -915,7 +1361,7 @@ export default function LaporanKeuntunganBersihPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.06 }}
-        className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <div className="lg:col-span-2">
@@ -932,7 +1378,7 @@ export default function LaporanKeuntunganBersihPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Bulan, toko, kategori, atau satuan..."
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
           </div>
@@ -988,7 +1434,7 @@ export default function LaporanKeuntunganBersihPage() {
                 type="month"
                 value={bulanMulai}
                 onChange={(e) => setBulanMulai(e.target.value)}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
           </div>
@@ -1007,7 +1453,7 @@ export default function LaporanKeuntunganBersihPage() {
                 type="month"
                 value={bulanSelesai}
                 onChange={(e) => setBulanSelesai(e.target.value)}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
           </div>
@@ -1087,7 +1533,7 @@ export default function LaporanKeuntunganBersihPage() {
                           className={`h-full rounded-full ${
                             isNegative
                               ? "bg-gradient-to-r from-red-400 to-orange-500"
-                              : "bg-gradient-to-r from-emerald-400 to-cyan-500"
+                              : "bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800"
                           }`}
                           style={{ width: `${Math.max(percent, 2)}%` }}
                         />
@@ -1250,7 +1696,7 @@ export default function LaporanKeuntunganBersihPage() {
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-black text-white">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-white">
                               {idx + 1}
                             </span>
                             <div className="min-w-0">
@@ -1414,17 +1860,7 @@ export default function LaporanKeuntunganBersihPage() {
           
         </div>
       </div>
-
-      {(filterKategori || filterSatuan) && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-[11px] font-bold text-amber-700">
-            Filter aktif memakai data penjualan dari <span className="font-black">kategoriBreakdown</span>{" "}
-            pada <span className="font-black">laporan_bulanan</span>. Kategori:{" "}
-            <span className="font-black">{kategoriAktifLabel}</span> • Satuan:{" "}
-            <span className="font-black">{satuanAktifLabel}</span>
-          </p>
-        </div>
-      )}
+      </main>
     </div>
   )
 }

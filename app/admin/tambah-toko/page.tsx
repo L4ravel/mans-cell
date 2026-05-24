@@ -2,10 +2,12 @@
 // + Download template Excel & Import massal dari Excel
 // + Tab Atur Lokasi Absensi toko
 // Revisi layout:
-// - Tema dibuat konsisten hijau emerald.
+// - Tema dibuat konsisten biru muda dan mengikuti shell layout putih.
 // - Ditambah tab "Data Toko" dan "Atur Lokasi Absensi".
-// - Tab lokasi memakai layout sisi kiri daftar toko, sisi kanan form lokasi seperti pola atur waktu.
-// - Tidak ada mode individu.
+// - Desktop tetap punya mode input/detail.
+// - Mobile tidak memakai tab input/detail; tap toko membuka popup edit data.
+// - Tab lokasi: desktop memakai form sisi kanan, mobile klik toko membuka popup GPS.
+// - Card mobile dibuat satu lapis agar tidak saling tindih.
 // - Logika CRUD/import toko tetap dipertahankan.
 // - Simpan lokasi absensi menulis latitude, longitude, dan lokasiAbsensi { lat, lng, radiusKm }.
 
@@ -94,6 +96,7 @@ type ImportResult = {
 }
 
 type ActiveTab = "data" | "lokasi"
+type DataSubTab = "input" | "detail"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -182,6 +185,7 @@ const syncNamaTokoByTokoId = async ({
 
 export default function TambahTokoPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("data")
+  const [dataSubTab, setDataSubTab] = useState<DataSubTab>("detail")
 
   const [loading, setLoading] = useState(true)
   const [loadingSave, setLoadingSave] = useState(false)
@@ -206,6 +210,7 @@ export default function TambahTokoPage() {
   const [editTarget, setEditTarget] = useState<Toko | null>(null)
   const [search, setSearch] = useState("")
   const [openDelete, setOpenDelete] = useState<Toko | null>(null)
+  const [openDataMobileModal, setOpenDataMobileModal] = useState(false)
 
   // Lokasi absensi tab
   const [searchLokasi, setSearchLokasi] = useState("")
@@ -213,6 +218,7 @@ export default function TambahTokoPage() {
   const [lokasiLat, setLokasiLat] = useState("")
   const [lokasiLng, setLokasiLng] = useState("")
   const [lokasiRadiusKm, setLokasiRadiusKm] = useState("0.2")
+  const [openLokasiMobileModal, setOpenLokasiMobileModal] = useState(false)
 
   // Import state
   const [showImportModal, setShowImportModal] = useState(false)
@@ -343,6 +349,18 @@ export default function TambahTokoPage() {
     setEditTarget(null)
   }
 
+  const bukaFormMobile = () => {
+    resetForm()
+    setActiveTab("data")
+    setOpenDataMobileModal(true)
+  }
+
+  const closeDataMobileModal = () => {
+    if (loadingSave || loadingUpdate) return
+    setOpenDataMobileModal(false)
+    resetForm()
+  }
+
   const mulaiEdit = (item: Toko) => {
     setActiveTab("data")
     setEditTarget(item)
@@ -355,6 +373,13 @@ export default function TambahTokoPage() {
     setLatitude(item.latitude !== null ? String(item.latitude) : "")
     setLongitude(item.longitude !== null ? String(item.longitude) : "")
     setAktif(item.aktif ?? true)
+
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      setOpenDataMobileModal(true)
+      return
+    }
+
+    setDataSubTab("input")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
@@ -432,6 +457,7 @@ export default function TambahTokoPage() {
 
       showSuccess("Data toko berhasil disimpan")
       resetForm()
+      setOpenDataMobileModal(false)
     } catch (e) {
       console.error(e)
       showError("Gagal menyimpan data toko")
@@ -526,6 +552,7 @@ export default function TambahTokoPage() {
 
       showSuccess("Data toko berhasil diupdate dan relasi toko ikut disinkronkan")
       resetForm()
+      setOpenDataMobileModal(false)
     } catch (e) {
       console.error(e)
       showError("Gagal mengupdate data toko")
@@ -580,6 +607,7 @@ export default function TambahTokoPage() {
     setLokasiLat("")
     setLokasiLng("")
     setLokasiRadiusKm("0.2")
+    setOpenLokasiMobileModal(false)
   }
 
   const pilihTokoLokasi = (item: Toko) => {
@@ -587,6 +615,10 @@ export default function TambahTokoPage() {
     setLokasiLat(item.latitude !== null ? String(item.latitude) : "")
     setLokasiLng(item.longitude !== null ? String(item.longitude) : "")
     setLokasiRadiusKm(item.radiusKm !== null ? String(item.radiusKm) : "0.2")
+
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setOpenLokasiMobileModal(true)
+    }
   }
 
   const handleGunakanLokasiSaya = async () => {
@@ -696,6 +728,7 @@ export default function TambahTokoPage() {
       )
 
       showSuccess("Lokasi absensi toko berhasil disimpan")
+      setOpenLokasiMobileModal(false)
     } catch (e) {
       console.error(e)
       showError("Gagal menyimpan lokasi absensi toko")
@@ -855,20 +888,14 @@ export default function TambahTokoPage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-white text-slate-900">
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
-        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
-      </div>
-
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
         {/* ── Header Banner ── */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-start gap-4">
@@ -880,13 +907,13 @@ export default function TambahTokoPage() {
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                   Pengaturan Toko
                 </h1>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                   Data toko dan titik lokasi absensi karyawan.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.12, ease: "easeOut" }}
@@ -925,16 +952,16 @@ export default function TambahTokoPage() {
               exit={{ opacity: 0 }}
               className={`fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border px-4 py-3 shadow-lg ${
                 successMsg
-                  ? "border-emerald-200 bg-emerald-50"
+                  ? "border-sky-200 bg-sky-50"
                   : "border-red-200 bg-red-50"
               }`}
             >
               {successMsg ? (
-                <CheckCircle2 size={16} className="text-emerald-600" strokeWidth={2.5} />
+                <CheckCircle2 size={16} className="text-sky-600" strokeWidth={2.5} />
               ) : (
                 <AlertCircle size={16} className="text-red-600" strokeWidth={2.5} />
               )}
-              <p className={`max-w-xs text-xs font-black ${successMsg ? "text-emerald-700" : "text-red-700"}`}>
+              <p className={`max-w-xs text-xs font-black ${successMsg ? "text-sky-700" : "text-red-700"}`}>
                 {successMsg || errorMsg}
               </p>
             </motion.div>
@@ -965,14 +992,40 @@ export default function TambahTokoPage() {
         </motion.div>
 
         {/* ── Stats ── */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard label="Total Toko" value={stats.total} icon={Store} tone="slate" />
-          <StatCard label="Toko Aktif" value={stats.aktifCount} icon={CheckCircle2} tone="emerald" />
-          <StatCard label="Lokasi Terisi" value={stats.lokasiCount} icon={MapPin} tone="blue" />
-        </div>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+  <StatCard label="Total Toko" value={stats.total} icon={Store} tone="slate" />
+  <StatCard label="Toko Aktif" value={stats.aktifCount} icon={CheckCircle2} tone="sky" />
+  <StatCard label="Lokasi Terisi" value={stats.lokasiCount} icon={MapPin} tone="blue" />
+</div>
 
         {activeTab === "data" ? (
           <>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:block"
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <DataModeTabButton
+                  active={dataSubTab === "input"}
+                  icon={Plus}
+                  label={editTarget ? "Edit Toko" : "Input Toko"}
+                  description="Tambah atau ubah data toko"
+                  onClick={() => setDataSubTab("input")}
+                />
+                <DataModeTabButton
+                  active={dataSubTab === "detail"}
+                  icon={ListFilter}
+                  label="Detail Toko"
+                  description="Lihat data yang sudah terisi"
+                  onClick={() => setDataSubTab("detail")}
+                />
+              </div>
+            </motion.div>
+
+            {dataSubTab === "input" ? (
+              <>
             {/* ── Form Tambah / Edit ── */}
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -1002,7 +1055,7 @@ export default function TambahTokoPage() {
                       <input
                         value={val}
                         onChange={(e) => set(e.target.value)}
-                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                       />
                     </FieldBox>
                   ))}
@@ -1012,7 +1065,7 @@ export default function TambahTokoPage() {
                       <select
                         value={aktif ? "aktif" : "nonaktif"}
                         onChange={(e) => setAktif(e.target.value === "aktif")}
-                        className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                        className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                       >
                         <option value="aktif">Aktif</option>
                         <option value="nonaktif">Nonaktif</option>
@@ -1028,7 +1081,7 @@ export default function TambahTokoPage() {
                       value={latitude}
                       onChange={(e) => setLatitude(e.target.value)}
                       placeholder="-7.257472"
-                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                     />
                   </FieldBox>
 
@@ -1039,7 +1092,7 @@ export default function TambahTokoPage() {
                       value={longitude}
                       onChange={(e) => setLongitude(e.target.value)}
                       placeholder="112.752090"
-                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                     />
                   </FieldBox>
 
@@ -1058,7 +1111,7 @@ export default function TambahTokoPage() {
                       value={alamat}
                       onChange={(e) => setAlamat(e.target.value)}
                       rows={3}
-                      className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                      className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                     />
                   </FieldBox>
                 </div>
@@ -1069,7 +1122,7 @@ export default function TambahTokoPage() {
                     transition={{ duration: 0.12, ease: "easeOut" }}
                     onClick={editTarget ? update : simpan}
                     disabled={!canSubmit}
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-500/15 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {loadingSave || loadingUpdate ? (
                       <Loader2 size={16} className="animate-spin" />
@@ -1099,6 +1152,9 @@ export default function TambahTokoPage() {
                 </div>
               </div>
             </motion.div>
+              </>
+            ) : (
+              <>
 
             {/* ── Search ── */}
             <motion.div
@@ -1113,8 +1169,30 @@ export default function TambahTokoPage() {
                   placeholder="Cari kode/nama toko/pemilik/kota/koordinat..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                 />
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:hidden">
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ duration: 0.12, ease: "easeOut" }}
+                  onClick={bukaFormMobile}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-white shadow-sm shadow-sky-500/15"
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                  Tambah
+                </motion.button>
+
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ duration: 0.12, ease: "easeOut" }}
+                  onClick={() => setShowImportModal(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-sky-700"
+                >
+                  <Upload size={14} strokeWidth={2.5} />
+                  Import
+                </motion.button>
               </div>
             </motion.div>
 
@@ -1125,6 +1203,8 @@ export default function TambahTokoPage() {
               setOpenDelete={setOpenDelete}
               setShowImportModal={setShowImportModal}
             />
+              </>
+            )}
           </>
         ) : (
           <motion.div
@@ -1133,7 +1213,7 @@ export default function TambahTokoPage() {
             transition={{ duration: 0.35 }}
             className="grid grid-cols-1 gap-4 lg:grid-cols-3"
           >
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-1">
+            <div className="lg:col-span-1 lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:p-4 lg:shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1164,189 +1244,114 @@ export default function TambahTokoPage() {
                   value={searchLokasi}
                   onChange={(e) => setSearchLokasi(e.target.value)}
                   placeholder="Cari toko..."
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
                 />
               </div>
 
-              <div className="max-h-[560px] overflow-y-auto rounded-2xl border border-slate-200">
-                {loading ? (
-                  <div className="flex items-center justify-center gap-2 p-6 text-xs font-bold text-slate-400">
-                    <Loader2 size={16} className="animate-spin" />
-                    Memuat data...
-                  </div>
-                ) : filteredLokasi.length === 0 ? (
-                  <div className="p-6 text-center text-xs font-semibold text-slate-400">
-                    Toko tidak ditemukan.
-                  </div>
-                ) : (
-                  filteredLokasi.map((item) => {
-                    const active = selectedLokasiTokoId === item.id
-                    const adaLokasi = item.latitude !== null && item.longitude !== null
+              <div className="space-y-2 lg:max-h-[560px] lg:overflow-y-auto lg:pr-1">
+  {loading ? (
+    <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white p-6 text-xs font-bold text-slate-400 shadow-sm">
+      <Loader2 size={16} className="animate-spin" />
+      Memuat data...
+    </div>
+  ) : filteredLokasi.length === 0 ? (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs font-semibold text-slate-400 shadow-sm">
+      Toko tidak ditemukan.
+    </div>
+  ) : (
+    filteredLokasi.map((item) => {
+      const active = selectedLokasiTokoId === item.id
+      const adaLokasi = item.latitude !== null && item.longitude !== null
 
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => pilihTokoLokasi(item)}
-                        className={`w-full border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 ${
-                          active ? "bg-emerald-50" : "bg-white hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                              adaLokasi
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-slate-100 text-slate-500"
-                            }`}
-                          >
-                            <Store size={17} strokeWidth={2.5} />
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-slate-800">
-                              {item.nama}
-                            </p>
-                            <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                              {item.kode || "-"} · {item.kota || "-"}
-                            </p>
-                            <p
-                              className={`mt-1 text-[10px] font-black uppercase tracking-wide ${
-                                adaLokasi ? "text-emerald-600" : "text-slate-400"
-                              }`}
-                            >
-                              {adaLokasi ? "Lokasi absensi ada" : "Belum ada lokasi"}
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    )
-                  })
-                )}
-              </div>
+      return (
+        <motion.button
+          key={item.id}
+          type="button"
+          whileTap={{ scale: 0.98 }}
+          transition={{ duration: 0.12, ease: "easeOut" }}
+          onClick={() => pilihTokoLokasi(item)}
+          className={`w-full overflow-hidden rounded-2xl border p-3 text-left shadow-sm ring-1 transition ${
+            active
+              ? "border-sky-200 bg-sky-50 ring-sky-100"
+              : "border-slate-200 bg-white ring-slate-100/70 hover:border-sky-200 hover:bg-sky-50/50"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${
+                adaLokasi
+                  ? "bg-sky-50 text-sky-600 ring-sky-100"
+                  : "bg-slate-50 text-slate-500 ring-slate-100"
+              }`}
+            >
+              <Store size={20} strokeWidth={2.5} />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black leading-tight text-slate-800">
+                    {item.nama}
+                  </p>
+                  <p className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                    {item.kode || "-"} · {item.kota || "-"}
+                  </p>
+                </div>
+
+                <span
+                  className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${
+                    adaLokasi ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {adaLokasi ? "Ada" : "Kosong"}
+                </span>
+              </div>
+
+              <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-relaxed text-slate-600">
+                  <MapPin size={13} className="mt-0.5 shrink-0 text-slate-400" strokeWidth={2.5} />
+                  <span className="line-clamp-2">{item.alamat || "-"}</span>
+                </p>
+
+                <p
+                  className={`text-[10px] font-black uppercase tracking-[0.12em] ${
+                    adaLokasi ? "text-sky-600" : "text-slate-400"
+                  }`}
+                >
+                  {adaLokasi ? "Ketuk untuk atur ulang lokasi" : "Ketuk untuk isi lokasi"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.button>
+      )
+    })
+  )}
+</div>
+            </div>
+
+            <div className="hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2 lg:block">
               {!selectedLokasiToko ? (
                 <EmptyState
                   title="Pilih Toko Dulu"
                   description="Setelah toko dipilih, kamu bisa mengatur titik lokasi absensi dan radius yang diperbolehkan."
                 />
               ) : (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
-                      Toko Terpilih
-                    </p>
-                    <h2 className="mt-1 text-xl font-black text-slate-800">
-                      {selectedLokasiToko.nama}
-                    </h2>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">
-                      Isi koordinat pusat lokasi absensi dan radius yang diperbolehkan.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <FieldInput
-                      label="Latitude"
-                      value={lokasiLat}
-                      onChange={setLokasiLat}
-                      placeholder="-7.257472"
-                    />
-                    <FieldInput
-                      label="Longitude"
-                      value={lokasiLng}
-                      onChange={setLokasiLng}
-                      placeholder="112.752090"
-                    />
-                    <FieldInput
-                      label="Radius KM"
-                      value={lokasiRadiusKm}
-                      onChange={setLokasiRadiusKm}
-                      placeholder="0.2"
-                    />
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-sm font-black text-slate-800">
-                      Cara cepat mengambil lokasi
-                    </p>
-                    <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
-                      Datang ke titik absensi utama, aktifkan GPS perangkat, lalu klik gunakan lokasi saya. Setelah itu simpan.
-                    </p>
-
-                    <div className="mt-3">
-                      <button
-                        type="button"
-                        onClick={handleGunakanLokasiSaya}
-                        disabled={gpsLoading}
-                        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {gpsLoading ? (
-                          <>
-                            <Loader2 size={16} className="animate-spin" />
-                            Mengambil GPS...
-                          </>
-                        ) : (
-                          <>
-                            <Crosshair size={16} strokeWidth={2.5} />
-                            Gunakan Lokasi Saya
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSimpanLokasiAbsensi}
-                      disabled={!canSubmitLokasi}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {savingLokasi ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" />
-                          Menyimpan...
-                        </>
-                      ) : (
-                        <>
-                          <Save size={16} strokeWidth={2.5} />
-                          Simpan Lokasi
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={resetLokasiForm}
-                      disabled={savingLokasi}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <X size={16} strokeWidth={2.5} />
-                      Reset Pilihan
-                    </button>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Preview Data
-                    </p>
-
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <PreviewBox label="Latitude" value={lokasiLat || "-"} />
-                      <PreviewBox label="Longitude" value={lokasiLng || "-"} />
-                      <PreviewBox label="Radius" value={`${lokasiRadiusKm || "-"} km`} />
-                    </div>
-
-                    <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold leading-relaxed text-slate-500">
-                      Data akan tersimpan di:
-                      <span className="ml-1 font-black text-slate-700">
-                        toko/{selectedLokasiToko.id}/lokasiAbsensi
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <LokasiAbsensiForm
+                  selectedLokasiToko={selectedLokasiToko}
+                  lokasiLat={lokasiLat}
+                  lokasiLng={lokasiLng}
+                  lokasiRadiusKm={lokasiRadiusKm}
+                  setLokasiLat={setLokasiLat}
+                  setLokasiLng={setLokasiLng}
+                  setLokasiRadiusKm={setLokasiRadiusKm}
+                  handleGunakanLokasiSaya={handleGunakanLokasiSaya}
+                  handleSimpanLokasiAbsensi={handleSimpanLokasiAbsensi}
+                  resetLokasiForm={resetLokasiForm}
+                  gpsLoading={gpsLoading}
+                  savingLokasi={savingLokasi}
+                  canSubmitLokasi={canSubmitLokasi}
+                />
               )}
             </div>
           </motion.div>
@@ -1429,6 +1434,206 @@ export default function TambahTokoPage() {
           )}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {openDataMobileModal && activeTab === "data" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
+              onClick={(e) => {
+                if (e.target === e.currentTarget && !loadingSave && !loadingUpdate) {
+                  closeDataMobileModal()
+                }
+              }}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="max-h-[84vh] w-full max-w-lg overflow-y-auto rounded-[1.4rem] border border-slate-200 bg-white shadow-2xl"
+              >
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                      {editTarget ? "Edit Data Toko" : "Tambah Data Toko"}
+                    </p>
+                    <h2 className="truncate text-base font-black text-slate-800">
+                      {editTarget?.nama || "Toko Baru"}
+                    </h2>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeDataMobileModal}
+                    disabled={loadingSave || loadingUpdate}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <X size={17} strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                <div className="space-y-3 p-4">
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { label: "Kode Toko", val: kode, set: setKode },
+                      { label: "Nama Toko", val: nama, set: setNama },
+                      { label: "Pemilik", val: pemilik, set: setPemilik },
+                      { label: "No HP", val: noHp, set: setNoHp },
+                      { label: "Kota", val: kota, set: setKota },
+                    ].map(({ label, val, set }) => (
+                      <FieldBox key={label} label={label}>
+                        <input
+                          value={val}
+                          onChange={(e) => set(e.target.value)}
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                        />
+                      </FieldBox>
+                    ))}
+
+                    <FieldBox label="Status">
+                      <div className="relative">
+                        <select
+                          value={aktif ? "aktif" : "nonaktif"}
+                          onChange={(e) => setAktif(e.target.value === "aktif")}
+                          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                        >
+                          <option value="aktif">Aktif</option>
+                          <option value="nonaktif">Nonaktif</option>
+                        </select>
+                        <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </FieldBox>
+
+                    <FieldBox label="Latitude">
+                      <input
+                        type="number"
+                        step="any"
+                        value={latitude}
+                        onChange={(e) => setLatitude(e.target.value)}
+                        placeholder="-7.257472"
+                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                      />
+                    </FieldBox>
+
+                    <FieldBox label="Longitude">
+                      <input
+                        type="number"
+                        step="any"
+                        value={longitude}
+                        onChange={(e) => setLongitude(e.target.value)}
+                        placeholder="112.752090"
+                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                      />
+                    </FieldBox>
+
+                    <FieldBox label="Alamat">
+                      <textarea
+                        value={alamat}
+                        onChange={(e) => setAlamat(e.target.value)}
+                        rows={3}
+                        className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                      />
+                    </FieldBox>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={closeDataMobileModal}
+                      disabled={loadingSave || loadingUpdate}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <X size={16} strokeWidth={2.5} />
+                      Batal
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={editTarget ? update : simpan}
+                      disabled={!canSubmit}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {loadingSave || loadingUpdate ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : editTarget ? (
+                        <Pencil size={16} strokeWidth={2.5} />
+                      ) : (
+                        <Plus size={16} strokeWidth={2.5} />
+                      )}
+                      {loadingSave || loadingUpdate ? "Proses" : editTarget ? "Update" : "Simpan"}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {openLokasiMobileModal && selectedLokasiToko && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
+              onClick={(e) => {
+                if (e.target === e.currentTarget && !savingLokasi && !gpsLoading) {
+                  setOpenLokasiMobileModal(false)
+                }
+              }}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="max-h-[84vh] w-full max-w-lg overflow-y-auto rounded-[1.4rem] border border-slate-200 bg-white shadow-2xl"
+              >
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                      Atur GPS Absensi
+                    </p>
+                    <h2 className="truncate text-base font-black text-slate-800">
+                      {selectedLokasiToko.nama}
+                    </h2>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setOpenLokasiMobileModal(false)}
+                    disabled={savingLokasi || gpsLoading}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <X size={17} strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                <div className="p-4">
+                  <LokasiAbsensiForm
+                    selectedLokasiToko={selectedLokasiToko}
+                    lokasiLat={lokasiLat}
+                    lokasiLng={lokasiLng}
+                    lokasiRadiusKm={lokasiRadiusKm}
+                    setLokasiLat={setLokasiLat}
+                    setLokasiLng={setLokasiLng}
+                    setLokasiRadiusKm={setLokasiRadiusKm}
+                    handleGunakanLokasiSaya={handleGunakanLokasiSaya}
+                    handleSimpanLokasiAbsensi={handleSimpanLokasiAbsensi}
+                    resetLokasiForm={resetLokasiForm}
+                    gpsLoading={gpsLoading}
+                    savingLokasi={savingLokasi}
+                    canSubmitLokasi={canSubmitLokasi}
+                    compact
+                  />
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <ImportModal
           show={showImportModal}
           importStep={importStep}
@@ -1469,12 +1674,59 @@ function TabButton({
       onClick={onClick}
       className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
         active
-          ? "bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 text-white shadow-lg shadow-emerald-500/15"
+          ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
           : "border-2 border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
       }`}
     >
       <Icon size={16} strokeWidth={2.5} />
       {label}
+    </button>
+  )
+}
+
+
+function DataModeTabButton({
+  active,
+  icon: Icon,
+  label,
+  description,
+  onClick,
+}: {
+  active: boolean
+  icon: any
+  label: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+        active
+          ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
+          : "border-2 border-slate-200 bg-white text-slate-700 hover:bg-sky-50 hover:text-sky-700"
+      }`}
+    >
+      <span
+        className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${
+          active ? "bg-white/15 text-white" : "bg-sky-50 text-sky-600"
+        }`}
+      >
+        <Icon size={18} strokeWidth={2.5} />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-black uppercase tracking-wide sm:text-sm">
+          {label}
+        </span>
+        <span
+          className={`mt-0.5 hidden truncate text-[10px] font-bold sm:block ${
+            active ? "text-sky-50/85" : "text-slate-400"
+          }`}
+        >
+          {description}
+        </span>
+      </span>
     </button>
   )
 }
@@ -1488,26 +1740,26 @@ function StatCard({
   label: string
   value: number
   icon: any
-  tone: "slate" | "emerald" | "blue"
+  tone: "slate" | "sky" | "blue"
 }) {
   const cls =
-    tone === "emerald"
-      ? "bg-emerald-50 text-emerald-600"
+    tone === "sky"
+      ? "bg-sky-50 text-sky-600"
       : tone === "blue"
-        ? "bg-sky-50 text-sky-600"
+        ? "bg-blue-50 text-blue-600"
         : "bg-slate-100 text-slate-500"
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${cls}`}>
-          <Icon size={21} strokeWidth={2.5} />
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+      <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+       <div className={`hidden h-9 w-9 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${cls}`}>
+  <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+</div>
+        <div className="min-w-0">
+          <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
             {label}
           </p>
-          <p className="text-2xl font-black text-slate-800">{value}</p>
+          <p className="text-lg font-black leading-tight text-slate-800 sm:text-2xl">{value}</p>
         </div>
       </div>
     </div>
@@ -1553,7 +1805,7 @@ function FieldInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
+        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
       />
     </div>
   )
@@ -1590,6 +1842,135 @@ function EmptyState({
   )
 }
 
+
+function LokasiAbsensiForm({
+  selectedLokasiToko,
+  lokasiLat,
+  lokasiLng,
+  lokasiRadiusKm,
+  setLokasiLat,
+  setLokasiLng,
+  setLokasiRadiusKm,
+  handleGunakanLokasiSaya,
+  handleSimpanLokasiAbsensi,
+  resetLokasiForm,
+  gpsLoading,
+  savingLokasi,
+  canSubmitLokasi,
+  compact = false,
+}: {
+  selectedLokasiToko: Toko
+  lokasiLat: string
+  lokasiLng: string
+  lokasiRadiusKm: string
+  setLokasiLat: (value: string) => void
+  setLokasiLng: (value: string) => void
+  setLokasiRadiusKm: (value: string) => void
+  handleGunakanLokasiSaya: () => void
+  handleSimpanLokasiAbsensi: () => void
+  resetLokasiForm: () => void
+  gpsLoading: boolean
+  savingLokasi: boolean
+  canSubmitLokasi: boolean
+  compact?: boolean
+}) {
+  return (
+    <div className={compact ? "space-y-3" : "space-y-4"}>
+      {!compact && (
+        <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+            Toko Terpilih
+          </p>
+          <h2 className="mt-1 text-xl font-black text-slate-800">
+            {selectedLokasiToko.nama}
+          </h2>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Isi koordinat pusat lokasi absensi dan radius yang diperbolehkan.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <FieldInput
+          label="Latitude"
+          value={lokasiLat}
+          onChange={setLokasiLat}
+          placeholder="-7.257472"
+        />
+        <FieldInput
+          label="Longitude"
+          value={lokasiLng}
+          onChange={setLokasiLng}
+          placeholder="112.752090"
+        />
+        <FieldInput
+          label="Radius KM"
+          value={lokasiRadiusKm}
+          onChange={setLokasiRadiusKm}
+          placeholder="0.2"
+        />
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        
+
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={handleGunakanLokasiSaya}
+            disabled={gpsLoading}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          >
+            {gpsLoading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Mengambil GPS...
+              </>
+            ) : (
+              <>
+                <Crosshair size={16} strokeWidth={2.5} />
+                Gunakan Lokasi Saya
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button
+          type="button"
+          onClick={handleSimpanLokasiAbsensi}
+          disabled={!canSubmitLokasi}
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {savingLokasi ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Menyimpan...
+            </>
+          ) : (
+            <>
+              <Save size={16} strokeWidth={2.5} />
+              Simpan Lokasi
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={resetLokasiForm}
+          disabled={savingLokasi}
+          className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <X size={16} strokeWidth={2.5} />
+          Reset Pilihan
+        </button>
+      </div>
+  
+    </div>
+  )
+}
+
 function DataTokoSection({
   loading,
   filtered,
@@ -1610,7 +1991,7 @@ function DataTokoSection({
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
+            className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
           />
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
             Memuat data toko...
@@ -1637,7 +2018,7 @@ function DataTokoSection({
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.12, ease: "easeOut" }}
                 onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black text-emerald-700"
+                className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-black text-sky-700"
               >
                 <Upload size={13} strokeWidth={2.5} />
                 Import Excel
@@ -1651,50 +2032,68 @@ function DataTokoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, delay: idx * 0.03 }}
-              className="flex max-w-full items-start justify-between gap-3 overflow-hidden rounded-2xl border border-l-4 border-slate-200 border-l-emerald-400 bg-white p-3 shadow-sm"
+              role="button"
+              tabIndex={0}
+              onClick={() => mulaiEdit(d)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") mulaiEdit(d)
+              }}
+              className="cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-100/70 transition hover:border-sky-200 hover:bg-sky-50/30"
             >
-              <div className="min-w-0 flex-1">
-                <p className="break-words text-sm font-black leading-tight text-slate-800">
-                  {d.nama}
-                </p>
-                <p className="mt-0.5 break-words text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  {d.kode || "-"} · {d.kota || "-"}
-                </p>
-                <div className="mt-2 space-y-1">
-                  <p className="flex items-center gap-1 text-xs font-semibold text-slate-600">
-                    <Phone size={12} />
-                    {d.noHp || "-"}
-                  </p>
-                  <p className="flex items-center gap-1 text-xs font-semibold text-slate-600">
-                    <MapPin size={12} />
-                    {d.alamat || "-"}
-                  </p>
-                  <p className="break-all text-xs font-semibold text-slate-600">
-                    GPS: {d.latitude ?? "-"}, {d.longitude ?? "-"}
-                  </p>
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 ring-1 ring-sky-100">
+                  <Store size={20} strokeWidth={2.5} />
                 </div>
-              </div>
 
-              <div className="flex w-auto max-w-[110px] flex-shrink-0 flex-col items-end gap-2">
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ duration: 0.12, ease: "easeOut" }}
-                  onClick={() => mulaiEdit(d)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-2 text-xs font-black text-white shadow-sm shadow-amber-200/50"
-                >
-                  <Pencil size={12} strokeWidth={2.5} />
-                  Edit
-                </motion.button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black leading-tight text-slate-800">
+                        {d.nama}
+                      </p>
+                      <p className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                        {d.kode || "-"} · {d.kota || "-"}
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex flex-shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${
+                        d.aktif ? "bg-sky-50 text-sky-700" : "bg-rose-50 text-rose-700"
+                      }`}
+                    >
+                      {d.aktif ? "Aktif" : "Nonaktif"}
+                    </span>
+                  </div>
 
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ duration: 0.12, ease: "easeOut" }}
-                  onClick={() => setOpenDelete(d)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 px-3 py-2 text-xs font-black text-white shadow-sm shadow-rose-200/50"
-                >
-                  <Trash2 size={12} strokeWidth={2.5} />
-                  Hapus
-                </motion.button>
+                  <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+  <p className="flex min-w-0 items-center gap-2 text-xs font-semibold text-slate-600">
+    <Phone size={13} className="flex-shrink-0 text-slate-400" strokeWidth={2.5} />
+    <span className="truncate">{d.noHp || "-"}</span>
+  </p>
+  <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-relaxed text-slate-600">
+    <MapPin size={13} className="mt-0.5 flex-shrink-0 text-slate-400" strokeWidth={2.5} />
+    <span className="line-clamp-2">{d.alamat || "-"}</span>
+  </p>
+</div>
+
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-sky-600">
+                      Ketuk card untuk edit
+                    </p>
+
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpenDelete(d)
+                      }}
+                      className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 px-3 py-2 text-xs font-black text-white shadow-sm shadow-rose-200/50"
+                    >
+                      <Trash2 size={12} strokeWidth={2.5} />
+                      Hapus
+                    </motion.button>
+                  </div>
+                </div>
               </div>
             </motion.div>
           ))
@@ -1746,7 +2145,7 @@ function DataTokoSection({
                         whileTap={{ scale: 0.97 }}
                         transition={{ duration: 0.12, ease: "easeOut" }}
                         onClick={() => setShowImportModal(true)}
-                        className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black text-emerald-700"
+                        className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-black text-sky-700"
                       >
                         <Upload size={13} strokeWidth={2.5} />
                         Import Excel
@@ -1775,7 +2174,7 @@ function DataTokoSection({
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
-                          d.aktif ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                          d.aktif ? "bg-sky-100 text-sky-700" : "bg-rose-100 text-rose-700"
                         }`}
                       >
                         {d.aktif ? "Aktif" : "Nonaktif"}
@@ -1866,7 +2265,7 @@ function ImportModal({
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
           >
-            <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-6 py-4">
+            <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-6 py-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
                   <FileSpreadsheet size={18} className="text-white" strokeWidth={2.5} />
@@ -1901,9 +2300,9 @@ function ImportModal({
                   <div
                     className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wide transition-all ${
                       importStep === step.key
-                        ? "bg-emerald-600 text-white"
+                        ? "bg-sky-600 text-white"
                         : ["upload", "preview", "result"].indexOf(importStep) > idx
-                          ? "text-emerald-600"
+                          ? "text-sky-600"
                           : "text-slate-400"
                     }`}
                   >
@@ -1922,11 +2321,11 @@ function ImportModal({
             <div className="flex-1 space-y-4 overflow-y-auto p-6">
               {importStep === "upload" && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <FileSpreadsheet size={20} className="flex-shrink-0 text-emerald-600" strokeWidth={2} />
+                  <div className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                    <FileSpreadsheet size={20} className="flex-shrink-0 text-sky-600" strokeWidth={2} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-emerald-800">Belum punya template?</p>
-                      <p className="mt-0.5 text-[10px] font-semibold text-emerald-600">
+                      <p className="text-xs font-bold text-sky-700">Belum punya template?</p>
+                      <p className="mt-0.5 text-[10px] font-semibold text-sky-600">
                         Download template Excel, isi data termasuk koordinat GPS, lalu upload di sini.
                       </p>
                     </div>
@@ -1934,7 +2333,7 @@ function ImportModal({
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.12, ease: "easeOut" }}
                       onClick={handleDownloadTemplate}
-                      className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-black text-white"
+                      className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-[10px] font-black text-white"
                     >
                       <Download size={11} strokeWidth={2.5} />
                       Download
@@ -1953,7 +2352,7 @@ function ImportModal({
                   <motion.div
                     whileTap={{ scale: 0.99 }}
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 p-8 transition-all hover:border-emerald-400 hover:bg-emerald-50/30"
+                    className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 p-8 transition-all hover:border-sky-400 hover:bg-sky-50/30"
                   >
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                       <Upload size={28} className="text-slate-400" strokeWidth={1.5} />
@@ -2030,7 +2429,7 @@ function ImportModal({
                                   {r.longitude ?? <span className="text-red-400">—</span>}
                                 </td>
                                 <td className="px-3 py-2">
-                                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${r.aktif ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${r.aktif ? "bg-sky-100 text-sky-700" : "bg-rose-100 text-rose-700"}`}>
                                     {r.aktif ? "Aktif" : "Nonaktif"}
                                   </span>
                                 </td>
@@ -2059,7 +2458,7 @@ function ImportModal({
                     <ImportResultBox
                       label="Berhasil"
                       count={importResults.filter((r) => r.status === "success").length}
-                      tone="emerald"
+                      tone="sky"
                     />
                     <ImportResultBox
                       label="Dilewati"
@@ -2082,7 +2481,7 @@ function ImportModal({
                         }`}
                       >
                         {r.status === "success" ? (
-                          <CheckCircle2 size={14} className="flex-shrink-0 text-emerald-500" strokeWidth={2.5} />
+                          <CheckCircle2 size={14} className="flex-shrink-0 text-sky-500" strokeWidth={2.5} />
                         ) : r.status === "skipped" ? (
                           <AlertCircle size={14} className="flex-shrink-0 text-amber-500" strokeWidth={2.5} />
                         ) : (
@@ -2092,7 +2491,7 @@ function ImportModal({
                         <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{r.nama}</span>
                         <span
                           className={`ml-auto flex-shrink-0 text-[10px] font-semibold ${
-                            r.status === "success" ? "text-emerald-600" : r.status === "skipped" ? "text-amber-600" : "text-red-600"
+                            r.status === "success" ? "text-sky-600" : r.status === "skipped" ? "text-amber-600" : "text-red-600"
                           }`}
                         >
                           {r.message}
@@ -2121,7 +2520,7 @@ function ImportModal({
                   transition={{ duration: 0.12, ease: "easeOut" }}
                   onClick={handleImport}
                   disabled={importLoading}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-2.5 text-sm font-black text-white shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 py-2.5 text-sm font-black text-white shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {importLoading ? (
                     <>
@@ -2146,7 +2545,7 @@ function ImportModal({
                     setImportRows([])
                     setImportResults([])
                   }}
-                  className="flex items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-black text-emerald-700"
+                  className="flex items-center gap-2 rounded-xl border-2 border-sky-200 bg-sky-50 px-5 py-2.5 text-sm font-black text-sky-700"
                 >
                   <Upload size={14} strokeWidth={2.5} />
                   Import Lagi
@@ -2167,11 +2566,11 @@ function ImportResultBox({
 }: {
   label: string
   count: number
-  tone: "emerald" | "amber" | "red"
+  tone: "sky" | "amber" | "red"
 }) {
   const cls =
-    tone === "emerald"
-      ? "bg-emerald-50 border-emerald-200 text-emerald-600"
+    tone === "sky"
+      ? "bg-sky-50 border-sky-200 text-sky-600"
       : tone === "amber"
         ? "bg-amber-50 border-amber-200 text-amber-600"
         : "bg-red-50 border-red-200 text-red-600"
