@@ -3,7 +3,7 @@
 /*
   Page Persetujuan Absensi Karyawan.
   Dibuat dari pola Persetujuan Absensi PTK.
-  - Layout emerald konsisten.
+  - Layout biru konsisten dengan dashboard/laporan absensi terbaru.
   - Data diambil dari koleksi absensi_karyawan.
   - Approval lewat API /api/laporan-absensi-karyawan/approval agar summary ikut sinkron.
   - Setelah setujui/tolak, data lokal langsung dihapus tanpa refetch penuh.
@@ -23,8 +23,6 @@ import {
   Hand,
   HeartPulse,
   RefreshCw,
-  Store,
-  User,
   X,
   XCircle,
 } from "lucide-react"
@@ -216,12 +214,7 @@ export default function PendingAbsensiKaryawanPage() {
   const totalSakit = useMemo(() => data.filter((item) => item.status === "sakit").length, [data])
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-900">
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
-        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
-      </div>
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
 
       <AnimatePresence>
         {toast && (
@@ -231,18 +224,18 @@ export default function PendingAbsensiKaryawanPage() {
             exit={{ opacity: 0 }}
             className={`fixed right-4 top-4 z-[80] rounded-2xl border px-4 py-3 shadow-lg ${
               toast.type === "ok"
-                ? "border-emerald-200 bg-emerald-50"
+                ? "border-sky-200 bg-sky-50"
                 : "border-red-200 bg-red-50"
             }`}
           >
             <div className="flex items-start gap-2">
               {toast.type === "ok" ? (
-                <CheckCircle2 size={16} className="mt-0.5 text-emerald-600" strokeWidth={2.5} />
+                <CheckCircle2 size={16} className="mt-0.5 text-sky-600" strokeWidth={2.5} />
               ) : (
                 <AlertCircle size={16} className="mt-0.5 text-red-600" strokeWidth={2.5} />
               )}
 
-              <p className={`max-w-xs text-xs font-black leading-relaxed ${toast.type === "ok" ? "text-emerald-700" : "text-red-700"}`}>
+              <p className={`max-w-xs text-xs font-black leading-relaxed ${toast.type === "ok" ? "text-sky-700" : "text-red-700"}`}>
                 {toast.msg}
               </p>
             </div>
@@ -250,12 +243,12 @@ export default function PendingAbsensiKaryawanPage() {
         )}
       </AnimatePresence>
 
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+      <main className="relative w-full space-y-4 pb-28">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(2,132,199,0.24)] sm:px-5 sm:py-5"
         >
           <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-4">
@@ -265,23 +258,14 @@ export default function PendingAbsensiKaryawanPage() {
 
               <div className="min-w-0 flex-1">
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
-                  Persetujuan Absensi Karyawan
+                  Setujui Absensi
                 </h1>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                   Izin dan sakit karyawan yang menunggu persetujuan.
                 </p>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={fetchData}
-              disabled={loading}
-              className="inline-flex h-9 w-fit items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 text-[10px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} strokeWidth={2.5} />
-              Refresh
-            </button>
+           
           </div>
 
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
@@ -291,12 +275,12 @@ export default function PendingAbsensiKaryawanPage() {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-3">
           <SummaryCard
             icon={<Clock size={21} strokeWidth={2.5} />}
             label="Pending"
             value={String(totalPending)}
-            iconClassName="bg-emerald-50 text-emerald-600"
+            iconClassName="bg-sky-50 text-sky-600"
           />
 
           <SummaryCard
@@ -311,7 +295,6 @@ export default function PendingAbsensiKaryawanPage() {
             label="Sakit"
             value={String(totalSakit)}
             iconClassName="bg-red-50 text-red-600"
-            className="hidden lg:block"
           />
         </div>
 
@@ -325,7 +308,7 @@ export default function PendingAbsensiKaryawanPage() {
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-              className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-emerald-500"
+              className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-sky-500"
             />
 
             <p className="text-xs font-black uppercase tracking-widest text-slate-400">
@@ -366,7 +349,7 @@ export default function PendingAbsensiKaryawanPage() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <StatusBadge status={d.status} />
 
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-sky-700">
                       Pending
                     </span>
                   </div>
@@ -415,7 +398,7 @@ export default function PendingAbsensiKaryawanPage() {
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.12, ease: "easeOut" }}
                       onClick={() => updateStatus(d.id, "approved")}
-                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-[10px] font-black uppercase tracking-[0.06em] text-emerald-700 transition-colors hover:bg-emerald-100"
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 text-[10px] font-black uppercase tracking-[0.06em] text-sky-700 transition-colors hover:bg-sky-100"
                     >
                       <CheckCircle2 size={13} strokeWidth={2.5} />
                       Setujui
@@ -524,7 +507,7 @@ export default function PendingAbsensiKaryawanPage() {
                             whileTap={{ scale: 0.97 }}
                             transition={{ duration: 0.12, ease: "easeOut" }}
                             onClick={() => updateStatus(d.id, "approved")}
-                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-[10px] font-black uppercase tracking-[0.06em] text-emerald-700 transition-colors hover:bg-emerald-100"
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 text-[10px] font-black uppercase tracking-[0.06em] text-sky-700 transition-colors hover:bg-sky-100"
                           >
                             <CheckCircle2 size={13} strokeWidth={2.5} />
                             Setujui
@@ -567,7 +550,7 @@ export default function PendingAbsensiKaryawanPage() {
               <div
                 className={`relative overflow-hidden px-5 py-4 ${
                   confirmAction === "approved"
-                    ? "bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800"
+                    ? "bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500"
                     : "bg-gradient-to-br from-red-500 via-red-600 to-rose-700"
                 }`}
               >
@@ -650,7 +633,7 @@ export default function PendingAbsensiKaryawanPage() {
                   disabled={executing}
                   className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-full border px-4 text-[10px] font-black uppercase tracking-[0.08em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                     confirmAction === "approved"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
                       : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                   }`}
                 >
@@ -690,18 +673,18 @@ function SummaryCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28 }}
-      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}
+      className={`rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4 ${className}`}
     >
-      <div className="flex items-center gap-3">
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${iconClassName}`}>
+      <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+        <div className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl sm:flex ${iconClassName}`}>
           {icon}
         </div>
 
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+          <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
             {label}
           </p>
-          <p className="truncate text-2xl font-black text-slate-800">
+          <p className="truncate text-lg font-black leading-tight text-slate-800 sm:text-2xl">
             {value}
           </p>
         </div>

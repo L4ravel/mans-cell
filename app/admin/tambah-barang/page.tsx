@@ -1,5 +1,6 @@
 /*
   Halaman admin barang untuk CRUD data barang per toko di Firestore.
+  Layout direvisi konsisten 100% dengan master data terbaru: tema biru muda, filter mobile collapse, stat card sesuai filter aktif, card mobile modern, dan tombol aksi seragam.
   Revisi:
   - pilih jenis barang pakai tab fisik / digital
   - provider digital ambil dari database koleksi provider
@@ -33,6 +34,7 @@ import {
   CopyPlus,
   Download,
   FileSpreadsheet,
+  ListFilter,
   Upload,
   ChevronDown,
   ChevronLeft,
@@ -173,7 +175,8 @@ const ITEMS_OPTIONS = [
   { value: 10, label: "10" },
   { value: 25, label: "25" },
   { value: 50, label: "50" },
-  { value: 0, label: "Semua" },
+  { value: 100, label: "100" },
+  { value: 0, label: "ALL" },
 ]
 
 const EMPTY_FORM = {
@@ -252,7 +255,7 @@ function FormInput({
       <div className="relative">
         <input
           {...props}
-          className={`w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+          className={`w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20 ${
             rightSlot ? "pr-24" : ""
           }`}
         />
@@ -290,7 +293,7 @@ function FormSelect({
       <div className="relative">
         <select
           {...props}
-          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
         >
           {children}
         </select>
@@ -337,7 +340,7 @@ function FilterSelect({
           onChange={(e) => onChange(e.target.value)}
           className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
             Icon ? "pl-8" : "pl-3"
-          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20`}
         >
           {children}
         </select>
@@ -920,6 +923,51 @@ function ImportStatCard({
   )
 }
 
+function BarangStatCard({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string
+  value: string
+  icon: any
+  tone: "slate" | "sky" | "blue" | "rose"
+}) {
+  const toneClass =
+    tone === "sky"
+      ? "bg-sky-50 text-sky-600"
+      : tone === "blue"
+        ? "bg-blue-50 text-blue-600"
+        : tone === "rose"
+          ? "bg-rose-50 text-rose-600"
+          : "bg-slate-100 text-slate-500"
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28 }}
+      className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4"
+    >
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${toneClass}`}>
+          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">
+            {label}
+          </p>
+          <p className="mt-0.5 truncate text-lg font-black leading-tight text-slate-800 sm:text-2xl">
+            {value}
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
 function BarcodeSvg({ value, className }: { value: string; className?: string }) {
   const svgRef = useRef<SVGSVGElement | null>(null)
 
@@ -1345,6 +1393,7 @@ export default function TambahBarangPage() {
   const [filterKategori, setFilterKategori] = useState("")
   const [filterToko, setFilterToko] = useState("")
   const [filterJenisBarang, setFilterJenisBarang] = useState("")
+  const [filterMobileOpen, setFilterMobileOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
 
@@ -1589,6 +1638,24 @@ export default function TambahBarangPage() {
       return matchSearch && matchKategori && matchToko && matchJenis
     })
   }, [data, search, filterKategori, filterToko, filterJenisBarang])
+
+  const barangStats = useMemo(() => {
+    const totalBarang = filtered.length
+    const totalFisik = filtered.filter((item) => (item.jenisBarang || "fisik") === "fisik").length
+    const totalDigital = filtered.filter((item) => item.jenisBarang === "digital").length
+    const stokRendah = filtered.filter(
+      (item) =>
+        (item.jenisBarang || "fisik") === "fisik" &&
+        Number(item.stok || 0) <= Number(item.stokMinimum || 0)
+    ).length
+
+    return {
+      totalBarang,
+      totalFisik,
+      totalDigital,
+      stokRendah,
+    }
+  }, [filtered])
 
   const selectedCopyTokoIds = useMemo(
     () => Object.entries(copyTargetTokoIds).filter(([, checked]) => checked).map(([id]) => id),
@@ -2934,11 +3001,12 @@ export default function TambahBarangPage() {
         onChange={(e) => void handleImportBarang(e.target.files?.[0])}
       />
 
-      <div className="space-y-4 text-slate-900 sm:space-y-5">
+      <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+        <main className="relative w-full space-y-4 pb-28">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
@@ -2950,13 +3018,13 @@ export default function TambahBarangPage() {
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                   Data Barang
                 </h1>
-                <p className="mt-1 hidden text-xs font-semibold leading-relaxed text-emerald-50/85 sm:block sm:text-sm">
-                  Barang fisik · barang digital · provider · saldo
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
+                  Kelola barang fisik dan digital lengkap dengan stok, barcode, provider, dan saldo.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+            <div className="hidden flex-wrap items-center justify-end gap-2 sm:flex">
               
 
              <div className="flex flex-wrap items-center justify-end gap-2">
@@ -3038,7 +3106,7 @@ export default function TambahBarangPage() {
     whileTap={{ scale: 0.97 }}
     transition={{ duration: 0.12, ease: "easeOut" }}
     onClick={openAdd}
-    className="inline-flex h-8 items-center justify-center gap-1 rounded-full bg-white px-3 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50"
+    className="inline-flex h-8 items-center justify-center gap-1 rounded-full bg-white px-3 text-[10px] font-black uppercase tracking-wide text-sky-700 shadow-sm transition-colors hover:bg-sky-50"
     title="Tambah Barang"
   >
     <Plus size={13} strokeWidth={3} />
@@ -3080,32 +3148,59 @@ export default function TambahBarangPage() {
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
+              className="fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-lg"
             >
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500">
                 <Check size={11} className="text-white" strokeWidth={3} />
               </div>
-              <p className="text-[11px] font-bold text-emerald-700">{successMsg}</p>
+              <p className="text-[11px] font-bold text-sky-700">{successMsg}</p>
             </motion.div>
           )}
         </AnimatePresence>
 
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+          <BarangStatCard
+            label="Total Barang"
+            value={String(barangStats.totalBarang)}
+            icon={Package}
+            tone="sky"
+          />
+          <BarangStatCard
+            label="Barang Fisik"
+            value={String(barangStats.totalFisik)}
+            icon={Boxes}
+            tone="blue"
+          />
+          <BarangStatCard
+            label="Barang Digital"
+            value={String(barangStats.totalDigital)}
+            icon={Smartphone}
+            tone="slate"
+          />
+          <BarangStatCard
+            label="Stok Rendah"
+            value={String(barangStats.stokRendah)}
+            icon={AlertCircle}
+            tone="rose"
+          />
+        </div>
+
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.08 }}
+          transition={{ duration: 0.35, delay: 0.08 }}
           className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="sm:col-span-2 lg:col-span-2">
-              <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+              <label className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 Cari Barang / Barcode
               </label>
-              <div className="relative">
+              <div className="relative mt-1">
                 <Search
-                  size={13}
+                  size={14}
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                 />
                 <input
                   value={search}
@@ -3114,61 +3209,132 @@ export default function TambahBarangPage() {
                     setPage(1)
                   }}
                   placeholder="Barcode, nama, provider, saldo, IMEI..."
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                 />
               </div>
             </div>
 
-            <FilterSelect
-              label="Jenis"
-              value={filterJenisBarang}
-              onChange={(v) => {
-                setFilterJenisBarang(v)
-                setPage(1)
-              }}
-              icon={Package}
-            >
-              <option value="">Semua Jenis</option>
-              <option value="fisik">Fisik</option>
-              <option value="digital">Digital</option>
-            </FilterSelect>
+            <div className="hidden sm:contents">
+              <FilterSelect
+                label="Jenis"
+                value={filterJenisBarang}
+                onChange={(v) => {
+                  setFilterJenisBarang(v)
+                  setPage(1)
+                }}
+                icon={Package}
+              >
+                <option value="">Semua Jenis</option>
+                <option value="fisik">Fisik</option>
+                <option value="digital">Digital</option>
+              </FilterSelect>
 
-            <FilterSelect
-              label="Kategori"
-              value={filterKategori}
-              onChange={(v) => {
-                setFilterKategori(v)
-                setPage(1)
-              }}
-              icon={Tag}
-            >
-              <option value="">Semua Kategori</option>
-              {kategoriList.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.nama}
-                </option>
-              ))}
-            </FilterSelect>
+              <FilterSelect
+                label="Kategori"
+                value={filterKategori}
+                onChange={(v) => {
+                  setFilterKategori(v)
+                  setPage(1)
+                }}
+                icon={Tag}
+              >
+                <option value="">Semua Kategori</option>
+                {kategoriList.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.nama}
+                  </option>
+                ))}
+              </FilterSelect>
 
-            <FilterSelect
-              label="Toko"
-              value={filterToko}
-              onChange={(v) => {
-                setFilterToko(v)
-                setPage(1)
-              }}
-              icon={Store}
-            >
-              <option value="">Semua Toko</option>
-              {tokoList.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nama}
-                </option>
-              ))}
-            </FilterSelect>
+              <FilterSelect
+                label="Toko"
+                value={filterToko}
+                onChange={(v) => {
+                  setFilterToko(v)
+                  setPage(1)
+                }}
+                icon={Store}
+              >
+                <option value="">Semua Toko</option>
+                {tokoList.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nama}
+                  </option>
+                ))}
+              </FilterSelect>
+            </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:hidden">
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              onClick={openAdd}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-white shadow-sm shadow-sky-500/15"
+              type="button"
+            >
+              <Plus size={14} strokeWidth={2.5} />
+              Tambah
+            </motion.button>
+
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              onClick={() => importInputRef.current?.click()}
+              disabled={importLoading}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-sky-700 disabled:opacity-60"
+              type="button"
+            >
+              <Upload size={14} strokeWidth={2.5} />
+              Import
+            </motion.button>
+
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              onClick={() => setFilterMobileOpen((prev) => !prev)}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] transition ${
+                filterMobileOpen ? "border-sky-200 bg-sky-100 text-sky-700" : "border-slate-200 bg-white text-slate-600"
+              }`}
+              type="button"
+            >
+              <ListFilter size={14} strokeWidth={2.5} />
+              Filter
+            </motion.button>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {filterMobileOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden sm:hidden"
+              >
+                <div className="mt-3 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                  <FilterSelect label="Jenis" value={filterJenisBarang} onChange={(v) => { setFilterJenisBarang(v); setPage(1) }} icon={Package}>
+                    <option value="">Semua Jenis</option>
+                    <option value="fisik">Fisik</option>
+                    <option value="digital">Digital</option>
+                  </FilterSelect>
+                  <FilterSelect label="Kategori" value={filterKategori} onChange={(v) => { setFilterKategori(v); setPage(1) }} icon={Tag}>
+                    <option value="">Semua Kategori</option>
+                    {kategoriList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
+                  </FilterSelect>
+                  <FilterSelect label="Toko" value={filterToko} onChange={(v) => { setFilterToko(v); setPage(1) }} icon={Store}>
+                    <option value="">Semua Toko</option>
+                    {tokoList.map((t) => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                  </FilterSelect>
+                  <FilterSelect label="Tampilkan" value={itemsPerPage} onChange={(v) => { setItemsPerPage(Number(v)); setPage(1) }}>
+                    {ITEMS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </FilterSelect>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="mt-3 hidden grid-cols-1 gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
             <FilterSelect
               label="Tampilkan"
               value={itemsPerPage}
@@ -3179,7 +3345,7 @@ export default function TambahBarangPage() {
             >
               {ITEMS_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
-                  {o.label} data
+                  {o.label}
                 </option>
               ))}
             </FilterSelect>
@@ -3192,7 +3358,7 @@ export default function TambahBarangPage() {
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
+                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
               />
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                 Memuat data...
@@ -3213,7 +3379,7 @@ export default function TambahBarangPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={openAdd}
-              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-2 text-xs font-black text-white shadow-sm"
+              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-2 text-xs font-black text-white shadow-sm"
             >
               <Plus size={13} strokeWidth={3} />
               Tambah Barang Pertama
@@ -3245,13 +3411,13 @@ export default function TambahBarangPage() {
                       <div className="flex flex-shrink-0 gap-1.5">
                         <button
                           onClick={() => openEdit(d)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:bg-sky-100"
                         >
                           <Pencil size={12} strokeWidth={2.5} />
                         </button>
                         <button
                           onClick={() => setDeleteId(d.id)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-300/70 bg-rose-600 text-white shadow-sm shadow-rose-500/15 transition-colors hover:bg-rose-700"
                         >
                           <Trash2 size={12} strokeWidth={2.5} />
                         </button>
@@ -3262,7 +3428,7 @@ export default function TambahBarangPage() {
                       <span
                         className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-black ${
                           d.jenisBarang === "digital"
-                            ? "bg-emerald-600 text-white"
+                            ? "bg-sky-500 text-white"
                             : "bg-slate-900 text-white"
                         }`}
                       >
@@ -3282,7 +3448,7 @@ export default function TambahBarangPage() {
                       ) : null}
 
                       {d.jenisBarang === "digital" && d.provider ? (
-                        <span className="rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                        <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                           {d.provider}
                         </span>
                       ) : null}
@@ -3294,7 +3460,7 @@ export default function TambahBarangPage() {
                       ) : null}
 
                       {d.pakaiKodeUnik && (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-black uppercase text-white">
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-sky-500 px-2.5 py-1 text-[10px] font-black uppercase text-white">
                           <ShieldCheck size={11} strokeWidth={2.5} />
                           {d.jenisKodeUnik}: {d.kodeUnik || "-"}
                         </span>
@@ -3304,7 +3470,7 @@ export default function TambahBarangPage() {
                     <div className="mt-2 flex flex-wrap gap-1">
                       {d.jenisBarang === "fisik" ? (
                         <>
-                          <span className="rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                             {d.merk || "-"}
                           </span>
                           <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
@@ -3315,7 +3481,7 @@ export default function TambahBarangPage() {
                           </span>
                           <span
                             className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
-                              isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                              isLowStock ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700"
                             }`}
                           >
                             Stok: {d.stok}
@@ -3323,14 +3489,14 @@ export default function TambahBarangPage() {
                         </>
                       ) : (
                         <>
-                          <span className="rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                             Nominal: {formatRupiah(d.nominalProduk || 0)}
                           </span>
                           <span
                             className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
                               d.aktif === false
                                 ? "bg-red-100 text-red-700"
-                                : "bg-emerald-100 text-emerald-700"
+                                : "bg-sky-100 text-sky-700"
                             }`}
                           >
                             {d.aktif === false ? "Nonaktif" : "Aktif"}
@@ -3370,7 +3536,7 @@ export default function TambahBarangPage() {
                               {d.jenisBarang === "digital" ? d.saldoSourceNama || "-" : d.supplier || "-"}
                             </p>
                             {d.jenisBarang === "digital" ? (
-                              <p className="mt-1 text-xs font-semibold text-emerald-600">
+                              <p className="mt-1 text-xs font-semibold text-sky-600">
                                 {d.provider || "-"} · {d.nominalProduk ? formatRupiah(d.nominalProduk) : "-"}
                               </p>
                             ) : null}
@@ -3380,7 +3546,7 @@ export default function TambahBarangPage() {
                             <span
                               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-black ${
                                 d.jenisBarang === "digital"
-                                  ? "bg-emerald-600 text-white"
+                                  ? "bg-sky-500 text-white"
                                   : "bg-slate-900 text-white"
                               }`}
                             >
@@ -3404,7 +3570,7 @@ export default function TambahBarangPage() {
                                 {d.pakaiKodeUnik ? (
                                   <>
                                     <span className="text-xs font-black text-slate-400">/</span>
-                                    <span className="inline-flex max-w-full items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-black text-white">
+                                    <span className="inline-flex max-w-full items-center gap-1 rounded-lg bg-sky-500 px-2.5 py-1 text-[10px] font-black text-white">
                                       <ShieldCheck size={11} strokeWidth={2.5} className="shrink-0" />
                                       <span className="truncate">
                                         {String(d.jenisKodeUnik || "").toUpperCase()}: {d.kodeUnik || "-"}
@@ -3415,7 +3581,7 @@ export default function TambahBarangPage() {
                               </div>
                             ) : (
                               <div className="flex flex-wrap gap-1.5">
-                                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                                <span className="inline-flex items-center gap-1 rounded-lg bg-sky-100 px-2.5 py-1 text-[10px] font-black text-sky-700">
                                   <Wifi size={11} strokeWidth={2.5} />
                                   {d.provider || "-"}
                                 </span>
@@ -3442,7 +3608,7 @@ export default function TambahBarangPage() {
                               <>
                                 <span
                                   className={`inline-flex rounded-lg px-2 py-1 text-xs font-black ${
-                                    isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                                    isLowStock ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700"
                                   }`}
                                 >
                                   {d.stok}
@@ -3455,7 +3621,7 @@ export default function TambahBarangPage() {
                                   className={`inline-flex rounded-lg px-2 py-1 text-xs font-black ${
                                     d.aktif === false
                                       ? "bg-red-100 text-red-700"
-                                      : "bg-emerald-100 text-emerald-700"
+                                      : "bg-sky-100 text-sky-700"
                                   }`}
                                 >
                                   {d.aktif === false ? "Nonaktif" : "Aktif"}
@@ -3471,13 +3637,13 @@ export default function TambahBarangPage() {
                             <div className="flex justify-end gap-2">
                               <button
                                 onClick={() => openEdit(d)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition-colors hover:bg-amber-100"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:bg-sky-100"
                               >
                                 <Pencil size={13} strokeWidth={2.5} />
                               </button>
                               <button
                                 onClick={() => setDeleteId(d.id)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-colors hover:bg-red-100"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-300/70 bg-rose-600 text-white shadow-sm shadow-rose-500/15 transition-colors hover:bg-rose-700"
                               >
                                 <Trash2 size={13} strokeWidth={2.5} />
                               </button>
@@ -3533,7 +3699,7 @@ export default function TambahBarangPage() {
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
               >
-                <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-6 py-4">
+                <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
                       {isEdit ? (
@@ -3599,7 +3765,7 @@ export default function TambahBarangPage() {
                           onClick={() => handleChangeJenisBarang("digital")}
                           className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black transition-all ${
                             isDigitalForm
-                              ? "bg-white text-emerald-700 shadow-sm"
+                              ? "bg-white text-sky-700 shadow-sm"
                               : "text-slate-500 hover:text-slate-700"
                           }`}
                         >
@@ -3629,11 +3795,11 @@ export default function TambahBarangPage() {
                           }
                         />
                       ) : (
-                        <div className="rounded-xl border-2 border-emerald-100 bg-emerald-50 px-4 py-3 sm:col-span-2">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                        <div className="rounded-xl border-2 border-sky-100 bg-sky-50 px-4 py-3 sm:col-span-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
                             Produk Digital
                           </p>
-                          <p className="mt-1 text-xs font-semibold text-emerald-700">
+                          <p className="mt-1 text-xs font-semibold text-sky-700">
                             Produk digital tidak memakai barcode fisik. Sumber saldo akan dipilih dari master saldo.
                           </p>
                         </div>
@@ -3837,7 +4003,7 @@ export default function TambahBarangPage() {
                                 type="button"
                                 onClick={() => setField("pakaiKodeUnik")(!form.pakaiKodeUnik)}
                                 className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all ${
-                                  form.pakaiKodeUnik ? "bg-emerald-500" : "bg-slate-300"
+                                  form.pakaiKodeUnik ? "bg-sky-500" : "bg-slate-300"
                                 }`}
                               >
                                 <span
@@ -3893,7 +4059,7 @@ export default function TambahBarangPage() {
                                       ? "Satu serial per baris\nSN-123456\nSN-123457"
                                       : "Satu kode unik per baris\nKODE-UNIK-001\nKODE-UNIK-002"
                                   }
-                                  className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                  className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                                 />
 
                                 <p className="mt-1 text-[10px] font-semibold text-slate-400">
@@ -3939,7 +4105,7 @@ export default function TambahBarangPage() {
                     <button
                       type="submit"
                       disabled={submitLoading}
-                      className="rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50"
+                      className="rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50"
                     >
                       {submitLoading ? "Menyimpan..." : isEdit ? "Simpan Perubahan" : "Tambah Barang"}
                     </button>
@@ -3968,9 +4134,9 @@ export default function TambahBarangPage() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: 16 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
-                className="relative z-10 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-2xl"
+                className="relative z-10 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-sky-100 bg-white shadow-2xl"
               >
-                <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-4 text-white">
+                <div className="relative overflow-hidden bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-5 py-4 text-white">
                   <div className="relative z-10 flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-start gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
@@ -3981,7 +4147,7 @@ export default function TambahBarangPage() {
                         <h2 className="text-lg font-black tracking-tight text-white">
                           Konfirmasi Import Barang
                         </h2>
-                        <p className="mt-1 truncate text-xs font-semibold leading-relaxed text-emerald-50/85">
+                        <p className="mt-1 truncate text-xs font-semibold leading-relaxed text-sky-50/85">
                           {importPreview.fileName}
                         </p>
                       </div>
@@ -4026,11 +4192,11 @@ export default function TambahBarangPage() {
 
                       <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200">
                         {importLoading ? (
-                          <RefreshCw size={13} className="animate-spin text-emerald-600" strokeWidth={3} />
+                          <RefreshCw size={13} className="animate-spin text-sky-600" strokeWidth={3} />
                         ) : importPreview.errors.length > 0 ? (
                           <AlertCircle size={13} className="text-red-500" strokeWidth={3} />
                         ) : (
-                          <Check size={13} className="text-emerald-600" strokeWidth={3} />
+                          <Check size={13} className="text-sky-600" strokeWidth={3} />
                         )}
                         {importProgress.status === "processing"
                           ? `${importProgress.current}/${importProgress.total}`
@@ -4042,7 +4208,7 @@ export default function TambahBarangPage() {
 
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
                       <motion.div
-                        className={`h-full rounded-full ${importPreview.errors.length > 0 ? "bg-red-500" : "bg-emerald-500"}`}
+                        className={`h-full rounded-full ${importPreview.errors.length > 0 ? "bg-red-500" : "bg-sky-500"}`}
                         initial={{ width: 0 }}
                         animate={{
                           width:
@@ -4082,16 +4248,16 @@ export default function TambahBarangPage() {
                     </div>
                   ) : (
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4">
-                        <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">
+                      <div className="rounded-3xl border border-sky-100 bg-sky-50/70 p-4">
+                        <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">
                           Ringkasan Jenis
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-2">
-                          <div className="rounded-2xl bg-white p-3 ring-1 ring-emerald-100">
+                          <div className="rounded-2xl bg-white p-3 ring-1 ring-sky-100">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Fisik</p>
                             <p className="mt-1 text-xl font-black text-slate-800">{importPreview.totalFisik}</p>
                           </div>
-                          <div className="rounded-2xl bg-white p-3 ring-1 ring-emerald-100">
+                          <div className="rounded-2xl bg-white p-3 ring-1 ring-sky-100">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Digital</p>
                             <p className="mt-1 text-xl font-black text-slate-800">{importPreview.totalDigital}</p>
                           </div>
@@ -4103,7 +4269,7 @@ export default function TambahBarangPage() {
                           Catatan
                         </p>
                         <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-600">
-                          Data belum masuk ke database. Klik <span className="font-black text-emerald-700">Oke, Import</span> untuk mulai menyimpan. Proses akan tampil sampai selesai.
+                          Data belum masuk ke database. Klik <span className="font-black text-sky-700">Oke, Import</span> untuk mulai menyimpan. Proses akan tampil sampai selesai.
                         </p>
                       </div>
                     </div>
@@ -4135,7 +4301,7 @@ export default function TambahBarangPage() {
                                   className={`inline-flex rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wide ${
                                     item.action === "update"
                                       ? "bg-amber-100 text-amber-700"
-                                      : "bg-emerald-100 text-emerald-700"
+                                      : "bg-sky-100 text-sky-700"
                                   }`}
                                 >
                                   {item.action === "update" ? "Update" : "Baru"}
@@ -4178,7 +4344,7 @@ export default function TambahBarangPage() {
                     type="button"
                     onClick={confirmImportBarang}
                     disabled={importLoading || importPreview.errors.length > 0 || importPreview.prepared.length === 0}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 text-xs font-black uppercase tracking-wide text-white shadow-sm shadow-emerald-200/50 transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-sm shadow-sky-500/15 transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {importLoading ? (
                       <>
@@ -4218,7 +4384,7 @@ export default function TambahBarangPage() {
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
               >
-                <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-6 py-4">
+                <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
                       <CopyPlus size={18} className="text-white" strokeWidth={2.5} />
@@ -4244,8 +4410,8 @@ export default function TambahBarangPage() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-5">
-                  <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                  <div className="mb-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">
                       Toko Asal
                     </p>
                     <div className="relative mt-2">
@@ -4256,7 +4422,7 @@ export default function TambahBarangPage() {
                           setCopyTargetTokoIds({})
                         }}
                         disabled={copyLoading}
-                        className="w-full appearance-none rounded-xl border-2 border-emerald-100 bg-white px-3 py-2.5 pr-8 text-sm font-black text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:opacity-60"
+                        className="w-full appearance-none rounded-xl border-2 border-sky-100 bg-white px-3 py-2.5 pr-8 text-sm font-black text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 disabled:opacity-60"
                       >
                         <option value="">Pilih toko asal</option>
                         {tokoList.map((toko) => (
@@ -4271,7 +4437,7 @@ export default function TambahBarangPage() {
                         strokeWidth={2.5}
                       />
                     </div>
-                    <p className="mt-2 text-xs font-semibold text-emerald-700">
+                    <p className="mt-2 text-xs font-semibold text-sky-700">
                       {copySourceToko
                         ? `${copySourceItems.length} barang dari ${copySourceToko.nama} siap disalin${filterJenisBarang || filterKategori || search ? " sesuai filter aktif" : ""}.`
                         : "Pilih toko asal untuk melihat jumlah barang yang bisa disalin."}
@@ -4283,7 +4449,7 @@ export default function TambahBarangPage() {
                       type="button"
                       onClick={selectAllCopyTargetToko}
                       disabled={copyLoading || copyableTokoList.length === 0}
-                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-black text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Pilih Semua Toko
                     </button>
@@ -4315,7 +4481,7 @@ export default function TambahBarangPage() {
                               onClick={() => toggleCopyTargetToko(toko.id)}
                               disabled={copyLoading}
                               className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                                checked ? "bg-emerald-50" : "bg-white hover:bg-slate-50"
+                                checked ? "bg-sky-50" : "bg-white hover:bg-slate-50"
                               }`}
                             >
                               <div className="min-w-0">
@@ -4330,7 +4496,7 @@ export default function TambahBarangPage() {
                               <div
                                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
                                   checked
-                                    ? "border-emerald-600 bg-emerald-600 text-white"
+                                    ? "border-sky-500 bg-sky-500 text-white"
                                     : "border-slate-300 bg-white text-transparent"
                                 }`}
                               >
@@ -4357,7 +4523,7 @@ export default function TambahBarangPage() {
                     type="button"
                     onClick={handleCopyAllBarang}
                     disabled={copyLoading || selectedCopyTokoIds.length === 0 || copySourceItems.length === 0 || !copySourceTokoId}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-2.5 text-xs font-black text-white shadow-lg shadow-emerald-500/15 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 py-2.5 text-xs font-black text-white shadow-lg shadow-sky-500/15 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {copyLoading ? (
                       <>
@@ -4393,7 +4559,7 @@ export default function TambahBarangPage() {
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl"
               >
-                <div className="bg-gradient-to-r from-red-500 to-rose-500 px-6 py-4">
+                <div className="bg-gradient-to-r from-rose-500 to-red-600 px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
                       <Trash2 size={18} className="text-white" strokeWidth={2.5} />
@@ -4420,7 +4586,7 @@ export default function TambahBarangPage() {
                   <button
                     onClick={handleDelete}
                     disabled={deleteLoading}
-                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-500 px-5 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 px-5 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60"
                   >
                     {deleteLoading ? "Menghapus..." : "Ya, Hapus"}
                   </button>
@@ -4450,7 +4616,7 @@ export default function TambahBarangPage() {
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="relative z-10 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
               >
-                <div className="flex items-center justify-between bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-6 py-4">
+                <div className="flex items-center justify-between bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-6 py-4">
                   <div>
                     <h2 className="text-base font-black text-white">Pilih Barang Fisik</h2>
                     <p className="mt-0.5 text-[10px] font-semibold text-white/70">
@@ -4481,7 +4647,7 @@ export default function TambahBarangPage() {
                           value={printSearch}
                           onChange={(e) => setPrintSearch(e.target.value)}
                           placeholder="Nama, barcode, merk..."
-                          className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                         />
                       </div>
                     </div>
@@ -4525,7 +4691,7 @@ export default function TambahBarangPage() {
                               onClick={() => togglePrintItem(item)}
                               className={`rounded-xl px-3 py-2 text-xs font-black ${
                                 qty > 0
-                                  ? "bg-emerald-500 text-white"
+                                  ? "bg-sky-500 text-white"
                                   : "border border-slate-200 bg-white text-slate-700"
                               }`}
                             >
@@ -4538,7 +4704,7 @@ export default function TambahBarangPage() {
                               max={999}
                               value={qty}
                               onChange={(e) => updatePrintQty(item.id, Number(e.target.value))}
-                              className="w-24 rounded-xl border-2 border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 focus:border-emerald-500 focus:outline-none"
+                              className="w-24 rounded-xl border-2 border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 focus:border-sky-400 focus:outline-none"
                             />
                           </div>
                         </div>
@@ -4562,7 +4728,7 @@ export default function TambahBarangPage() {
                     <button
                       type="button"
                       onClick={openPrintPreview}
-                      className="rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-2 text-sm font-black text-white"
+                      className="rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-2 text-sm font-black text-white"
                     >
                       Lanjut Print
                     </button>
@@ -4592,7 +4758,7 @@ export default function TambahBarangPage() {
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="relative z-10 flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
               >
-                <div className="flex items-center justify-between bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-6 py-4 print-hide">
+                <div className="flex items-center justify-between bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-6 py-4 print-hide">
                   <div>
                     <h2 className="text-base font-black text-white">Preview Barcode</h2>
                     <p className="mt-0.5 text-[10px] font-semibold text-white/70">
@@ -4608,7 +4774,7 @@ export default function TambahBarangPage() {
                     </button>
                     <button
                       onClick={handlePrint}
-                      className="rounded-xl bg-white px-4 py-2 text-sm font-black text-emerald-700"
+                      className="rounded-xl bg-white px-4 py-2 text-sm font-black text-sky-700"
                     >
                       Print
                     </button>
@@ -4639,6 +4805,7 @@ export default function TambahBarangPage() {
             </motion.div>
           )}
         </AnimatePresence>
+        </main>
       </div>
     </>
   )

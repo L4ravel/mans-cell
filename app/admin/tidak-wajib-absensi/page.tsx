@@ -1,11 +1,10 @@
 // Halaman khusus untuk mengatur karyawan yang tidak wajib melakukan absensi.
-// Revisi:
-// - Layout dikonsistensikan dengan halaman PTK Tidak Wajib Absen.
-// - Header emerald, statistik 3 kartu, filter collapse, toast fixed kanan atas.
-// - Pagination 10/25/50/100/ALL.
-// - Tampilan mobile memakai card, desktop memakai tabel.
+// Revisi layout:
+// - Layout dikonsistensikan dengan dashboard/laporan absensi terbaru.
+// - Header gradient biru, wrapper aman untuk sidebar, filter collapse mobile.
+// - Pagination 10/25/50/100/ALL tanpa teks ringkasan halaman.
+// - Tampilan mobile memakai card flat, desktop memakai tabel.
 // - Toggle status update lokal tanpa refetch penuh.
-// - Identitas karyawan cukup menampilkan nama dan email, tanpa ID.
 
 "use client"
 
@@ -36,7 +35,6 @@ import {
   ShieldOff,
   Store,
   Users,
-  UserX,
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
@@ -99,7 +97,7 @@ function FilterSelect({
           onChange={(e) => onChange(e.target.value)}
           className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
             Icon ? "pl-8" : "pl-3"
-          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20`}
         >
           {children}
         </select>
@@ -345,12 +343,7 @@ export default function KaryawanTidakWajibAbsenPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-900">
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
-        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
-      </div>
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
 
       <AnimatePresence>
         {toast && (
@@ -360,7 +353,7 @@ export default function KaryawanTidakWajibAbsenPage() {
             exit={{ opacity: 0 }}
             className={`fixed right-4 top-4 z-[70] rounded-2xl border px-4 py-3 shadow-lg ${
               toast.type === "ok"
-                ? "border-emerald-200 bg-emerald-50"
+                ? "border-sky-200 bg-sky-50"
                 : "border-red-200 bg-red-50"
             }`}
           >
@@ -368,7 +361,7 @@ export default function KaryawanTidakWajibAbsenPage() {
               {toast.type === "ok" ? (
                 <CheckCircle2
                   size={16}
-                  className="text-emerald-600"
+                  className="text-sky-600"
                   strokeWidth={2.5}
                 />
               ) : (
@@ -381,7 +374,7 @@ export default function KaryawanTidakWajibAbsenPage() {
 
               <p
                 className={`text-xs font-black ${
-                  toast.type === "ok" ? "text-emerald-700" : "text-red-700"
+                  toast.type === "ok" ? "text-sky-700" : "text-red-700"
                 }`}
               >
                 {toast.msg}
@@ -391,12 +384,12 @@ export default function KaryawanTidakWajibAbsenPage() {
         )}
       </AnimatePresence>
 
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+      <main className="relative w-full space-y-4 pb-28">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
@@ -409,9 +402,9 @@ export default function KaryawanTidakWajibAbsenPage() {
 
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
-                Karyawan Tidak Wajib Absen
+                Tidak Wajib Absen
               </h1>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                 Atur karyawan yang dikecualikan dari kewajiban absensi.
               </p>
             </div>
@@ -424,22 +417,22 @@ export default function KaryawanTidakWajibAbsenPage() {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.28 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+            <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 sm:flex sm:h-11 sm:w-11">
                 <Users size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
                   Total Karyawan
                 </p>
-                <p className="text-2xl font-black text-slate-800">{data.length}</p>
+                <p className="text-lg font-black leading-tight text-slate-800 sm:text-2xl">{data.length}</p>
               </div>
             </div>
           </motion.div>
@@ -448,17 +441,17 @@ export default function KaryawanTidakWajibAbsenPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.28, delay: 0.04 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 sm:flex sm:h-11 sm:w-11">
                 <ShieldCheck size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
                   Wajib Absen
                 </p>
-                <p className="text-2xl font-black text-emerald-600">{totalWajib}</p>
+                <p className="text-lg font-black leading-tight text-sky-600 sm:text-2xl">{totalWajib}</p>
               </div>
             </div>
           </motion.div>
@@ -467,17 +460,17 @@ export default function KaryawanTidakWajibAbsenPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.28, delay: 0.08 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+            <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 sm:flex sm:h-11 sm:w-11">
                 <ShieldOff size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
                   Tidak Wajib
                 </p>
-                <p className="text-2xl font-black text-rose-600">{totalTidakWajib}</p>
+                <p className="text-lg font-black leading-tight text-rose-600 sm:text-2xl">{totalTidakWajib}</p>
               </div>
             </div>
           </motion.div>
@@ -495,7 +488,7 @@ export default function KaryawanTidakWajibAbsenPage() {
             className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                 <Search size={18} strokeWidth={2.5} />
               </div>
 
@@ -515,16 +508,8 @@ export default function KaryawanTidakWajibAbsenPage() {
             />
           </button>
 
-          <AnimatePresence initial={false}>
-            {showFilter && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}
-                className="overflow-hidden border-t border-slate-100"
-              >
-                <div className="p-4">
+          <div className={`${showFilter ? "block" : "hidden"} border-t border-slate-100 lg:block`}>
+            <div className="p-4">
                   <div className="grid gap-3 md:grid-cols-5">
                     <div className="md:col-span-2">
                       <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
@@ -545,7 +530,7 @@ export default function KaryawanTidakWajibAbsenPage() {
                             setSearch(e.target.value)
                             setPage(1)
                           }}
-                          className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
                         />
                       </div>
                     </div>
@@ -597,10 +582,8 @@ export default function KaryawanTidakWajibAbsenPage() {
                       ))}
                     </FilterSelect>
                   </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
             <motion.button
@@ -643,7 +626,7 @@ export default function KaryawanTidakWajibAbsenPage() {
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-emerald-500"
+                className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-sky-500"
               />
 
               <p className="text-xs font-black uppercase tracking-widest text-slate-400">
@@ -670,10 +653,10 @@ export default function KaryawanTidakWajibAbsenPage() {
                   return (
                     <div
                       key={item.id}
-                      className={`flex w-full items-start justify-between gap-2 overflow-hidden rounded-2xl border border-l-4 bg-white p-3 shadow-sm ${
+                      className={`flex w-full items-start justify-between gap-2 overflow-hidden rounded-2xl bg-white p-3 shadow-sm sm:border sm:border-l-4 ${
                         isTidakWajib
                           ? "border-slate-200 border-l-rose-400"
-                          : "border-slate-200 border-l-emerald-400"
+                          : "border-slate-200 border-l-sky-400"
                       }`}
                     >
                       <div className="min-w-0 flex-1">
@@ -682,7 +665,7 @@ export default function KaryawanTidakWajibAbsenPage() {
                             className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${
                               isTidakWajib
                                 ? "border-rose-200 bg-rose-50 text-rose-700"
-                                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-sky-200 bg-sky-50 text-sky-700"
                             }`}
                           >
                             {isTidakWajib ? "Tidak Wajib Absen" : "Wajib Absen"}
@@ -705,7 +688,7 @@ export default function KaryawanTidakWajibAbsenPage() {
                         disabled={!!loadingId}
                         className={`inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border px-2.5 text-[9px] font-black uppercase tracking-[0.06em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                           isTidakWajib
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
                             : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                         }`}
                       >
@@ -789,7 +772,7 @@ export default function KaryawanTidakWajibAbsenPage() {
                                 className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase ${
                                   isTidakWajib
                                     ? "border-rose-200 bg-rose-50 text-rose-700"
-                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-sky-200 bg-sky-50 text-sky-700"
                                 }`}
                               >
                                 {isTidakWajib ? "Tidak Wajib" : "Wajib"}
@@ -804,7 +787,7 @@ export default function KaryawanTidakWajibAbsenPage() {
                                 disabled={!!loadingId}
                                 className={`inline-flex h-9 min-w-[132px] items-center justify-center gap-1.5 rounded-full border px-3 text-[10px] font-black uppercase tracking-[0.06em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                                   isTidakWajib
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
                                     : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                 }`}
                               >
@@ -846,11 +829,8 @@ export default function KaryawanTidakWajibAbsenPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.15 }}
-            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+            className="flex justify-end"
           >
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Halaman {page} dari {totalPages}
-            </p>
 
             <div className="flex gap-2">
               <motion.button
@@ -875,12 +855,6 @@ export default function KaryawanTidakWajibAbsenPage() {
             </div>
           </motion.div>
         )}
-
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-[10px] font-bold uppercase leading-relaxed tracking-widest text-amber-700">
-            Catatan: Karyawan yang ditandai tidak wajib absen dapat dikecualikan dari perhitungan alfa di sistem absensi.
-          </p>
-        </div>
       </main>
     </div>
   )

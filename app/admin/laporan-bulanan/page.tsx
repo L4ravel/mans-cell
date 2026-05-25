@@ -1,9 +1,16 @@
-/* 
+/*
   Halaman admin laporan bulanan.
-  File ini membaca koleksi laporan_bulanan dari Firestore untuk menampilkan
-  ringkasan omzet, transaksi, diskon, admin, laba kotor, breakdown metode bayar,
-  ranking toko, dan daftar rekap bulanan dengan filter bulan, toko, dan pencarian.
-  Jika user bukan admin, data otomatis dikunci ke toko user sendiri.
+  Membaca koleksi laporan_bulanan, menampilkan ringkasan omzet, transaksi, diskon,
+  admin, laba kotor, breakdown metode bayar, ranking toko, dan daftar rekap bulanan.
+
+  Revisi layout:
+  - Konsisten dengan layout master data biru terbaru.
+  - Header gradient biru, mobile header bersih, tombol desktop disembunyikan di mobile.
+  - Filter mobile collapse.
+  - Stat card mobile 2 kolom + desktop 4 kolom.
+  - Card mobile satu lapis, tabel desktop untuk rekap bulanan.
+  - Pagination lokal 10/25/50/100/ALL.
+  - Toast error fixed top-right.
 */
 
 "use client"
@@ -12,22 +19,26 @@ import { useEffect, useMemo, useState } from "react"
 import { auth, db } from "@/lib/firebase"
 import { collection, doc, getDoc, getDocs, orderBy, query } from "firebase/firestore"
 import {
-  BarChart3,
-  RefreshCw,
   AlertCircle,
-  Search,
-  Store,
-  ChevronDown,
-  Receipt,
-  CircleDollarSign,
-  Percent,
   BadgeDollarSign,
-  Wallet,
-  TrendingUp,
+  BarChart3,
   CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
+  Cpu,
+  ListFilter,
+  Percent,
+  Receipt,
+  RefreshCw,
+  Search,
   ShoppingCart,
+  Store,
+  TrendingUp,
+  Wallet,
 } from "lucide-react"
-import { motion } from "framer-motion"
+import { AnimatePresence, motion } from "framer-motion"
 
 type Toko = {
   id: string
@@ -47,7 +58,7 @@ type LaporanBulanan = {
   bulanKey: string
   tahun: number
   bulan: number
-  tokoId: string
+    tokoId: string
   tokoNama: string
   jumlahTransaksi: number
   omzet: number
@@ -74,6 +85,14 @@ type UserProfile = {
   tokoNama: string
 }
 
+const ITEMS_OPTIONS = [
+  { value: 10, label: "10" },
+  { value: 25, label: "25" },
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 0, label: "ALL" },
+]
+
 function formatRupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -96,6 +115,15 @@ function formatBulanKey(value?: string) {
   }).format(date)
 }
 
+function formatDateTime(value?: number) {
+  if (!value) return "-"
+
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value))
+}
+
 function toMonthInputValue(date: Date) {
   const y = date.getFullYear()
   const m = `${date.getMonth() + 1}`.padStart(2, "0")
@@ -109,9 +137,7 @@ function getStartOfYearMonthInput() {
 
 function normalizeRoles(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value
-    .map((item) => String(item || "").trim().toLowerCase())
-    .filter(Boolean)
+  return value.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
 }
 
 function isAdminProfile(profile: UserProfile | null) {
@@ -119,82 +145,6 @@ function isAdminProfile(profile: UserProfile | null) {
   const role = String(profile.role || "").trim().toLowerCase()
   if (role === "admin" || role === "superadmin") return true
   return profile.roles.includes("admin") || profile.roles.includes("superadmin")
-}
-
-function InfoCard({
-  icon: Icon,
-  label,
-  value,
-  subValue,
-}: {
-  icon: any
-  label: string
-  value: string
-  subValue?: string
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-white shadow-sm">
-          <Icon size={18} strokeWidth={2.5} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
-            {label}
-          </p>
-          <p className="mt-1 truncate text-lg font-black text-slate-800">{value}</p>
-          {subValue ? (
-            <p className="mt-1 text-[11px] font-semibold text-slate-500">{subValue}</p>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FilterSelect({
-  value,
-  onChange,
-  children,
-  label,
-  icon: Icon,
-}: {
-  value: string
-  onChange: (value: string) => void
-  children: React.ReactNode
-  label: string
-  icon?: any
-}) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-        {label}
-      </label>
-      <div className="relative">
-        {Icon ? (
-          <Icon
-            size={13}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            strokeWidth={2}
-          />
-        ) : null}
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
-            Icon ? "pl-8" : "pl-3"
-          } pr-8 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20`}
-        >
-          {children}
-        </select>
-        <ChevronDown
-          size={13}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-          strokeWidth={2.5}
-        />
-      </div>
-    </div>
-  )
 }
 
 export default function LaporanBulananPage() {
@@ -209,16 +159,21 @@ export default function LaporanBulananPage() {
   const [filterToko, setFilterToko] = useState("")
   const [bulanMulai, setBulanMulai] = useState(getStartOfYearMonthInput())
   const [bulanSelesai, setBulanSelesai] = useState(toMonthInputValue(new Date()))
+  const [filterMobileOpen, setFilterMobileOpen] = useState(false)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [page, setPage] = useState(1)
 
-  const isAdminUser = useMemo(
-    () => isAdminProfile(currentUserProfile),
-    [currentUserProfile]
-  )
+  const isAdminUser = useMemo(() => isAdminProfile(currentUserProfile), [currentUserProfile])
 
   const effectiveTokoId = useMemo(
     () => (isAdminUser ? filterToko : String(currentUserProfile?.tokoId || "").trim()),
     [isAdminUser, filterToko, currentUserProfile]
   )
+
+  const showError = (message: string) => {
+    setError(message)
+    setTimeout(() => setError(null), 3500)
+  }
 
   const fetchCurrentUserProfile = async (uid: string, emailFallback?: string | null) => {
     try {
@@ -254,15 +209,48 @@ export default function LaporanBulananPage() {
     return fallback
   }
 
+  const mapLaporanDoc = (id: string, raw: any): LaporanBulanan => {
+    const breakdown: BreakdownMetode[] = Array.isArray(raw?.metodePembayaranBreakdown)
+      ? raw.metodePembayaranBreakdown.map((item: any) => ({
+          nama: item?.nama || "Tanpa Nama",
+          jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
+          omzet: Number(item?.omzet || 0),
+          admin: Number(item?.admin || 0),
+        }))
+      : []
+
+    return {
+      id,
+      bulanKey: raw?.bulanKey || "",
+      tahun: Number(raw?.tahun || 0),
+      bulan: Number(raw?.bulan || 0),
+      tokoId: raw?.tokoId || "",
+      tokoNama: raw?.tokoNama || "",
+      jumlahTransaksi: Number(raw?.jumlahTransaksi || 0),
+      omzet: Number(raw?.omzet || 0),
+      subtotal: Number(raw?.subtotal || 0),
+      totalDiskon: Number(raw?.totalDiskon || 0),
+      totalSetelahDiskon: Number(raw?.totalSetelahDiskon || 0),
+      totalBiayaAdmin: Number(raw?.totalBiayaAdmin || 0),
+      totalModal: Number(raw?.totalModal || 0),
+      totalLabaKotor: Number(raw?.totalLabaKotor || 0),
+      totalItemTerjual: Number(raw?.totalItemTerjual || 0),
+      totalJenisBarangTerjual: Number(raw?.totalJenisBarangTerjual || 0),
+      rataRataBelanja: Number(raw?.rataRataBelanja || 0),
+      metodePembayaranBreakdown: breakdown,
+      updatedAtMs: Number(raw?.updatedAtMs || 0),
+    }
+  }
+
   const fetchAll = async (profileOverride?: UserProfile | null) => {
     const activeProfile = profileOverride || currentUserProfile
     const admin = isAdminProfile(activeProfile)
     const tokoIdUser = String(activeProfile?.tokoId || "").trim()
 
     if (!admin && !tokoIdUser) {
-      setError("Akun ini belum terhubung ke toko")
       setTokoList([])
       setLaporanList([])
+      showError("Akun ini belum terhubung ke toko")
       return
     }
 
@@ -278,53 +266,29 @@ export default function LaporanBulananPage() {
           laporanPromise,
         ])
 
-        const tokoData: Toko[] = tokoSnap.docs.map((d) => {
-          const x = d.data() as any
-          return {
-            id: d.id,
-            nama: x?.nama || "",
-            aktif: Boolean(x?.aktif),
-          }
-        })
+        const tokoData: Toko[] = tokoSnap.docs
+          .map((item) => {
+            const x = item.data() as any
+            return {
+              id: item.id,
+              nama: x?.nama || "",
+              aktif: Boolean(x?.aktif),
+            }
+          })
+          .filter((item) => item.nama)
 
-        setTokoList(tokoData.filter((item) => item.nama))
+        const laporanData = laporanSnap.docs
+          .map((item) => mapLaporanDoc(item.id, item.data()))
+          .filter((item) => item.bulanKey)
 
-        const laporanData: LaporanBulanan[] = laporanSnap.docs.map((d) => {
-          const x = d.data() as any
-          const breakdown: BreakdownMetode[] = Array.isArray(x?.metodePembayaranBreakdown)
-            ? x.metodePembayaranBreakdown.map((item: any) => ({
-                nama: item?.nama || "Tanpa Nama",
-                jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-                omzet: Number(item?.omzet || 0),
-                admin: Number(item?.admin || 0),
-              }))
-            : []
-
-          return {
-            id: d.id,
-            bulanKey: x?.bulanKey || "",
-            tahun: Number(x?.tahun || 0),
-            bulan: Number(x?.bulan || 0),
-            tokoId: x?.tokoId || "",
-            tokoNama: x?.tokoNama || "",
-            jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
-            omzet: Number(x?.omzet || 0),
-            subtotal: Number(x?.subtotal || 0),
-            totalDiskon: Number(x?.totalDiskon || 0),
-            totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
-            totalBiayaAdmin: Number(x?.totalBiayaAdmin || 0),
-            totalModal: Number(x?.totalModal || 0),
-            totalLabaKotor: Number(x?.totalLabaKotor || 0),
-            totalItemTerjual: Number(x?.totalItemTerjual || 0),
-            totalJenisBarangTerjual: Number(x?.totalJenisBarangTerjual || 0),
-            rataRataBelanja: Number(x?.rataRataBelanja || 0),
-            metodePembayaranBreakdown: breakdown,
-            updatedAtMs: Number(x?.updatedAtMs || 0),
-          }
-        })
-
-        setLaporanList(laporanData.filter((item) => item.bulanKey))
+        setTokoList(tokoData)
+        setLaporanList(laporanData)
       } else {
+        const laporanSnap = await laporanPromise
+        const laporanData = laporanSnap.docs
+          .map((item) => mapLaporanDoc(item.id, item.data()))
+          .filter((item) => item.bulanKey && item.tokoId === tokoIdUser)
+
         setTokoList([
           {
             id: tokoIdUser,
@@ -332,51 +296,13 @@ export default function LaporanBulananPage() {
             aktif: true,
           },
         ])
-
-        const laporanSnap = await laporanPromise
-        const laporanData: LaporanBulanan[] = laporanSnap.docs.map((d) => {
-          const x = d.data() as any
-          const breakdown: BreakdownMetode[] = Array.isArray(x?.metodePembayaranBreakdown)
-            ? x.metodePembayaranBreakdown.map((item: any) => ({
-                nama: item?.nama || "Tanpa Nama",
-                jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-                omzet: Number(item?.omzet || 0),
-                admin: Number(item?.admin || 0),
-              }))
-            : []
-
-          return {
-            id: d.id,
-            bulanKey: x?.bulanKey || "",
-            tahun: Number(x?.tahun || 0),
-            bulan: Number(x?.bulan || 0),
-            tokoId: x?.tokoId || "",
-            tokoNama: x?.tokoNama || "",
-            jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
-            omzet: Number(x?.omzet || 0),
-            subtotal: Number(x?.subtotal || 0),
-            totalDiskon: Number(x?.totalDiskon || 0),
-            totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
-            totalBiayaAdmin: Number(x?.totalBiayaAdmin || 0),
-            totalModal: Number(x?.totalModal || 0),
-            totalLabaKotor: Number(x?.totalLabaKotor || 0),
-            totalItemTerjual: Number(x?.totalItemTerjual || 0),
-            totalJenisBarangTerjual: Number(x?.totalJenisBarangTerjual || 0),
-            rataRataBelanja: Number(x?.rataRataBelanja || 0),
-            metodePembayaranBreakdown: breakdown,
-            updatedAtMs: Number(x?.updatedAtMs || 0),
-          }
-        })
-
-        setLaporanList(
-          laporanData.filter((item) => item.bulanKey && item.tokoId === tokoIdUser)
-        )
+        setLaporanList(laporanData)
       }
     } catch (err) {
       console.error(err)
-      setError("Gagal memuat laporan bulanan")
       setTokoList([])
       setLaporanList([])
+      showError("Gagal memuat laporan bulanan")
     } finally {
       setLoading(false)
     }
@@ -388,16 +314,17 @@ export default function LaporanBulananPage() {
         setCurrentUserProfile(null)
         setTokoList([])
         setLaporanList([])
+        setLoading(false)
         return
       }
 
       const profile = await fetchCurrentUserProfile(user.uid, user.email)
-      if (!isAdminProfile(profile)) {
-        setFilterToko(String(profile.tokoId || "").trim())
-      }
+      if (!isAdminProfile(profile)) setFilterToko(String(profile.tokoId || "").trim())
       await fetchAll(profile)
     })
+
     return () => unsub()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const filteredLaporan = useMemo(() => {
@@ -408,9 +335,7 @@ export default function LaporanBulananPage() {
         !q ||
         item.bulanKey.toLowerCase().includes(q) ||
         item.tokoNama.toLowerCase().includes(q) ||
-        item.metodePembayaranBreakdown.some((metode) =>
-          metode.nama.toLowerCase().includes(q)
-        )
+        item.metodePembayaranBreakdown.some((metode) => metode.nama.toLowerCase().includes(q))
 
       const matchToko = !effectiveTokoId || item.tokoId === effectiveTokoId
       const matchStart = !bulanMulai || item.bulanKey >= bulanMulai
@@ -421,26 +346,11 @@ export default function LaporanBulananPage() {
   }, [laporanList, search, effectiveTokoId, bulanMulai, bulanSelesai])
 
   const totalOmzet = filteredLaporan.reduce((acc, item) => acc + item.omzet, 0)
-  const totalTransaksi = filteredLaporan.reduce(
-    (acc, item) => acc + item.jumlahTransaksi,
-    0
-  )
-  const totalDiskon = filteredLaporan.reduce(
-    (acc, item) => acc + item.totalDiskon,
-    0
-  )
-  const totalAdmin = filteredLaporan.reduce(
-    (acc, item) => acc + item.totalBiayaAdmin,
-    0
-  )
-  const totalLabaKotor = filteredLaporan.reduce(
-    (acc, item) => acc + item.totalLabaKotor,
-    0
-  )
-  const totalItemTerjual = filteredLaporan.reduce(
-    (acc, item) => acc + item.totalItemTerjual,
-    0
-  )
+  const totalTransaksi = filteredLaporan.reduce((acc, item) => acc + item.jumlahTransaksi, 0)
+  const totalDiskon = filteredLaporan.reduce((acc, item) => acc + item.totalDiskon, 0)
+  const totalAdmin = filteredLaporan.reduce((acc, item) => acc + item.totalBiayaAdmin, 0)
+  const totalLabaKotor = filteredLaporan.reduce((acc, item) => acc + item.totalLabaKotor, 0)
+  const totalItemTerjual = filteredLaporan.reduce((acc, item) => acc + item.totalItemTerjual, 0)
   const rataRataBelanja = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0
 
   const omzetBulanIni = filteredLaporan
@@ -448,10 +358,7 @@ export default function LaporanBulananPage() {
     .reduce((acc, item) => acc + item.omzet, 0)
 
   const metodeBreakdown = useMemo(() => {
-    const map = new Map<
-      string,
-      { nama: string; jumlahTransaksi: number; omzet: number; admin: number }
-    >()
+    const map = new Map<string, { nama: string; jumlahTransaksi: number; omzet: number; admin: number }>()
 
     for (const laporan of filteredLaporan) {
       for (const metode of laporan.metodePembayaranBreakdown || []) {
@@ -474,10 +381,7 @@ export default function LaporanBulananPage() {
   }, [filteredLaporan])
 
   const tokoBreakdown = useMemo(() => {
-    const map = new Map<
-      string,
-      { tokoId: string; tokoNama: string; bulanAktif: number; transaksi: number; omzet: number }
-    >()
+    const map = new Map<string, { tokoId: string; tokoNama: string; bulanAktif: number; transaksi: number; omzet: number }>()
 
     for (const laporan of filteredLaporan) {
       const key = laporan.tokoId || laporan.tokoNama || laporan.id
@@ -498,430 +402,725 @@ export default function LaporanBulananPage() {
     return Array.from(map.values()).sort((a, b) => b.omzet - a.omzet)
   }, [filteredLaporan])
 
+  const totalPages = itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filteredLaporan.length / itemsPerPage))
+  const pagedLaporan = itemsPerPage === 0 ? filteredLaporan : filteredLaporan.slice((page - 1) * itemsPerPage, page * itemsPerPage)
+  const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, filterToko, bulanMulai, bulanSelesai, itemsPerPage])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
   return (
-    <div className="space-y-4 text-slate-900 sm:space-y-5">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-              <BarChart3 size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
-            </div>
-
-            <div className="min-w-0 self-center sm:self-auto">
-              <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Laporan Bulanan
-              </h1>
-              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Rekap bulanan · omzet · metode bayar · toko
-              </p>
-            </div>
-          </div>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => fetchAll()}
-            disabled={loading}
-            className="flex h-8 items-center justify-center gap-1.5 self-start rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
-          >
-            <motion.span
-              animate={loading ? { rotate: 360 } : {}}
-              transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-            >
-              <RefreshCw size={14} strokeWidth={2.5} />
-            </motion.span>
-            <span className="sm:hidden">Refresh</span>
-            <span className="hidden sm:inline">Refresh</span>
-          </motion.button>
-        </div>
-      </motion.div>
-
-      {error ? (
-        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5">
-          <AlertCircle size={14} className="text-red-500" strokeWidth={2.5} />
-          <p className="text-[11px] font-bold text-red-600">{error}</p>
-        </div>
-      ) : null}
-
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.06 }}
-        className="rounded-xl border-b border-r border-t border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm"
-      >
-        <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${isAdminUser ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
-          <div className="lg:col-span-2">
-            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Cari
-            </label>
-            <div className="relative">
-              <Search
-                size={13}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                strokeWidth={2}
-              />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Bulan, toko, metode pembayaran..."
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-              />
-            </div>
-          </div>
-
-          {isAdminUser ? (
-            <FilterSelect
-              label="Toko"
-              value={filterToko}
-              onChange={setFilterToko}
-              icon={Store}
-            >
-              <option value="">Semua Toko</option>
-              {tokoList.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nama}
-                </option>
-              ))}
-            </FilterSelect>
-          ) : (
-            <div>
-              <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                Toko Karyawan
-              </label>
-              <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
-                {currentUserProfile?.tokoNama || "Toko belum terhubung"}
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
+                <BarChart3 size={28} className="text-white sm:h-8 sm:w-8" strokeWidth={2.5} />
               </div>
+
+              <div className="min-w-0">
+                <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                  Laporan Bulanan
+                </h1>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
+                  Rekap bulanan omzet, metode pembayaran, toko, dan laba kotor.
+                </p>
+              </div>
+            </div>
+
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">
+              <button
+                type="button"
+                onClick={() => fetchAll()}
+                disabled={loading}
+                className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:opacity-60"
+                title="Refresh"
+              >
+                <RefreshCw size={12} strokeWidth={2.8} className={loading ? "animate-spin" : ""} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute right-0 top-0 opacity-[0.04]">
+            <Cpu size={150} className="text-white" strokeWidth={1} />
+          </div>
+        </motion.div>
+
+        {/* Toast */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 shadow-lg"
+            >
+              <AlertCircle size={16} className="text-red-600" strokeWidth={2.5} />
+              <p className="max-w-xs text-xs font-black text-red-700">{error}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Search & Filter */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.05 }}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        >
+          <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${isAdminUser ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+            <div className="lg:col-span-2">
+              <FieldBox label="Cari Laporan">
+                <div className="relative">
+                  <Search
+                    size={14}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    strokeWidth={2.5}
+                  />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Bulan, toko, atau metode pembayaran..."
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                  />
+                </div>
+              </FieldBox>
+            </div>
+
+            <div className="hidden sm:contents">
+              {isAdminUser ? (
+                <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
+                  <option value="">Semua Toko</option>
+                  {tokoList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nama}
+                    </option>
+                  ))}
+                </FilterSelect>
+              ) : (
+                <FieldBox label="Toko Karyawan">
+                  <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                    {currentUserProfile?.tokoNama || "Toko belum terhubung"}
+                  </div>
+                </FieldBox>
+              )}
+
+              <FieldMonth label="Mulai" value={bulanMulai} onChange={setBulanMulai} />
+              <FieldMonth label="Selesai" value={bulanSelesai} onChange={setBulanSelesai} />
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:hidden">
+            <button
+              type="button"
+              onClick={() => fetchAll()}
+              disabled={loading}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-white shadow-sm shadow-sky-500/15 disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} strokeWidth={2.5} />
+              Refresh
+            </button>
+
+            <div className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-sky-700">
+              <ShoppingCart size={14} strokeWidth={2.5} />
+              {totalTransaksi} Trx
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setFilterMobileOpen((prev) => !prev)}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] transition ${
+                filterMobileOpen ? "border-sky-200 bg-sky-100 text-sky-700" : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              <ListFilter size={14} strokeWidth={2.5} />
+              Filter
+            </button>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {filterMobileOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden sm:hidden"
+              >
+                <div className="mt-3 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                  {isAdminUser ? (
+                    <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
+                      <option value="">Semua Toko</option>
+                      {tokoList.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.nama}
+                        </option>
+                      ))}
+                    </FilterSelect>
+                  ) : (
+                    <FieldBox label="Toko Karyawan">
+                      <div className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700">
+                        {currentUserProfile?.tokoNama || "Toko belum terhubung"}
+                      </div>
+                    </FieldBox>
+                  )}
+
+                  <FieldMonth label="Mulai" value={bulanMulai} onChange={setBulanMulai} />
+                  <FieldMonth label="Selesai" value={bulanSelesai} onChange={setBulanSelesai} />
+                  <FilterSelect
+                    label="Tampilkan"
+                    value={String(itemsPerPage)}
+                    onChange={(value) => setItemsPerPage(Number(value))}
+                  >
+                    {ITEMS_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Stats */}
+        <div className="space-y-2 sm:space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+            <StatCard
+              icon={CircleDollarSign}
+              label="Omzet"
+              value={formatRupiah(totalOmzet)}
+              subValue={`${totalTransaksi} transaksi`}
+              tone="sky"
+            />
+            <StatCard
+              icon={Receipt}
+              label="Rata-rata"
+              value={formatRupiah(rataRataBelanja)}
+              subValue={`${totalItemTerjual} item`}
+              tone="blue"
+            />
+            <StatCard
+              icon={Percent}
+              label="Diskon"
+              value={formatRupiah(totalDiskon)}
+              subValue={`Admin ${formatRupiah(totalAdmin)}`}
+              tone="slate"
+            />
+            <StatCard
+              icon={BadgeDollarSign}
+              label="Laba Kotor"
+              value={formatRupiah(totalLabaKotor)}
+              subValue="Akumulasi"
+              tone="rose"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+            <StatCard icon={TrendingUp} label="Bulan Ini" value={formatRupiah(omzetBulanIni)} tone="sky" />
+            <StatCard icon={ShoppingCart} label="Bulan Direkap" value={String(filteredLaporan.length)} tone="blue" />
+            <StatCard icon={Store} label="Toko Aktif" value={String(tokoBreakdown.length)} tone="slate" />
+            <StatCard icon={Wallet} label="Metode Aktif" value={String(metodeBreakdown.length)} tone="rose" />
+          </div>
+        </div>
+
+        <LaporanContent
+          loading={loading}
+          filteredLaporan={filteredLaporan}
+          pagedLaporan={pagedLaporan}
+          metodeBreakdown={metodeBreakdown}
+          tokoBreakdown={tokoBreakdown}
+          totalOmzet={totalOmzet}
+          itemsPerPage={itemsPerPage}
+          setItemsPerPage={setItemsPerPage}
+          page={page}
+          totalPages={totalPages}
+          goPage={goPage}
+        />
+      </main>
+    </div>
+  )
+}
+
+function HeaderTitle({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="mb-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-600">
+        {title}
+      </p>
+      <p className="mt-1 text-sm font-black text-slate-800">{subtitle}</p>
+    </div>
+  )
+}
+
+function FieldBox({
+  label,
+  children,
+  className = "",
+}: {
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </p>
+      {children}
+    </div>
+  )
+}
+
+function FieldMonth({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <FieldBox label={label}>
+      <div className="relative">
+        <CalendarDays
+          size={14}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          strokeWidth={2.5}
+        />
+        <input
+          type="month"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+        />
+      </div>
+    </FieldBox>
+  )
+}
+
+function FilterSelect({
+  value,
+  onChange,
+  children,
+  label,
+  icon: Icon,
+}: {
+  value: string
+  onChange: (value: string) => void
+  children: React.ReactNode
+  label: string
+  icon?: any
+}) {
+  return (
+    <FieldBox label={label}>
+      <div className="relative">
+        {Icon && <Icon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" strokeWidth={2.5} />}
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${Icon ? "pl-9" : "pl-3"} py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20`}
+        >
+          {children}
+        </select>
+        <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" strokeWidth={2.5} />
+      </div>
+    </FieldBox>
+  )
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  subValue,
+  tone,
+}: {
+  icon: any
+  label: string
+  value: string
+  subValue?: string
+  tone: "slate" | "sky" | "blue" | "rose"
+}) {
+  const cls =
+    tone === "sky"
+      ? "bg-sky-50 text-sky-600"
+      : tone === "blue"
+        ? "bg-blue-50 text-blue-600"
+        : tone === "rose"
+          ? "bg-rose-50 text-rose-600"
+          : "bg-slate-100 text-slate-500"
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${cls}`}>
+          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">
+            {label}
+          </p>
+          <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">
+            {value}
+          </p>
+          {subValue && (
+            <p className="mt-0.5 truncate text-[7px] font-black uppercase tracking-[0.04em] text-slate-400 sm:text-[9px]">
+              {subValue}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LaporanContent({
+  loading,
+  filteredLaporan,
+  pagedLaporan,
+  metodeBreakdown,
+  tokoBreakdown,
+  totalOmzet,
+  itemsPerPage,
+  setItemsPerPage,
+  page,
+  totalPages,
+  goPage,
+}: {
+  loading: boolean
+  filteredLaporan: LaporanBulanan[]
+  pagedLaporan: LaporanBulanan[]
+  metodeBreakdown: { nama: string; jumlahTransaksi: number; omzet: number; admin: number }[]
+  tokoBreakdown: { tokoId: string; tokoNama: string; bulanAktif: number; transaksi: number; omzet: number }[]
+  totalOmzet: number
+  itemsPerPage: number
+  setItemsPerPage: (value: number) => void
+  page: number
+  totalPages: number
+  goPage: (page: number) => void
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-3">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
+          />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Memuat laporan bulanan...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+      <div className="space-y-4 xl:col-span-7">
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <HeaderTitle title="Metode Pembayaran" subtitle="Breakdown omzet berdasarkan metode bayar" />
+
+          {metodeBreakdown.length === 0 ? (
+            <EmptyBox label="Belum ada data metode" icon={Wallet} />
+          ) : (
+            <div className="space-y-3">
+              {metodeBreakdown.map((item) => {
+                const persenOmzet = totalOmzet > 0 ? (item.omzet / totalOmzet) * 100 : 0
+
+                return (
+                  <div key={item.nama} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-800">{item.nama}</p>
+                        <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                          {item.jumlahTransaksi} transaksi
+                        </p>
+                      </div>
+
+                      <div className="text-left sm:text-right">
+                        <p className="text-sm font-black text-slate-800">{formatRupiah(item.omzet)}</p>
+                        <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                          Admin {formatRupiah(item.admin)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500"
+                          style={{ width: `${Math.min(100, persenOmzet)}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-[10px] font-bold text-slate-500">
+                        {persenOmzet.toFixed(1)}% dari omzet
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
-
-          <div>
-            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Mulai
-            </label>
-            <div className="relative">
-              <CalendarDays
-                size={13}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                strokeWidth={2}
-              />
-              <input
-                type="month"
-                value={bulanMulai}
-                onChange={(e) => setBulanMulai(e.target.value)}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Selesai
-            </label>
-            <div className="relative">
-              <CalendarDays
-                size={13}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                strokeWidth={2}
-              />
-              <input
-                type="month"
-                value={bulanSelesai}
-                onChange={(e) => setBulanSelesai(e.target.value)}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-              />
-            </div>
-          </div>
         </div>
-      </motion.div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <InfoCard
-          icon={CircleDollarSign}
-          label="Omzet"
-          value={formatRupiah(totalOmzet)}
-          subValue={`${totalTransaksi} transaksi`}
-        />
-        <InfoCard
-          icon={Receipt}
-          label="Rata-rata Belanja"
-          value={formatRupiah(rataRataBelanja)}
-          subValue={`${totalItemTerjual} item terjual`}
-        />
-        <InfoCard
-          icon={Percent}
-          label="Diskon"
-          value={formatRupiah(totalDiskon)}
-          subValue={`Admin fee ${formatRupiah(totalAdmin)}`}
-        />
-        <InfoCard
-          icon={BadgeDollarSign}
-          label="Laba Kotor"
-          value={formatRupiah(totalLabaKotor)}
-          subValue="Akumulasi laporan bulanan"
-        />
-      </div>
+        <div className="rounded-2xl   p-4 shadow-sm">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <HeaderTitle title="Rekap Bulanan" subtitle="Daftar dokumen laporan_bulanan" />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <InfoCard
-          icon={TrendingUp}
-          label="Omzet Bulan Ini"
-          value={formatRupiah(omzetBulanIni)}
-        />
-        <InfoCard
-          icon={ShoppingCart}
-          label="Bulan Direkap"
-          value={String(filteredLaporan.length)}
-          subValue="Jumlah dokumen laporan"
-        />
-        <InfoCard
-          icon={Store}
-          label="Toko Aktif"
-          value={String(tokoBreakdown.length)}
-          subValue="Toko dengan data pada periode ini"
-        />
-        <InfoCard
-          icon={Wallet}
-          label="Metode Aktif"
-          value={String(metodeBreakdown.length)}
-          subValue="Metode pembayaran terpakai"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-7">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                Penjualan per Metode Pembayaran
-              </p>
-              <p className="mt-1 text-sm font-black text-slate-800">
-                Breakdown metode bayar dari laporan bulanan
-              </p>
-            </div>
-
-            {metodeBreakdown.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                Belum ada data
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {metodeBreakdown.map((item) => {
-                  const persenOmzet = totalOmzet > 0 ? (item.omzet / totalOmzet) * 100 : 0
-
-                  return (
-                    <div
-                      key={item.nama}
-                      className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-black text-slate-800">{item.nama}</p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            {item.jumlahTransaksi} transaksi
-                          </p>
-                        </div>
-
-                        <div className="text-left sm:text-right">
-                          <p className="text-sm font-black text-slate-800">
-                            {formatRupiah(item.omzet)}
-                          </p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            Admin {formatRupiah(item.admin)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-3">
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500"
-                            style={{ width: `${Math.min(100, persenOmzet)}%` }}
-                          />
-                        </div>
-                        <p className="mt-1 text-[10px] font-bold text-slate-500">
-                          {persenOmzet.toFixed(1)}% dari omzet
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                Rekap Bulanan
-              </p>
-              <p className="mt-1 text-sm font-black text-slate-800">
-                Daftar dokumen laporan_bulanan
-              </p>
-            </div>
-
-            {filteredLaporan.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                Belum ada data
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredLaporan.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-800">
-                          {formatBulanKey(item.bulanKey)}
-                        </p>
-                        <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                          {item.tokoNama || "Tanpa Toko"} • {item.jumlahTransaksi} transaksi
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            Omzet
-                          </p>
-                          <p className="text-sm font-black text-slate-800">
-                            {formatRupiah(item.omzet)}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            Diskon
-                          </p>
-                          <p className="text-sm font-black text-slate-800">
-                            {formatRupiah(item.totalDiskon)}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            Admin
-                          </p>
-                          <p className="text-sm font-black text-slate-800">
-                            {formatRupiah(item.totalBiayaAdmin)}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            Laba
-                          </p>
-                          <p className="text-sm font-black text-emerald-600">
-                            {formatRupiah(item.totalLabaKotor)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Item Terjual
-                        </p>
-                        <p className="mt-1 text-sm font-black text-slate-800">
-                          {item.totalItemTerjual}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Jenis Barang
-                        </p>
-                        <p className="mt-1 text-sm font-black text-slate-800">
-                          {item.totalJenisBarangTerjual}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Rata-rata
-                        </p>
-                        <p className="mt-1 text-sm font-black text-slate-800">
-                          {formatRupiah(item.rataRataBelanja)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          Setelah Diskon
-                        </p>
-                        <p className="mt-1 text-sm font-black text-slate-800">
-                          {formatRupiah(item.totalSetelahDiskon)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+            <div className="hidden w-full sm:block sm:max-w-[120px]">
+              <FilterSelect
+                label="Tampilkan"
+                value={String(itemsPerPage)}
+                onChange={(value) => setItemsPerPage(Number(value))}
+              >
+                {ITEMS_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
                 ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-4 xl:col-span-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                Toko Teratas
-              </p>
-              <p className="mt-1 text-sm font-black text-slate-800">
-                Ranking toko berdasarkan omzet
-              </p>
+              </FilterSelect>
             </div>
+          </div>
 
-            {tokoBreakdown.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                Belum ada data
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {tokoBreakdown.slice(0, 8).map((item, idx) => (
-                  <div
-                    key={`${item.tokoId}-${idx}`}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
+          {filteredLaporan.length === 0 ? (
+            <EmptyBox label="Belum ada laporan bulanan" icon={BarChart3} />
+          ) : (
+            <>
+              <div className="space-y-2 sm:hidden">
+                {pagedLaporan.map((item, idx) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, delay: idx * 0.03 }}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-100/70"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-black text-white">
-                            {idx + 1}
-                          </span>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 ring-1 ring-sky-100">
+                        <BarChart3 size={20} strokeWidth={2.5} />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-black text-slate-800">
-                              {item.tokoNama}
+                            <p className="line-clamp-2 text-sm font-black leading-tight text-slate-800">
+                              {formatBulanKey(item.bulanKey)}
                             </p>
-                            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                              {item.bulanAktif} bulan aktif
+                            <p className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                              {item.tokoNama || "Tanpa Toko"}
                             </p>
                           </div>
+
+                          <span className="inline-flex shrink-0 rounded-full bg-sky-50 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-sky-700">
+                            {item.jumlahTransaksi} Trx
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+                          <MiniInfo label="Omzet" value={formatRupiah(item.omzet)} />
+                          <MiniInfo label="Laba" value={formatRupiah(item.totalLabaKotor)} />
+                          <MiniInfo label="Diskon" value={formatRupiah(item.totalDiskon)} />
+                          <MiniInfo label="Item" value={String(item.totalItemTerjual)} />
                         </div>
                       </div>
-
-                      <div className="text-right">
-                        <p className="text-sm font-black text-slate-800">
-                          {formatRupiah(item.omzet)}
-                        </p>
-                        <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                          {item.transaksi} transaksi
-                        </p>
-                      </div>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
-            )}
-          </div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:block"
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="border-b border-slate-100 bg-slate-50/70">
+                      <tr>
+                        {["No", "Bulan", "Toko", "Transaksi", "Omzet", "Diskon", "Admin", "Laba", "Update"].map((head) => (
+                          <th
+                            key={head}
+                            className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
+                              head === "No" ? "text-center" : "text-left"
+                            }`}
+                          >
+                            {head}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedLaporan.map((item, index) => (
+                        <tr key={item.id} className="border-t border-slate-100 transition-colors hover:bg-sky-50/40">
+                          <td className="px-3 py-3 text-center font-bold text-slate-400">
+                            {itemsPerPage === 0 ? index + 1 : (page - 1) * itemsPerPage + index + 1}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
+                            {formatBulanKey(item.bulanKey)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
+                            {item.tokoNama || "-"}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
+                            {item.jumlahTransaksi}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
+                            {formatRupiah(item.omzet)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
+                            {formatRupiah(item.totalDiskon)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
+                            {formatRupiah(item.totalBiayaAdmin)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-black text-sky-700">
+                            {formatRupiah(item.totalLabaKotor)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
+                            {formatDateTime(item.updatedAtMs)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+
+              {itemsPerPage !== 0 && totalPages > 1 && (
+                <Pagination page={page} totalPages={totalPages} goPage={goPage} />
+              )}
+            </>
+          )}
         </div>
       </div>
+
+      <div className="space-y-4 xl:col-span-5">
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <HeaderTitle title="Toko Teratas" subtitle="Ranking toko berdasarkan omzet" />
+
+          {tokoBreakdown.length === 0 ? (
+            <EmptyBox label="Belum ada data toko" icon={Store} />
+          ) : (
+            <div className="space-y-3">
+              {tokoBreakdown.slice(0, 8).map((item, idx) => (
+                <div key={`${item.tokoId}-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-[10px] font-black text-white">
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-800">{item.tokoNama}</p>
+                          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {item.bulanAktif} bulan aktif
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-800">{formatRupiah(item.omzet)}</p>
+                      <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        {item.transaksi} transaksi
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MiniInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2">
+      <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400">{label}</p>
+      <p className="mt-0.5 truncate text-xs font-black text-slate-800">{value}</p>
+    </div>
+  )
+}
+
+function EmptyBox({ label, icon: Icon }: { label: string; icon: any }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-300 shadow-sm">
+        <Icon size={28} strokeWidth={2} />
+      </div>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+    </div>
+  )
+}
+
+function Pagination({ page, totalPages, goPage }: { page: number; totalPages: number; goPage: (page: number) => void }) {
+  return (
+    <div className="flex justify-center gap-1.5 pt-3">
+      <button
+        type="button"
+        onClick={() => goPage(page - 1)}
+        disabled={page === 1}
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronLeft size={14} strokeWidth={2.5} />
+      </button>
+
+      {Array.from({ length: totalPages }, (_, i) => i + 1)
+        .filter((p) => totalPages <= 7 || p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+        .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+          if (idx > 0 && typeof arr[idx - 1] === "number" && p - (arr[idx - 1] as number) > 1) acc.push("...")
+          acc.push(p)
+          return acc
+        }, [])
+        .map((p, idx) =>
+          p === "..." ? (
+            <span key={`e-${idx}`} className="px-1 text-xs font-bold text-slate-400">···</span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              onClick={() => goPage(p)}
+              className={`h-8 min-w-8 rounded-xl px-2 text-xs font-black transition ${
+                page === p
+                  ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+
+      <button
+        type="button"
+        onClick={() => goPage(page + 1)}
+        disabled={page === totalPages}
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronRight size={14} strokeWidth={2.5} />
+      </button>
     </div>
   )
 }

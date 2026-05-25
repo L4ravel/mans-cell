@@ -1,13 +1,10 @@
 "use client"
 
 /*
-  Page laporan pembelian barang.
-  Lokasi disarankan: app/admin/laporan-pembelian-barang/page.tsx
-  - Baca agregat dari laporan_pembelian_barang_harian / laporan_pembelian_barang_bulanan.
-  - Baca detail dari riwayat_pembelian_barang dan riwayat_pembelian_saldo_digital.
-  - Bisa download PDF.
-  - Layout emerald konsisten.
-  - Tanpa info banner.
+  Halaman laporan pembelian barang.
+  Revisi layout konsisten dengan halaman laporan/pengeluaran terbaru:
+  header biru, card putih rounded, filter collapse mobile, popup rekap mobile,
+  pagination 10/25/50/100/ALL, detail card mobile, tabel desktop, dan export PDF.
 */
 
 import { useEffect, useMemo, useState } from "react"
@@ -23,6 +20,7 @@ import {
   ClipboardList,
   Cpu,
   Download,
+  Eye,
   Filter,
   Package,
   RefreshCw,
@@ -30,11 +28,13 @@ import {
   Store,
   Tag,
   Wallet,
+  X,
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
 type ModeLaporan = "harian" | "bulanan"
 type JenisFilter = "" | "barang" | "saldo"
+type RankingModalType = "toko" | "kategori" | null
 
 type MasterItem = { id: string; nama: string }
 
@@ -91,7 +91,7 @@ const ITEMS_OPTIONS = [
   { value: 25, label: "25" },
   { value: 50, label: "50" },
   { value: 100, label: "100" },
-  { value: 0, label: "Semua" },
+  { value: 0, label: "ALL" },
 ]
 
 const BULAN_LIST = [
@@ -125,7 +125,9 @@ function toMillis(value: any) {
   if (!value) return 0
   if (typeof value?.toMillis === "function") return value.toMillis()
   if (typeof value === "number") return value
-  return 0
+  if (value?.seconds) return value.seconds * 1000
+  const parsed = new Date(value).getTime()
+  return Number.isNaN(parsed) ? 0 : parsed
 }
 
 function formatDateTime(value?: any) {
@@ -175,9 +177,12 @@ function normalizeAgregat(id: string, data: any): LaporanAgregat {
       data?.totalNominalSemua ||
         Number(data?.totalPembelianBarang || 0) + Number(data?.totalNominalSaldo || 0)
     ),
-    rekapPerToko: data?.rekapPerToko && typeof data.rekapPerToko === "object" ? data.rekapPerToko : {},
+    rekapPerToko:
+      data?.rekapPerToko && typeof data.rekapPerToko === "object" ? data.rekapPerToko : {},
     rekapPerKategori:
-      data?.rekapPerKategori && typeof data.rekapPerKategori === "object" ? data.rekapPerKategori : {},
+      data?.rekapPerKategori && typeof data.rekapPerKategori === "object"
+        ? data.rekapPerKategori
+        : {},
     updatedAt: data?.updatedAt,
   }
 }
@@ -266,7 +271,7 @@ function buildFallbackAgregat(params: {
         nama: row.tokoNama || "Tanpa Toko",
         totalTransaksi: Number(rekapPerToko[tokoKey]?.totalTransaksi || 0) + 1,
         totalQty: Number(rekapPerToko[tokoKey]?.totalQty || 0) + row.jumlahTambah,
-        totalNominal: Number(rekapPerToko[tokoKey]?.totalNominal || 0),
+        totalNominal: Number(rekapPerToko[tokoKey]?.totalNominal || 0) + row.nominal,
       }
 
       const kategoriKey = row.kategoriId || row.kategoriNama || "tanpa-kategori"
@@ -275,7 +280,7 @@ function buildFallbackAgregat(params: {
         nama: row.kategoriNama || "Tanpa Kategori",
         totalTransaksi: Number(rekapPerKategori[kategoriKey]?.totalTransaksi || 0) + 1,
         totalQty: Number(rekapPerKategori[kategoriKey]?.totalQty || 0) + row.jumlahTambah,
-        totalNominal: Number(rekapPerKategori[kategoriKey]?.totalNominal || 0),
+        totalNominal: Number(rekapPerKategori[kategoriKey]?.totalNominal || 0) + row.nominal,
       }
     } else {
       totalTopupSaldo += 1
@@ -315,6 +320,25 @@ async function loadScript(src: string): Promise<void> {
   })
 }
 
+function FieldBox({
+  label,
+  children,
+  className = "",
+}: {
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </p>
+      {children}
+    </div>
+  )
+}
+
 function FilterSelect({
   value,
   onChange,
@@ -329,24 +353,21 @@ function FilterSelect({
   icon?: any
 }) {
   return (
-    <div>
-      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-        {label}
-      </label>
+    <FieldBox label={label}>
       <div className="relative">
-        {Icon && (
+        {Icon ? (
           <Icon
             size={13}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            strokeWidth={2}
+            strokeWidth={2.5}
           />
-        )}
+        ) : null}
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
             Icon ? "pl-8" : "pl-3"
-          } py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+          } py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20`}
         >
           {children}
         </select>
@@ -356,7 +377,7 @@ function FilterSelect({
           strokeWidth={2.5}
         />
       </div>
-    </div>
+    </FieldBox>
   )
 }
 
@@ -381,6 +402,9 @@ export default function LaporanPembelianBarangPage() {
   const [loading, setLoading] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [filterMobileOpen, setFilterMobileOpen] = useState(false)
+  const [rankingModal, setRankingModal] = useState<RankingModalType>(null)
+  const [selectedDetail, setSelectedDetail] = useState<DetailRow | null>(null)
 
   const bulanKey = getMonthKey(tahun, bulan)
   const laporanId = mode === "harian" ? tanggal : bulanKey
@@ -388,7 +412,6 @@ export default function LaporanPembelianBarangPage() {
 
   const tokoLabel = useMemo(() => {
     if (!tokoFilter) return "Semua Toko"
-
     const found = tokoList.find((item) => item.id === tokoFilter)
     return found?.nama || tokoFilter
   }, [tokoFilter, tokoList])
@@ -406,8 +429,16 @@ export default function LaporanPembelianBarangPage() {
         getDocs(query(collection(db, "kategori_barang"), orderBy("nama"))),
       ])
 
-      setTokoList(tokoSnap.docs.map((d) => ({ id: d.id, nama: (d.data() as any)?.nama || "" })))
-      setKategoriList(kategoriSnap.docs.map((d) => ({ id: d.id, nama: (d.data() as any)?.nama || "" })))
+      setTokoList(
+        tokoSnap.docs
+          .map((d) => ({ id: d.id, nama: String((d.data() as any)?.nama || "") }))
+          .filter((item) => item.nama)
+      )
+      setKategoriList(
+        kategoriSnap.docs
+          .map((d) => ({ id: d.id, nama: String((d.data() as any)?.nama || "") }))
+          .filter((item) => item.nama)
+      )
     } catch (err) {
       console.error(err)
       setTokoList([])
@@ -416,7 +447,8 @@ export default function LaporanPembelianBarangPage() {
   }
 
   const fetchAgregat = async () => {
-    const colName = mode === "harian" ? "laporan_pembelian_barang_harian" : "laporan_pembelian_barang_bulanan"
+    const colName =
+      mode === "harian" ? "laporan_pembelian_barang_harian" : "laporan_pembelian_barang_bulanan"
     const snap = await getDoc(doc(db, colName, laporanId))
     if (!snap.exists()) return null
     return normalizeAgregat(snap.id, snap.data())
@@ -508,20 +540,68 @@ export default function LaporanPembelianBarangPage() {
     })
   }, [kategoriFilter, jenisFilter, rows, search, tokoFilter])
 
-  const totalPages = itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filteredRows.length / itemsPerPage))
-  const pagedRows = itemsPerPage === 0 ? filteredRows : filteredRows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
+  const totalPages =
+    itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filteredRows.length / itemsPerPage))
+  const pagedRows =
+    itemsPerPage === 0
+      ? filteredRows
+      : filteredRows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   const rekapTokoList = useMemo(() => {
-    return Object.entries(agregat?.rekapPerToko || {})
-      .map(([key, value]) => ({ key, ...value }))
-      .sort((a, b) => Number(b.totalTransaksi || 0) - Number(a.totalTransaksi || 0))
-  }, [agregat])
+    const map = new Map<string, RekapItem & { key: string }>()
+
+    filteredRows
+      .filter((row) => row.jenis === "barang")
+      .forEach((row) => {
+        const key = row.tokoId || row.tokoNama || "tanpa-toko"
+        const prev = map.get(key) || {
+          key,
+          id: row.tokoId || key,
+          nama: row.tokoNama || "Tanpa Toko",
+          totalTransaksi: 0,
+          totalQty: 0,
+          totalNominal: 0,
+        }
+
+        map.set(key, {
+          ...prev,
+          totalTransaksi: Number(prev.totalTransaksi || 0) + 1,
+          totalQty: Number(prev.totalQty || 0) + Number(row.jumlahTambah || 0),
+          totalNominal: Number(prev.totalNominal || 0) + Number(row.nominal || 0),
+        })
+      })
+
+    return Array.from(map.values()).sort(
+      (a, b) => Number(b.totalTransaksi || 0) - Number(a.totalTransaksi || 0)
+    )
+  }, [filteredRows])
 
   const rekapKategoriList = useMemo(() => {
-    return Object.entries(agregat?.rekapPerKategori || {})
-      .map(([key, value]) => ({ key, ...value }))
-      .sort((a, b) => Number(b.totalTransaksi || 0) - Number(a.totalTransaksi || 0))
-  }, [agregat])
+    const map = new Map<string, RekapItem & { key: string }>()
+
+    filteredRows.forEach((row) => {
+      const key = row.kategoriId || row.kategoriNama || row.jenis || "tanpa-kategori"
+      const prev = map.get(key) || {
+        key,
+        id: row.kategoriId || key,
+        nama: row.kategoriNama || (row.jenis === "saldo" ? "Saldo Digital" : "Tanpa Kategori"),
+        totalTransaksi: 0,
+        totalQty: 0,
+        totalNominal: 0,
+      }
+
+      map.set(key, {
+        ...prev,
+        totalTransaksi: Number(prev.totalTransaksi || 0) + 1,
+        totalQty: Number(prev.totalQty || 0) + Number(row.jumlahTambah || 0),
+        totalNominal: Number(prev.totalNominal || 0) + Number(row.nominal || 0),
+      })
+    })
+
+    return Array.from(map.values()).sort(
+      (a, b) => Number(b.totalTransaksi || 0) - Number(a.totalTransaksi || 0)
+    )
+  }, [filteredRows])
 
   const goPage = (target: number) => {
     setPage(Math.max(1, Math.min(totalPages, target)))
@@ -551,9 +631,7 @@ export default function LaporanPembelianBarangPage() {
         })
       })
 
-    return Array.from(map.values()).sort(
-      (a, b) => b.totalTransaksi - a.totalTransaksi
-    )
+    return Array.from(map.values()).sort((a, b) => b.totalTransaksi - a.totalTransaksi)
   }
 
   const downloadPdf = async () => {
@@ -573,16 +651,15 @@ export default function LaporanPembelianBarangPage() {
       const pageWidth = docPdf.internal.pageSize.getWidth()
       const pageHeight = docPdf.internal.pageSize.getHeight()
       const marginX = 12
-      const emerald: [number, number, number] = [4, 120, 87]
-      const emeraldDark: [number, number, number] = [6, 78, 59]
+      const sky: [number, number, number] = [2, 132, 199]
+      const skyDark: [number, number, number] = [3, 105, 161]
       const slate: [number, number, number] = [51, 65, 85]
       const softBorder: [number, number, number] = [226, 232, 240]
 
-      docPdf.setFillColor(...emeraldDark)
+      docPdf.setFillColor(...skyDark)
       docPdf.rect(0, 0, pageWidth, 30, "F")
-      docPdf.setFillColor(16, 185, 129)
+      docPdf.setFillColor(14, 165, 233)
       docPdf.circle(pageWidth - 14, 8, 16, "F")
-      docPdf.setFillColor(255, 255, 255)
       docPdf.setTextColor(255, 255, 255)
       docPdf.setFont("helvetica", "bold")
       docPdf.setFontSize(14)
@@ -633,16 +710,16 @@ export default function LaporanPembelianBarangPage() {
         docPdf.setTextColor(100, 116, 139)
         docPdf.text(String(label).toUpperCase(), x + 3, cardY + 6)
         docPdf.setFontSize(10)
-        docPdf.setTextColor(...emeraldDark)
+        docPdf.setTextColor(...skyDark)
         docPdf.text(String(value), x + 3, cardY + 13)
       })
 
       docPdf.setDrawColor(...softBorder)
-      docPdf.setFillColor(236, 253, 245)
+      docPdf.setFillColor(240, 249, 255)
       docPdf.roundedRect(marginX, 59, pageWidth - marginX * 2, 14, 2, 2, "FD")
       docPdf.setFont("helvetica", "bold")
       docPdf.setFontSize(8)
-      docPdf.setTextColor(...emeraldDark)
+      docPdf.setTextColor(...skyDark)
       docPdf.text("Nominal Saldo Digital", marginX + 3, 64)
       docPdf.setFontSize(10)
       docPdf.text(formatRupiah(agregat?.totalNominalSaldo || 0), marginX + 3, 70)
@@ -660,7 +737,9 @@ export default function LaporanPembelianBarangPage() {
         margin: { left: marginX, right: marginX },
         tableWidth: pageWidth - marginX * 2,
         head: [["No", "Toko", "Trx", "Qty"]],
-        body: rekapTokoBody.length ? rekapTokoBody : [["-", "Tidak ada pembelian barang pada periode/filter ini", "-", "-"]],
+        body: rekapTokoBody.length
+          ? rekapTokoBody
+          : [["-", "Tidak ada pembelian barang pada periode/filter ini", "-", "-"]],
         theme: "grid",
         styles: {
           fontSize: 7,
@@ -670,7 +749,7 @@ export default function LaporanPembelianBarangPage() {
           textColor: slate,
         },
         headStyles: {
-          fillColor: emerald,
+          fillColor: sky,
           textColor: [255, 255, 255],
           fontStyle: "bold",
         },
@@ -687,9 +766,7 @@ export default function LaporanPembelianBarangPage() {
         row.jenis === "barang" ? "Barang" : "Saldo",
         row.nama,
         row.jenis === "saldo" ? "Saldo Digital" : row.tokoNama || "-",
-        row.jenis === "saldo"
-          ? formatRupiah(row.jumlahTambah)
-          : formatNumber(row.jumlahTambah),
+        row.jenis === "saldo" ? formatRupiah(row.jumlahTambah) : formatNumber(row.jumlahTambah),
         row.jenis === "saldo"
           ? `${formatRupiah(row.saldoSebelum)} -> ${formatRupiah(row.saldoSesudah)}`
           : `${formatNumber(row.stokSebelum)} -> ${formatNumber(row.stokSesudah)}`,
@@ -713,7 +790,7 @@ export default function LaporanPembelianBarangPage() {
           valign: "middle",
         },
         headStyles: {
-          fillColor: emerald,
+          fillColor: sky,
           textColor: [255, 255, 255],
           fontStyle: "bold",
           halign: "center",
@@ -739,7 +816,11 @@ export default function LaporanPembelianBarangPage() {
         },
       })
 
-      docPdf.save(`laporan-pembelian-barang-${laporanId}-${tokoLabel.toLowerCase().replace(/\s+/g, "-")}-${jenisLabel.toLowerCase().replace(/\s+|\//g, "-")}.pdf`)
+      docPdf.save(
+        `laporan-pembelian-barang-${laporanId}-${tokoLabel
+          .toLowerCase()
+          .replace(/\s+/g, "-")}-${jenisLabel.toLowerCase().replace(/\s+|\//g, "-")}.pdf`
+      )
     } catch (err) {
       console.error(err)
       setError("Gagal membuat PDF laporan")
@@ -749,19 +830,13 @@ export default function LaporanPembelianBarangPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-900">
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
-        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
-      </div>
-
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
           <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-start gap-4">
@@ -773,46 +848,31 @@ export default function LaporanPembelianBarangPage() {
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                   Laporan Pembelian Barang
                 </h1>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
-                  Laporan pembelian barang, topup saldo digital, dan rekap stok masuk.
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
+                  Rekap pembelian barang, topup saldo digital, dan stok masuk.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.12, ease: "easeOut" }}
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">
+              <HeaderButton
                 onClick={downloadPdf}
                 disabled={downloadingPdf || loading}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Download size={12} strokeWidth={2.8} />
-                {downloadingPdf ? "Membuat..." : "PDF"}
-              </motion.button>
-
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.12, ease: "easeOut" }}
+                icon={Download}
+                label={downloadingPdf ? "Membuat" : "PDF"}
+              />
+              <HeaderButton
                 onClick={fetchReport}
                 disabled={loading}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Refresh"
-              >
-                <motion.span
-                  animate={loading ? { rotate: 360 } : {}}
-                  transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-                >
-                  <RefreshCw size={14} className="text-white" strokeWidth={2.8} />
-                </motion.span>
-              </motion.button>
+                icon={RefreshCw}
+                label="Refresh"
+                spinning={loading}
+              />
             </div>
           </div>
 
-          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl" />
-          <div className="pointer-events-none absolute right-0 top-0 opacity-[0.05]">
-            <Cpu size={160} className="text-white" strokeWidth={1} />
+          <div className="pointer-events-none absolute right-0 top-0 opacity-[0.04]">
+            <Cpu size={150} className="text-white" strokeWidth={1} />
           </div>
         </motion.div>
 
@@ -822,264 +882,648 @@ export default function LaporanPembelianBarangPage() {
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5"
+              className="fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 shadow-lg"
             >
-              <AlertCircle size={14} className="shrink-0 text-red-500" strokeWidth={2.5} />
-              <p className="text-[11px] font-bold text-red-600">{error}</p>
+              <AlertCircle size={16} className="text-red-600" strokeWidth={2.5} />
+              <p className="max-w-xs text-xs font-black text-red-700">{error}</p>
+              <button type="button" onClick={() => setError(null)} className="ml-1 text-red-500">
+                <X size={14} strokeWidth={3} />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
 
+        <div className="grid grid-cols-2 gap-2 sm:hidden">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            type="button"
+            onClick={downloadPdf}
+            disabled={downloadingPdf || loading}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-white shadow-sm shadow-sky-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download size={14} strokeWidth={2.5} />
+            {downloadingPdf ? "Membuat" : "PDF"}
+          </motion.button>
+
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            type="button"
+            onClick={fetchReport}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw size={14} strokeWidth={2.5} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </motion.button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-5">
+          <SummaryCard icon={ClipboardList} label="Transaksi" value={formatNumber(agregat?.totalTransaksi || 0)} />
+          <SummaryCard
+            icon={Package}
+            label="Pembelian"
+            value={formatNumber(agregat?.totalPembelianBarang || 0)}
+          />
+          <SummaryCard
+            icon={BarChart3}
+            label="Qty Barang"
+            value={formatNumber(agregat?.totalKuantitasBarang || 0)}
+          />
+          <SummaryCard icon={Wallet} label="Topup Saldo" value={formatNumber(agregat?.totalTopupSaldo || 0)} />
+          <SummaryCard
+            icon={Wallet}
+            label="Nominal Saldo"
+            value={formatRupiah(agregat?.totalNominalSaldo || 0)}
+            className="col-span-2 sm:col-span-1"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:hidden">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            type="button"
+            onClick={() => setRankingModal("toko")}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-sky-700"
+          >
+            <Store size={14} strokeWidth={2.5} />
+            Rekap Toko
+          </motion.button>
+
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            type="button"
+            onClick={() => setRankingModal("kategori")}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-sky-700"
+          >
+            <Tag size={14} strokeWidth={2.5} />
+            Kategori
+          </motion.button>
+        </div>
+
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100/80"
+          transition={{ duration: 0.3 }}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Filter size={15} strokeWidth={2.5} />
-            </div>
-            <p className="text-xs font-black uppercase tracking-wide text-slate-700">Filter Laporan</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            <FilterSelect label="Mode" value={mode} onChange={(v) => setMode(v as ModeLaporan)} icon={Calendar}>
-              <option value="harian">Harian</option>
-              <option value="bulanan">Bulanan</option>
-            </FilterSelect>
-
-            {mode === "harian" ? (
-              <div>
-                <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  Tanggal
-                </label>
-                <input
-                  type="date"
-                  value={tanggal}
-                  onChange={(e) => setTanggal(e.target.value)}
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-            ) : (
-              <>
-                <FilterSelect label="Tahun" value={tahun} onChange={(v) => setTahun(Number(v))}>
-                  {[2024, 2025, 2026, 2027].map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </FilterSelect>
-
-                <FilterSelect label="Bulan" value={bulan} onChange={(v) => setBulan(Number(v))}>
-                  {BULAN_LIST.map((item, index) => (
-                    <option key={item} value={index + 1}>{item}</option>
-                  ))}
-                </FilterSelect>
-              </>
-            )}
-
-            <FilterSelect label="Jenis" value={jenisFilter} onChange={(v) => setJenisFilter(v as JenisFilter)} icon={Package}>
-              <option value="">Semua Jenis</option>
-              <option value="barang">Barang</option>
-              <option value="saldo">Saldo Digital</option>
-            </FilterSelect>
-
-            <FilterSelect label="Toko" value={tokoFilter} onChange={setTokoFilter} icon={Store}>
-              <option value="">Semua Toko</option>
-              {tokoList.map((item) => (
-                <option key={item.id} value={item.id}>{item.nama}</option>
-              ))}
-            </FilterSelect>
-
-            <FilterSelect label="Kategori" value={kategoriFilter} onChange={setKategoriFilter} icon={Tag}>
-              <option value="">Semua Kategori</option>
-              {kategoriList.map((item) => (
-                <option key={item.id} value={item.id}>{item.nama}</option>
-              ))}
-            </FilterSelect>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">Cari</label>
-              <div className="relative">
-                <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" strokeWidth={2} />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Nama barang, toko, kategori, supplier..."
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all placeholder:font-normal placeholder:text-slate-300 hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
+              <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Laporan</h2>
+              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-widest text-slate-400 sm:block">
+                Atur mode, periode, toko, kategori, dan jumlah data.
+              </p>
             </div>
 
-            <FilterSelect label="Tampilkan" value={itemsPerPage} onChange={(v) => setItemsPerPage(Number(v))}>
-              {ITEMS_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>{item.label} data</option>
-              ))}
-            </FilterSelect>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              type="button"
+              onClick={() => setFilterMobileOpen((prev) => !prev)}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.08em] transition sm:hidden ${
+                filterMobileOpen
+                  ? "border-sky-200 bg-sky-100 text-sky-700"
+                  : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              <Filter size={14} strokeWidth={2.5} />
+              Filter
+            </motion.button>
           </div>
+
+          <div className="hidden sm:block">
+            <FilterContent
+              mode={mode}
+              setMode={(value) => setMode(value as ModeLaporan)}
+              tanggal={tanggal}
+              setTanggal={setTanggal}
+              tahun={tahun}
+              setTahun={(value) => setTahun(Number(value))}
+              bulan={bulan}
+              setBulan={(value) => setBulan(Number(value))}
+              jenisFilter={jenisFilter}
+              setJenisFilter={(value) => setJenisFilter(value as JenisFilter)}
+              tokoFilter={tokoFilter}
+              setTokoFilter={setTokoFilter}
+              kategoriFilter={kategoriFilter}
+              setKategoriFilter={setKategoriFilter}
+              search={search}
+              setSearch={setSearch}
+              itemsPerPage={itemsPerPage}
+              setItemsPerPage={(value) => setItemsPerPage(Number(value))}
+              tokoList={tokoList}
+              kategoriList={kategoriList}
+            />
+          </div>
+
+          <AnimatePresence initial={false}>
+            {filterMobileOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden sm:hidden"
+              >
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                  <FilterContent
+                    mode={mode}
+                    setMode={(value) => setMode(value as ModeLaporan)}
+                    tanggal={tanggal}
+                    setTanggal={setTanggal}
+                    tahun={tahun}
+                    setTahun={(value) => setTahun(Number(value))}
+                    bulan={bulan}
+                    setBulan={(value) => setBulan(Number(value))}
+                    jenisFilter={jenisFilter}
+                    setJenisFilter={(value) => setJenisFilter(value as JenisFilter)}
+                    tokoFilter={tokoFilter}
+                    setTokoFilter={setTokoFilter}
+                    kategoriFilter={kategoriFilter}
+                    setKategoriFilter={setKategoriFilter}
+                    search={search}
+                    setSearch={setSearch}
+                    itemsPerPage={itemsPerPage}
+                    setItemsPerPage={(value) => setItemsPerPage(Number(value))}
+                    tokoList={tokoList}
+                    kategoriList={kategoriList}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <SummaryCard icon={ClipboardList} label="Transaksi" value={formatNumber(agregat?.totalTransaksi || 0)} />
-          <SummaryCard icon={Package} label="Pembelian Barang" value={formatNumber(agregat?.totalPembelianBarang || 0)} />
-          <SummaryCard icon={BarChart3} label="Qty Barang" value={formatNumber(agregat?.totalKuantitasBarang || 0)} />
-          <SummaryCard icon={Wallet} label="Topup Saldo" value={formatNumber(agregat?.totalTopupSaldo || 0)} />
-          <SummaryCard icon={Wallet} label="Nominal Saldo" value={formatRupiah(agregat?.totalNominalSaldo || 0)} wide />
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="hidden grid-cols-1 gap-4 lg:grid lg:grid-cols-2">
           <RekapBox title="Rekap Per Toko" rows={rekapTokoList} />
           <RekapBox title="Rekap Per Kategori" rows={rekapKategoriList} />
         </div>
 
-        {loading && (
-          <div className="flex justify-center py-16">
-            <div className="flex flex-col items-center gap-3">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
-              />
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Memuat laporan...</p>
-            </div>
-          </div>
-        )}
+        <DetailSection
+          loading={loading}
+          filteredRows={filteredRows}
+          pagedRows={pagedRows}
+          itemsPerPage={itemsPerPage}
+          page={page}
+          totalPages={totalPages}
+          goPage={goPage}
+          setSelectedDetail={setSelectedDetail}
+        />
 
-        {!loading && filteredRows.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-              <ClipboardList size={28} className="text-slate-300" strokeWidth={2} />
-            </div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tidak ada data laporan</p>
-          </div>
-        )}
+        <RankingModal
+          type={rankingModal}
+          rows={rankingModal === "toko" ? rekapTokoList : rekapKategoriList}
+          onClose={() => setRankingModal(null)}
+        />
 
-        {!loading && pagedRows.length > 0 && (
-          <>
-            <div className="space-y-2 sm:hidden">
-              {pagedRows.map((row, index) => (
-                <motion.div
-                  key={`${row.jenis}-${row.id}`}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-black text-slate-800">{row.nama}</p>
-                      <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        <DetailModal selectedDetail={selectedDetail} onClose={() => setSelectedDetail(null)} />
+      </main>
+    </div>
+  )
+}
+
+function HeaderButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+  spinning,
+}: {
+  icon: any
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  spinning?: boolean
+}) {
+  return (
+    <motion.button
+      whileTap={{ scale: 0.97 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+      title={label}
+      type="button"
+    >
+      <Icon size={12} strokeWidth={2.8} className={spinning ? "animate-spin" : ""} />
+      <span>{label}</span>
+    </motion.button>
+  )
+}
+
+function FilterContent({
+  mode,
+  setMode,
+  tanggal,
+  setTanggal,
+  tahun,
+  setTahun,
+  bulan,
+  setBulan,
+  jenisFilter,
+  setJenisFilter,
+  tokoFilter,
+  setTokoFilter,
+  kategoriFilter,
+  setKategoriFilter,
+  search,
+  setSearch,
+  itemsPerPage,
+  setItemsPerPage,
+  tokoList,
+  kategoriList,
+}: {
+  mode: ModeLaporan
+  setMode: (value: string) => void
+  tanggal: string
+  setTanggal: (value: string) => void
+  tahun: number
+  setTahun: (value: string) => void
+  bulan: number
+  setBulan: (value: string) => void
+  jenisFilter: JenisFilter
+  setJenisFilter: (value: string) => void
+  tokoFilter: string
+  setTokoFilter: (value: string) => void
+  kategoriFilter: string
+  setKategoriFilter: (value: string) => void
+  search: string
+  setSearch: (value: string) => void
+  itemsPerPage: number
+  setItemsPerPage: (value: string) => void
+  tokoList: MasterItem[]
+  kategoriList: MasterItem[]
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <FilterSelect label="Mode" value={mode} onChange={setMode} icon={Calendar}>
+        <option value="harian">Harian</option>
+        <option value="bulanan">Bulanan</option>
+      </FilterSelect>
+
+      {mode === "harian" ? (
+        <FieldBox label="Tanggal">
+          <input
+            type="date"
+            value={tanggal}
+            onChange={(e) => setTanggal(e.target.value)}
+            className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+          />
+        </FieldBox>
+      ) : (
+        <>
+          <FilterSelect label="Tahun" value={tahun} onChange={setTahun}>
+            {[2024, 2025, 2026, 2027].map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </FilterSelect>
+
+          <FilterSelect label="Bulan" value={bulan} onChange={setBulan}>
+            {BULAN_LIST.map((item, index) => (
+              <option key={item} value={index + 1}>
+                {item}
+              </option>
+            ))}
+          </FilterSelect>
+        </>
+      )}
+
+      <FilterSelect label="Jenis" value={jenisFilter} onChange={setJenisFilter} icon={Package}>
+        <option value="">Semua Jenis</option>
+        <option value="barang">Barang</option>
+        <option value="saldo">Saldo Digital</option>
+      </FilterSelect>
+
+      <FilterSelect label="Toko" value={tokoFilter} onChange={setTokoFilter} icon={Store}>
+        <option value="">Semua Toko</option>
+        {tokoList.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.nama}
+          </option>
+        ))}
+      </FilterSelect>
+
+      <FilterSelect label="Kategori" value={kategoriFilter} onChange={setKategoriFilter} icon={Tag}>
+        <option value="">Semua Kategori</option>
+        {kategoriList.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.nama}
+          </option>
+        ))}
+      </FilterSelect>
+
+      <div className="sm:col-span-2 lg:col-span-3">
+        <FieldBox label="Cari">
+          <div className="relative">
+            <Search
+              size={13}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              strokeWidth={2.5}
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Nama barang, toko, kategori, supplier..."
+              className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+            />
+          </div>
+        </FieldBox>
+      </div>
+
+      <FilterSelect label="Tampilkan" value={itemsPerPage} onChange={setItemsPerPage}>
+        {ITEMS_OPTIONS.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        ))}
+      </FilterSelect>
+    </div>
+  )
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  className = "",
+}: {
+  icon: any
+  label: string
+  value: string
+  className?: string
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4 ${className}`}
+    >
+      <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+        <div className="hidden h-9 w-9 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 sm:flex sm:h-11 sm:w-11">
+          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
+            {label}
+          </p>
+          <p className="truncate text-[13px] font-black leading-tight text-slate-800 sm:text-sm sm:text-xl">
+            {value}
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+function DetailSection({
+  loading,
+  filteredRows,
+  pagedRows,
+  itemsPerPage,
+  page,
+  totalPages,
+  goPage,
+  setSelectedDetail,
+}: {
+  loading: boolean
+  filteredRows: DetailRow[]
+  pagedRows: DetailRow[]
+  itemsPerPage: number
+  page: number
+  totalPages: number
+  goPage: (page: number) => void
+  setSelectedDetail: (row: DetailRow) => void
+}) {
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <div className="flex flex-col items-center gap-3">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
+          />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Memuat laporan...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (filteredRows.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+          <ClipboardList size={28} className="text-slate-300" strokeWidth={2} />
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          Tidak ada data laporan
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
+        <div className="mb-4">
+          <h2 className="text-sm font-black text-slate-800 sm:text-base">Detail Pembelian</h2>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Daftar transaksi pembelian dan topup saldo sesuai filter.
+          </p>
+        </div>
+
+        <div className="space-y-2 sm:hidden">
+          {pagedRows.map((row, index) => (
+            <motion.div
+              key={`${row.jenis}-${row.id}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.03 }}
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-100/70"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 ring-1 ring-sky-100">
+                  <Package size={20} strokeWidth={2.5} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-black leading-tight text-slate-800 sm:text-sm">
+                        {row.nama}
+                      </p>
+                      <p className="mt-1 truncate text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">
                         {row.jenis === "barang" ? row.kategoriNama : "Saldo Digital"} · {row.tokoNama}
                       </p>
                     </div>
                     <JenisBadge jenis={row.jenis} />
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <MiniBox label="Jumlah" value={row.jenis === "saldo" ? formatRupiah(row.jumlahTambah) : formatNumber(row.jumlahTambah)} />
-                    <MiniBox label="Sebelum" value={row.jenis === "saldo" ? formatRupiah(row.saldoSebelum) : formatNumber(row.stokSebelum)} />
-                    <MiniBox label="Sesudah" value={row.jenis === "saldo" ? formatRupiah(row.saldoSesudah) : formatNumber(row.stokSesudah)} />
+                  <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3">
+                    <MiniBox
+                      label="Jumlah"
+                      value={row.jenis === "saldo" ? formatRupiah(row.jumlahTambah) : formatNumber(row.jumlahTambah)}
+                    />
+                    <MiniBox
+                      label="Sebelum"
+                      value={row.jenis === "saldo" ? formatRupiah(row.saldoSebelum) : formatNumber(row.stokSebelum)}
+                    />
+                    <MiniBox
+                      label="Sesudah"
+                      value={row.jenis === "saldo" ? formatRupiah(row.saldoSesudah) : formatNumber(row.stokSesudah)}
+                    />
                   </div>
 
-                  <p className="mt-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                    {formatDateTime(row.createdAt)}
-                  </p>
-                </motion.div>
-              ))}
-            </div>
-
-            <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:block">
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                  <thead className="border-b border-slate-200 bg-slate-50">
-                    <tr>
-                      {["No", "Jenis", "Nama", "Toko", "Kategori", "Supplier", "Jumlah", "Sebelum", "Sesudah", "Waktu"].map((item, index) => (
-                        <th
-                          key={item}
-                          className={`whitespace-nowrap px-4 py-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 ${
-                            index === 0 || index >= 6 ? "text-center" : "text-left"
-                          }`}
-                        >
-                          {item}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pagedRows.map((row, index) => (
-                      <tr key={`${row.jenis}-${row.id}`} className="border-t border-slate-100 transition-colors hover:bg-slate-50">
-                        <td className="px-4 py-3 text-center font-bold text-slate-400">
-                          {itemsPerPage === 0 ? index + 1 : (page - 1) * itemsPerPage + index + 1}
-                        </td>
-                        <td className="px-4 py-3"><JenisBadge jenis={row.jenis} /></td>
-                        <td className="px-4 py-3">
-                          <p className="font-black text-slate-800">{row.nama}</p>
-                          {row.catatan ? <p className="mt-1 max-w-[220px] truncate text-[10px] font-semibold text-slate-400">{row.catatan}</p> : null}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">{row.tokoNama}</td>
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">{row.kategoriNama}</td>
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">{row.supplier}</td>
-                        <td className="px-4 py-3 text-center font-black text-slate-700">
-                          {row.jenis === "saldo" ? formatRupiah(row.jumlahTambah) : formatNumber(row.jumlahTambah)}
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold text-slate-500">
-                          {row.jenis === "saldo" ? formatRupiah(row.saldoSebelum) : formatNumber(row.stokSebelum)}
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold text-emerald-700">
-                          {row.jenis === "saldo" ? formatRupiah(row.saldoSesudah) : formatNumber(row.stokSesudah)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-500">
-                          {formatDateTime(row.createdAt)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDetail(row)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-sky-700 shadow-sm transition hover:bg-sky-100"
+                    >
+                      <Eye size={13} strokeWidth={2.6} />
+                      Detail
+                    </button>
+                    <div className="flex items-center justify-center rounded-xl bg-slate-50 px-2 py-2 text-[8px] font-black uppercase tracking-wide text-slate-400 sm:text-[9px]">
+                      {formatDateTime(row.createdAt)}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            </motion.div>
+          ))}
+        </div>
 
-            {itemsPerPage !== 0 && totalPages > 1 && (
-              <div className="flex items-center justify-end gap-2">
+        <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:block">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="border-b border-slate-100 bg-slate-50/70">
+                <tr>
+                  {["No", "Jenis", "Nama", "Toko", "Kategori", "Supplier", "Jumlah", "Sebelum", "Sesudah", "Waktu", "Aksi"].map((item, index) => (
+                    <th
+                      key={item}
+                      className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
+                        index === 0 || index >= 6 ? "text-center" : "text-left"
+                      }`}
+                    >
+                      {item}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRows.map((row, index) => (
+                  <tr
+                    key={`${row.jenis}-${row.id}`}
+                    className="border-t border-slate-100 transition-colors hover:bg-sky-50/40"
+                  >
+                    <td className="px-3 py-3 text-center font-bold text-slate-400">
+                      {itemsPerPage === 0 ? index + 1 : (page - 1) * itemsPerPage + index + 1}
+                    </td>
+                    <td className="px-3 py-3">
+                      <JenisBadge jenis={row.jenis} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <p className="font-black text-slate-800">{row.nama}</p>
+                      {row.catatan ? (
+                        <p className="mt-1 max-w-[220px] truncate text-[10px] font-semibold text-slate-400">
+                          {row.catatan}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{row.tokoNama}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{row.kategoriNama}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{row.supplier}</td>
+                    <td className="px-3 py-3 text-center font-black text-slate-700">
+                      {row.jenis === "saldo" ? formatRupiah(row.jumlahTambah) : formatNumber(row.jumlahTambah)}
+                    </td>
+                    <td className="px-3 py-3 text-center font-bold text-slate-500">
+                      {row.jenis === "saldo" ? formatRupiah(row.saldoSebelum) : formatNumber(row.stokSebelum)}
+                    </td>
+                    <td className="px-3 py-3 text-center font-bold text-sky-700">
+                      {row.jenis === "saldo" ? formatRupiah(row.saldoSesudah) : formatNumber(row.stokSesudah)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-center font-semibold text-slate-500">
+                      {formatDateTime(row.createdAt)}
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDetail(row)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition hover:bg-sky-100"
+                      >
+                        <Eye size={13} strokeWidth={2.6} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </motion.div>
+
+      {itemsPerPage !== 0 && totalPages > 1 && (
+        <div className="flex justify-center gap-1.5 pt-1">
+          <button
+            type="button"
+            onClick={() => goPage(page - 1)}
+            disabled={page === 1}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ChevronLeft size={14} strokeWidth={2.5} />
+          </button>
+
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter((p) => totalPages <= 7 || p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+            .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+              if (idx > 0 && typeof arr[idx - 1] === "number" && p - (arr[idx - 1] as number) > 1) acc.push("...")
+              acc.push(p)
+              return acc
+            }, [])
+            .map((p, idx) =>
+              p === "..." ? (
+                <span key={`e-${idx}`} className="px-1 text-xs font-bold text-slate-400">
+                  ···
+                </span>
+              ) : (
                 <button
-                  onClick={() => goPage(page - 1)}
-                  disabled={page <= 1}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  key={p}
+                  type="button"
+                  onClick={() => goPage(p)}
+                  className={`h-8 min-w-8 rounded-xl px-2 text-xs font-black transition ${
+                    page === p
+                      ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+                      : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
                 >
-                  <ChevronLeft size={14} strokeWidth={2.5} />
+                  {p}
                 </button>
-                <button
-                  onClick={() => goPage(page + 1)}
-                  disabled={page >= totalPages}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronRight size={14} strokeWidth={2.5} />
-                </button>
-              </div>
+              )
             )}
-          </>
-        )}
-      </main>
-    </div>
-  )
-}
 
-function SummaryCard({ icon: Icon, label, value, wide }: { icon: any; label: string; value: string; wide?: boolean }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${wide ? "col-span-2 lg:col-span-1" : ""}`}
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-          <Icon size={20} strokeWidth={2.5} />
+          <button
+            type="button"
+            onClick={() => goPage(page + 1)}
+            disabled={page === totalPages}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ChevronRight size={14} strokeWidth={2.5} />
+          </button>
         </div>
-        <div className="min-w-0">
-          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-          <p className="mt-0.5 truncate text-base font-black text-slate-800 sm:text-lg">{value}</p>
-        </div>
-      </div>
-    </motion.div>
+      )}
+    </>
   )
 }
 
@@ -1088,7 +1532,14 @@ function RekapBox({
   rows,
 }: {
   title: string
-  rows: Array<{ key: string; id?: string; nama?: string; totalTransaksi?: number; totalQty?: number; totalNominal?: number }>
+  rows: Array<{
+    key: string
+    id?: string
+    nama?: string
+    totalTransaksi?: number
+    totalQty?: number
+    totalNominal?: number
+  }>
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1099,19 +1550,8 @@ function RekapBox({
         </div>
       ) : (
         <div className="mt-3 space-y-2">
-          {rows.slice(0, 8).map((item) => (
-            <div key={item.key} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-xs font-black text-slate-800">{item.nama || item.key}</p>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  {formatNumber(Number(item.totalQty || 0))} qty
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs font-black text-emerald-700">{formatNumber(Number(item.totalTransaksi || 0))}</p>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">transaksi</p>
-              </div>
-            </div>
+          {rows.slice(0, 8).map((item, idx) => (
+            <RekapItemCard key={item.key} item={item} index={idx} />
           ))}
         </div>
       )}
@@ -1119,11 +1559,211 @@ function RekapBox({
   )
 }
 
+function RekapItemCard({
+  item,
+  index,
+}: {
+  item: {
+    key: string
+    id?: string
+    nama?: string
+    totalTransaksi?: number
+    totalQty?: number
+    totalNominal?: number
+  }
+  index: number
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-[10px] font-black text-white">
+          {index + 1}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-black text-slate-800">{item.nama || item.key}</p>
+          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            {formatNumber(Number(item.totalQty || 0))} qty
+          </p>
+        </div>
+      </div>
+      <div className="text-right">
+        <p className="text-xs font-black text-sky-700">
+          {formatNumber(Number(item.totalTransaksi || 0))}
+        </p>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">transaksi</p>
+      </div>
+    </div>
+  )
+}
+
+function RankingModal({
+  type,
+  rows,
+  onClose,
+}: {
+  type: RankingModalType
+  rows: Array<{
+    key: string
+    id?: string
+    nama?: string
+    totalTransaksi?: number
+    totalQty?: number
+    totalNominal?: number
+  }>
+  onClose: () => void
+}) {
+  return (
+    <AnimatePresence>
+      {type && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose()
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.96 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="max-h-[84vh] w-full max-w-lg overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                  {type === "toko" ? "Rekap Per Toko" : "Rekap Per Kategori"}
+                </p>
+                <h2 className="truncate text-base font-black text-slate-800">
+                  {type === "toko" ? "Ranking Toko" : "Ranking Kategori"}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+              >
+                <X size={17} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(84vh-65px)] overflow-y-auto p-4">
+              {rows.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                  Belum ada data
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {rows.slice(0, 20).map((item, idx) => (
+                    <RekapItemCard key={item.key} item={item} index={idx} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+function DetailModal({ selectedDetail, onClose }: { selectedDetail: DetailRow | null; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {selectedDetail && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose()
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.96 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="max-h-[84vh] w-full max-w-3xl overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                  Detail Pembelian
+                </p>
+                <h2 className="truncate text-base font-black text-slate-800">{selectedDetail.nama}</h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+              >
+                <X size={17} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(84vh-65px)] overflow-y-auto p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <DetailInfo label="Jenis" value={selectedDetail.jenis === "barang" ? "Barang" : "Saldo Digital"} />
+                <DetailInfo label="Waktu" value={formatDateTime(selectedDetail.createdAt)} />
+                <DetailInfo label="Toko" value={selectedDetail.tokoNama} />
+                <DetailInfo label="Kategori" value={selectedDetail.kategoriNama} />
+                <DetailInfo label="Supplier" value={selectedDetail.supplier} />
+                <DetailInfo
+                  label="Jumlah"
+                  value={
+                    selectedDetail.jenis === "saldo"
+                      ? formatRupiah(selectedDetail.jumlahTambah)
+                      : formatNumber(selectedDetail.jumlahTambah)
+                  }
+                />
+                <DetailInfo
+                  label="Sebelum"
+                  value={
+                    selectedDetail.jenis === "saldo"
+                      ? formatRupiah(selectedDetail.saldoSebelum)
+                      : formatNumber(selectedDetail.stokSebelum)
+                  }
+                />
+                <DetailInfo
+                  label="Sesudah"
+                  value={
+                    selectedDetail.jenis === "saldo"
+                      ? formatRupiah(selectedDetail.saldoSesudah)
+                      : formatNumber(selectedDetail.stokSesudah)
+                  }
+                />
+                <div className="md:col-span-2">
+                  <DetailInfo label="Catatan" value={selectedDetail.catatan || "-"} />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+function DetailInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="mt-2 break-words text-sm font-black text-slate-800">{value}</p>
+    </div>
+  )
+}
+
 function JenisBadge({ jenis }: { jenis: "barang" | "saldo" }) {
   return (
     <span
-      className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
-        jenis === "barang" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
+      className={`inline-flex shrink-0 rounded-lg px-2 py-1 text-[9px] font-black uppercase tracking-wide sm:px-2.5 sm:text-[10px] ${
+        jenis === "barang" ? "bg-sky-100 text-sky-700" : "bg-blue-100 text-blue-700"
       }`}
     >
       {jenis === "barang" ? "Barang" : "Saldo"}
@@ -1133,9 +1773,13 @@ function JenisBadge({ jenis }: { jenis: "barang" | "saldo" }) {
 
 function MiniBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-50 p-2">
-      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="mt-1 break-words text-xs font-black text-slate-800">{value}</p>
+    <div className="min-w-0 rounded-2xl bg-slate-50 p-2">
+      <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-widest">
+        {label}
+      </p>
+      <p className="mt-1 truncate whitespace-nowrap text-[9px] font-black leading-tight text-slate-800 sm:text-xs">
+        {value}
+      </p>
     </div>
   )
 }

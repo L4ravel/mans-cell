@@ -1,7 +1,9 @@
 /* 
   Halaman admin transfer barang antar toko.
-  Mendukung draft transfer banyak barang sekaligus, pencarian barang, kirim, terima,
-  batal, detail transfer, filter riwayat, serta simpan nama & email user dari koleksi users.
+  Revisi layout konsisten dengan laporan harian: header biru, kartu putih, tombol biru, tabel/card rapi.
+  Mobile memakai tab Buat Draft dan Riwayat, filter riwayat dibuat collapse,
+  mendukung draft banyak barang, kirim, terima, batal, detail transfer,
+  serta simpan nama & email user dari koleksi users.
 */
 
 "use client"
@@ -13,13 +15,16 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   runTransaction,
+  where,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore"
 import {
+  AlertCircle,
   ArrowLeftRight,
   Boxes,
   Check,
@@ -31,6 +36,7 @@ import {
   CircleOff,
   Cpu,
   Eye,
+  ListFilter,
   Mail,
   Package,
   RefreshCw,
@@ -148,7 +154,8 @@ const ITEMS_OPTIONS = [
   { value: 10, label: "10" },
   { value: 25, label: "25" },
   { value: 50, label: "50" },
-  { value: 0, label: "Semua" },
+  { value: 100, label: "100" },
+  { value: 0, label: "ALL" },
 ]
 
 const EMPTY_FORM: TransferForm = {
@@ -178,7 +185,7 @@ function FormInput({
       </label>
       <input
         {...props}
-        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
       />
     </div>
   )
@@ -201,7 +208,7 @@ function FormTextArea({
       </label>
       <textarea
         {...props}
-        className="min-h-[96px] w-full resize-y rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+        className="min-h-[96px] w-full resize-y rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
       />
     </div>
   )
@@ -227,7 +234,7 @@ function FormSelect({
       <div className="relative">
         <select
           {...props}
-          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
         >
           {children}
         </select>
@@ -261,7 +268,7 @@ function FilterSelect({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
         >
           {children}
         </select>
@@ -420,7 +427,7 @@ const getStatusMeta = (status: TransferStatus) => {
   if (status === "DITERIMA") {
     return {
       label: "Diterima",
-      className: "bg-emerald-100 text-emerald-700",
+      className: "bg-emerald-100 text-sky-700",
       icon: CircleCheckBig,
     }
   }
@@ -458,6 +465,8 @@ export default function TransferBarangPage() {
   const [filterEndDate, setFilterEndDate] = useState(defaultRange.endDate)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
+  const [mobileActiveTab, setMobileActiveTab] = useState<"draft" | "history">("draft")
+  const [historyFilterOpen, setHistoryFilterOpen] = useState(false)
 
   const [selectedDetail, setSelectedDetail] = useState<TransferBarang | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<TransferBarang | null>(null)
@@ -520,35 +529,75 @@ export default function TransferBarangPage() {
     }
   }
 
-  const fetchBarang = async () => {
+  const mapBarangDoc = (item: any): Barang => {
+    const x = item.data() as any
+
+    return {
+      id: item.id,
+      kodeBarang: x?.kodeBarang || "",
+      nama: x?.nama || "",
+      kategoriId: x?.kategoriId || "",
+      kategoriNama: x?.kategoriNama || "",
+      tokoId: x?.tokoId || "",
+      tokoNama: x?.tokoNama || "",
+      merk: x?.merk || "",
+      supplier: x?.supplier || "",
+      satuan: x?.satuan || "Pcs",
+      hargaModal: Number(x?.hargaModal || 0),
+      hargaJual: Number(x?.hargaJual || 0),
+      stok: Number(x?.stok || 0),
+      stokMinimum: Number(x?.stokMinimum || 0),
+      createdAt: x?.createdAt,
+      updatedAt: x?.updatedAt,
+    }
+  }
+
+  const fetchBarang = async (tokoAsalId?: string) => {
+    const activeTokoAsalId = String(tokoAsalId || "").trim()
+
+    if (!activeTokoAsalId) {
+      setBarangList([])
+      return
+    }
+
     try {
-      const snap = await getDocs(query(collection(db, "barang"), orderBy("nama")))
-      const list: Barang[] = snap.docs.map((item) => {
-        const x = item.data() as any
-        return {
-          id: item.id,
-          kodeBarang: x?.kodeBarang || "",
-          nama: x?.nama || "",
-          kategoriId: x?.kategoriId || "",
-          kategoriNama: x?.kategoriNama || "",
-          tokoId: x?.tokoId || "",
-          tokoNama: x?.tokoNama || "",
-          merk: x?.merk || "",
-          supplier: x?.supplier || "",
-          satuan: x?.satuan || "Pcs",
-          hargaModal: Number(x?.hargaModal || 0),
-          hargaJual: Number(x?.hargaJual || 0),
-          stok: Number(x?.stok || 0),
-          stokMinimum: Number(x?.stokMinimum || 0),
-          createdAt: x?.createdAt,
-          updatedAt: x?.updatedAt,
-        }
-      })
+      const snap = await getDocs(
+        query(
+          collection(db, "barang"),
+          where("tokoId", "==", activeTokoAsalId),
+          orderBy("nama")
+        )
+      )
+      const list: Barang[] = snap.docs.map(mapBarangDoc)
 
       setBarangList(list)
     } catch (e) {
       console.error(e)
       setBarangList([])
+    }
+  }
+
+  const getTargetBarangByKode = async (tokoTujuanId: string, kodeBarang: string) => {
+    const targetTokoId = String(tokoTujuanId || "").trim()
+    const targetKode = String(kodeBarang || "").trim()
+
+    if (!targetTokoId || !targetKode) return null
+
+    try {
+      const snap = await getDocs(
+        query(
+          collection(db, "barang"),
+          where("tokoId", "==", targetTokoId),
+          where("kodeBarang", "==", targetKode),
+          limit(1)
+        )
+      )
+
+      if (snap.empty) return null
+      return mapBarangDoc(snap.docs[0])
+    } catch (e) {
+      console.error("Gagal mengecek barang tujuan:", e)
+      return null
     }
   }
 
@@ -622,7 +671,7 @@ export default function TransferBarangPage() {
   const fetchAll = async () => {
     setLoading(true)
     try {
-      await Promise.all([fetchToko(), fetchBarang(), fetchTransfer()])
+      await Promise.all([fetchToko(), fetchBarang(form.tokoAsalId), fetchTransfer()])
     } finally {
       setLoading(false)
     }
@@ -634,6 +683,11 @@ export default function TransferBarangPage() {
     })
     return () => unsub()
   }, [])
+
+  useEffect(() => {
+    fetchBarang(form.tokoAsalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.tokoAsalId])
 
   const barangTokoAsal = useMemo(() => {
     return barangList
@@ -714,6 +768,10 @@ export default function TransferBarangPage() {
       : filteredTransfer.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   const goPage = (value: number) => setPage(Math.max(1, Math.min(totalPages, value)))
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   const resetForm = () => {
     setForm(EMPTY_FORM)
@@ -809,11 +867,7 @@ export default function TransferBarangPage() {
           if (!barang) throw new Error("Barang tidak ditemukan")
 
           const qty = Number(selected.qty)
-          const existingTarget = barangList.find(
-            (item) =>
-              item.tokoId === tokoTujuan.id &&
-              item.kodeBarang.trim().toLowerCase() === barang.kodeBarang.trim().toLowerCase()
-          )
+          const existingTarget = await getTargetBarangByKode(tokoTujuan.id, barang.kodeBarang)
 
           const newTransferRef = doc(collection(db, "transfer_barang"))
           const targetBarangRef = existingTarget
@@ -1115,64 +1169,59 @@ export default function TransferBarangPage() {
     }
   }
 
+  const draftCount = filteredTransfer.filter((item) => item.status === "DRAFT").length
+  const dikirimCount = filteredTransfer.filter((item) => item.status === "DIKIRIM").length
+  const diterimaCount = filteredTransfer.filter((item) => item.status === "DITERIMA").length
+  const batalCount = filteredTransfer.filter((item) => item.status === "DIBATALKAN").length
+  const totalQtyTransfer = filteredTransfer.reduce((sum, item) => sum + Number(item.qty || 0), 0)
+
   const detailData =
     selectedDetail
       ? transferList.find((item) => item.id === selectedDetail.id) || selectedDetail
       : null
 
   return (
-    <div className="space-y-4 text-slate-900 sm:space-y-5">
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
+      {/* Header */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border border-slate-200 border-l-4 border-l-cyan-500 bg-white p-4 shadow-sm sm:p-5"
+        transition={{ duration: 0.35 }}
+        className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-200/50 sm:h-14 sm:w-14">
-              <ArrowLeftRight size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
+              <ArrowLeftRight size={28} className="text-white sm:h-8 sm:w-8" strokeWidth={2.5} />
             </div>
 
-            <div className="min-w-0 self-center sm:self-auto">
-              <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
+            <div className="min-w-0">
+              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                 Transfer Barang
               </h1>
-              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Multi barang · popup cari barang · draft · kirim · terima · batal
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
+                Buat draft, kirim, terima, dan pantau transfer stok antar toko.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 sm:flex-shrink-0 sm:flex-wrap sm:justify-end">
-            <div className="flex items-center gap-2">
-              {filteredTransfer.length > 0 && (
-                <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-cyan-500 px-2.5 shadow-sm shadow-cyan-200/50">
-                  <span className="text-xs font-black text-white">
-                    {itemsPerPage === 0 ? filteredTransfer.length : pagedTransfer.length}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+          <div className="hidden flex-wrap items-center gap-2 sm:flex">
+            <button
+              type="button"
               onClick={fetchAll}
               disabled={loading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:opacity-60"
+              title="Refresh"
             >
-              <motion.span
-                animate={loading ? { rotate: 360 } : {}}
-                transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-              >
-                <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
-              </motion.span>
-            </motion.button>
+              <RefreshCw size={12} strokeWidth={2.8} className={loading ? "animate-spin" : ""} />
+              <span>Refresh</span>
+            </button>
           </div>
         </div>
 
-        <div className="pointer-events-none absolute right-0 top-0 opacity-[0.03]">
-          <Cpu size={140} strokeWidth={1} />
+        <div className="pointer-events-none absolute right-0 top-0 opacity-[0.04]">
+          <Cpu size={150} className="text-white" strokeWidth={1} />
         </div>
       </motion.div>
 
@@ -1182,7 +1231,7 @@ export default function TransferBarangPage() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
+            className="fixed right-4 top-4 z-[70] flex items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 shadow-lg"
           >
             <p className="text-[11px] font-bold text-red-700">{error}</p>
             <button onClick={() => setError(null)} className="text-red-500">
@@ -1198,29 +1247,102 @@ export default function TransferBarangPage() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
+            className="fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-lg"
           >
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-600">
               <Check size={11} className="text-white" strokeWidth={3} />
             </div>
-            <p className="text-[11px] font-bold text-emerald-700">{successMsg}</p>
+            <p className="text-[11px] font-bold text-sky-700">{successMsg}</p>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Stats */}
+      <div className="space-y-2 sm:space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Transfer</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{filteredTransfer.length}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Draft</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{draftCount}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Terkirim</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{dikirimCount}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Diterima</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{diterimaCount}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Batal</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{batalCount}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Total Qty</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{totalQtyTransfer}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Barang</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{barangList.length}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+            <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">Toko</p>
+            <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">{tokoList.length}</p>
+          </div>
+        </div>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:hidden"
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileActiveTab("draft")}
+            className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
+              mobileActiveTab === "draft"
+                ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
+                : "border-2 border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Package size={16} strokeWidth={2.5} />
+            Buat Draft
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileActiveTab("history")}
+            className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
+              mobileActiveTab === "history"
+                ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
+                : "border-2 border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <ListFilter size={16} strokeWidth={2.5} />
+            Riwayat
+          </button>
+        </div>
+      </motion.div>
 
       <motion.form
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.06 }}
         onSubmit={handleCreateTransfer}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
+        className={`${mobileActiveTab === "draft" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:block sm:p-5`}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-black text-slate-800 sm:text-base">Buat Draft Transfer</h2>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Stok asal berkurang saat dikirim, stok tujuan bertambah saat diterima
-            </p>
+          
           </div>
 
           <button
@@ -1291,7 +1413,7 @@ export default function TransferBarangPage() {
                   type="button"
                   disabled={!form.tokoAsalId}
                   onClick={() => setBarangModalOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Boxes size={16} />
                   Pilih Barang
@@ -1362,17 +1484,17 @@ export default function TransferBarangPage() {
           <button
             type="submit"
             disabled={submitLoading}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitLoading ? <RefreshCw size={16} className="animate-spin" /> : <Package size={16} />}
             Simpan Draft Transfer
           </button>
 
           <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-bold text-cyan-700 ring-1 ring-cyan-200">
+            <span className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-[11px] font-bold text-sky-700 ring-1 ring-sky-100">
               Barang: {selectedItems.length}
             </span>
-            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+            <span className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-[11px] font-bold text-sky-700 ring-1 ring-sky-100">
               Total Qty: {selectedItems.reduce((acc, item) => acc + Number(item.qty || 0), 0)}
             </span>
           </div>
@@ -1383,16 +1505,151 @@ export default function TransferBarangPage() {
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white p-4 shadow-sm sm:p-5"
+        className={`${mobileActiveTab === "history" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:block sm:p-5`}
       >
-        <div className="mb-4">
-          <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Riwayat</h2>
-          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Cari transfer berdasarkan status, toko, dan rentang waktu
-          </p>
+        <div className="flex items-start justify-between gap-3 sm:mb-4">
+          <div>
+            <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Riwayat</h2>
+          
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setHistoryFilterOpen((prev) => !prev)}
+            className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 text-[10px] font-black uppercase tracking-[0.06em] transition sm:hidden ${
+              historyFilterOpen
+                ? "border-sky-200 bg-sky-100 text-sky-700"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            <Search size={13} strokeWidth={2.5} />
+            Filter
+            <ChevronDown
+              size={13}
+              strokeWidth={2.5}
+              className={`transition-transform ${historyFilterOpen ? "rotate-180" : ""}`}
+            />
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <AnimatePresence initial={false}>
+          {historyFilterOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, y: -4 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="overflow-hidden sm:hidden"
+            >
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-1 gap-3">
+                  <FormInput
+                    label="Cari"
+                    value={search}
+                    onChange={(e: any) => {
+                      setSearch(e.target.value)
+                      setPage(1)
+                    }}
+                    placeholder="Kode, barang, toko, supplier, user..."
+                  />
+
+                  <FilterSelect
+                    label="Status"
+                    value={filterStatus}
+                    onChange={(v) => {
+                      setFilterStatus(v)
+                      setPage(1)
+                    }}
+                  >
+                    <option value="">Semua status</option>
+                    <option value="DRAFT">Draft</option>
+                    <option value="DIKIRIM">Terkirim</option>
+                    <option value="DITERIMA">Diterima</option>
+                    <option value="DIBATALKAN">Dibatalkan</option>
+                  </FilterSelect>
+
+                  <FilterSelect
+                    label="Toko Asal"
+                    value={filterAsal}
+                    onChange={(v) => {
+                      setFilterAsal(v)
+                      setPage(1)
+                    }}
+                  >
+                    <option value="">Semua toko asal</option>
+                    {tokoList.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nama}
+                      </option>
+                    ))}
+                  </FilterSelect>
+
+                  <FilterSelect
+                    label="Toko Tujuan"
+                    value={filterTujuan}
+                    onChange={(v) => {
+                      setFilterTujuan(v)
+                      setPage(1)
+                    }}
+                  >
+                    <option value="">Semua toko tujuan</option>
+                    {tokoList.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nama}
+                      </option>
+                    ))}
+                  </FilterSelect>
+
+                  <FormInput
+                    label="Dari Tanggal"
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e: any) => {
+                      setFilterStartDate(e.target.value)
+                      setPage(1)
+                    }}
+                  />
+
+                  <FormInput
+                    label="Sampai Tanggal"
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e: any) => {
+                      setFilterEndDate(e.target.value)
+                      setPage(1)
+                    }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={resetDateFilter}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.06em] text-slate-700 transition-all hover:bg-slate-50"
+                  >
+                    Reset Tanggal
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("")
+                      setFilterStatus("")
+                      setFilterAsal("")
+                      setFilterTujuan("")
+                      resetDateFilter()
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.06em] text-slate-700 transition-all hover:bg-slate-50"
+                  >
+                    Reset Semua
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="mt-4 hidden grid-cols-1 gap-3 sm:grid md:grid-cols-2 xl:grid-cols-6">
           <FormInput
             label="Cari"
             value={search}
@@ -1471,7 +1728,7 @@ export default function TransferBarangPage() {
           />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3 hidden flex-wrap items-center gap-2 sm:flex">
           <button
             type="button"
             onClick={resetDateFilter}
@@ -1500,14 +1757,12 @@ export default function TransferBarangPage() {
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm sm:p-5"
+        className={`${mobileActiveTab === "history" ? "block" : "hidden"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:block sm:p-5`}
       >
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-sm font-black text-slate-800 sm:text-base">Riwayat Transfer</h2>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Total {filteredTransfer.length} transfer
-            </p>
+         
           </div>
 
           <div className="w-full sm:w-40">
@@ -1567,7 +1822,7 @@ export default function TransferBarangPage() {
                       <p className="mt-1 text-[11px] font-semibold text-slate-400">
                         Dibuat {formatDateTime(item.createdAt)}
                       </p>
-                      <p className="mt-1 text-[11px] font-semibold text-cyan-700">
+                      <p className="mt-1 text-[11px] font-semibold text-sky-700">
                         Oleh {item.createdByNama || "-"}
                       </p>
                     </div>
@@ -1606,7 +1861,7 @@ export default function TransferBarangPage() {
                             setReceiveForm(EMPTY_RECEIVE_FORM)
                           }}
                           disabled={actionLoading === item.id}
-                          className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
+                          className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-sky-700 disabled:opacity-60"
                         >
                           <CircleCheckBig size={14} />
                           Sudah Diterima
@@ -1618,7 +1873,7 @@ export default function TransferBarangPage() {
                           type="button"
                           onClick={() => setCancelTarget(item)}
                           disabled={actionLoading === item.id}
-                          className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-[11px] font-black text-red-600 transition-all hover:bg-red-50 disabled:opacity-60"
+                          className="inline-flex items-center gap-2 rounded-xl border border-rose-300/70 bg-rose-600 px-3 py-2 text-[11px] font-black text-white shadow-sm shadow-rose-500/15 transition hover:bg-rose-700 disabled:opacity-60"
                         >
                           <Undo2 size={14} />
                           Batalkan
@@ -1634,9 +1889,7 @@ export default function TransferBarangPage() {
 
         {itemsPerPage !== 0 && totalPages > 1 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[11px] font-bold text-slate-500">
-              Halaman {page} dari {totalPages}
-            </p>
+            <div />
 
             <div className="flex items-center gap-2">
               <button
@@ -1708,7 +1961,7 @@ export default function TransferBarangPage() {
                     <div
                       key={item.id}
                       className={`rounded-2xl border p-4 transition-all ${
-                        selected ? "border-cyan-300 bg-cyan-50/60" : "border-slate-200 bg-white"
+                        selected ? "border-sky-300 bg-sky-50/60" : "border-slate-200 bg-white"
                       }`}
                     >
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1718,7 +1971,7 @@ export default function TransferBarangPage() {
                               type="checkbox"
                               checked={Boolean(selected)}
                               onChange={() => toggleBarangSelection(item.id)}
-                              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-cyan-500"
                             />
                           </label>
 
@@ -1789,7 +2042,7 @@ export default function TransferBarangPage() {
               <button
                 type="button"
                 onClick={() => setBarangModalOpen(false)}
-                className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-cyan-600"
+                className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-sky-700"
               >
                 Selesai Pilih Barang
               </button>
@@ -1941,7 +2194,7 @@ export default function TransferBarangPage() {
                 type="button"
                 onClick={handleReceiveTransfer}
                 disabled={actionLoading === receiveTarget.id}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-sky-700 disabled:opacity-60"
               >
                 {actionLoading === receiveTarget.id ? (
                   <RefreshCw size={16} className="animate-spin" />
@@ -1996,6 +2249,7 @@ export default function TransferBarangPage() {
           </div>
         ) : null}
       </Modal>
+      </main>
     </div>
   )
 }

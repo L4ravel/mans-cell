@@ -8,6 +8,7 @@
 // - Popup hanya muncul jika karyawan belum punya jenisPengaturan.
 // - Reset karyawan menghapus dokumen individu, sehingga popup akan muncul lagi saat dipilih ulang.
 // - Karyawan yang ada di karyawan_tidak_wajib_absen aktif disembunyikan dari pemilihan individu.
+// - Layout diseragamkan dengan dashboard/laporan absensi terbaru: header biru, wrapper aman layout, toast fixed, dan kartu putih rounded.
 
 "use client";
 
@@ -445,8 +446,8 @@ function getTouchedMonthlyFromData(data: any): TouchedMonthlyMap {
 
 function getWeeklyCardClass(enabled: boolean, touched: boolean) {
   if (!enabled) return "border-slate-200 bg-slate-50";
-  if (touched) return "border-emerald-200 bg-emerald-50/60";
-  return "border-emerald-200 bg-emerald-50/40";
+  if (touched) return "border-sky-200 bg-sky-50/60";
+  return "border-sky-200 bg-sky-50/40";
 }
 
 function getDateCardClass(
@@ -456,8 +457,8 @@ function getDateCardClass(
 ) {
   if (!enabled) return "border-slate-200 bg-slate-50";
   if (lintasTanggal) return "border-violet-200 bg-violet-50/60";
-  if (touched) return "border-emerald-200 bg-emerald-50/60";
-  return "border-emerald-200 bg-emerald-50/40";
+  if (touched) return "border-sky-200 bg-sky-50/60";
+  return "border-sky-200 bg-sky-50/40";
 }
 
 function getStatusText(enabled: boolean, touched: boolean) {
@@ -473,8 +474,8 @@ function getStatusTextClass(
 ) {
   if (!enabled) return "text-slate-400";
   if (lintasTanggal) return "text-violet-500";
-  if (touched) return "text-emerald-500";
-  return "text-emerald-500";
+  if (touched) return "text-sky-500";
+  return "text-sky-500";
 }
 
 function getFieldClass(
@@ -492,14 +493,14 @@ function getFieldClass(
   }
 
   if (touched) {
-    return "w-full rounded-xl border-2 border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20";
+    return "w-full rounded-xl border-2 border-sky-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20";
   }
 
   if (enabled) {
-    return "w-full rounded-xl border-2 border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20";
+    return "w-full rounded-xl border-2 border-sky-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20";
   }
 
-  return "w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20";
+  return "w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20";
 }
 
 export default function PengaturanJamPage() {
@@ -1331,12 +1332,7 @@ export default function PengaturanJamPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-900">
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
-        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
-      </div>
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
 
       <AnimatePresence>
         {toast && (
@@ -1346,7 +1342,7 @@ export default function PengaturanJamPage() {
             exit={{ opacity: 0 }}
             className={`fixed right-4 top-4 z-[80] rounded-2xl border px-4 py-3 shadow-lg ${
               toast.type === "ok"
-                ? "border-emerald-200 bg-emerald-50"
+                ? "border-sky-200 bg-sky-50"
                 : "border-red-200 bg-red-50"
             }`}
           >
@@ -1354,7 +1350,7 @@ export default function PengaturanJamPage() {
               {toast.type === "ok" ? (
                 <CheckCircle2
                   size={16}
-                  className="mt-0.5 text-emerald-600"
+                  className="mt-0.5 text-sky-600"
                   strokeWidth={2.5}
                 />
               ) : (
@@ -1366,7 +1362,7 @@ export default function PengaturanJamPage() {
               )}
               <p
                 className={`max-w-xs text-xs font-black leading-relaxed ${
-                  toast.type === "ok" ? "text-emerald-700" : "text-red-700"
+                  toast.type === "ok" ? "text-sky-700" : "text-red-700"
                 }`}
               >
                 {toast.msg}
@@ -1376,7 +1372,7 @@ export default function PengaturanJamPage() {
         )}
       </AnimatePresence>
 
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+      <main className="relative w-full space-y-4 pb-28">
         <AnimatePresence>
           {showJenisModal &&
             mode === "karyawan" &&
@@ -1397,7 +1393,7 @@ export default function PengaturanJamPage() {
                 >
                   <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-500">
+                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-500">
                         Pilih Jenis Jadwal
                       </p>
                       <h3 className="mt-1 text-xl font-black text-slate-800">
@@ -1426,9 +1422,9 @@ export default function PengaturanJamPage() {
                       type="button"
                       disabled={jenisLoading}
                       onClick={() => handlePilihJenisKaryawan("hari")}
-                      className="group rounded-2xl border-2 border-emerald-100 bg-emerald-50/70 p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="group rounded-2xl border-2 border-sky-100 bg-sky-50/70 p-4 text-left transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 transition group-hover:scale-105">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 transition group-hover:scale-105">
                         <CalendarClock size={22} strokeWidth={2.5} />
                       </div>
                       <p className="mt-3 text-sm font-black text-slate-800">
@@ -1467,7 +1463,7 @@ export default function PengaturanJamPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
@@ -1482,7 +1478,7 @@ export default function PengaturanJamPage() {
               <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                 Pengaturan Jam Absensi
               </h1>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                 Default sistem, per toko, dan per karyawan
               </p>
             </div>
@@ -1516,7 +1512,7 @@ export default function PengaturanJamPage() {
                   }}
                   className={`flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-black transition-all ${
                     mode === "default"
-                      ? "bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 text-white shadow-lg shadow-emerald-500/15"
+                      ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
                       : "border-2 border-slate-200 bg-white text-slate-700"
                   }`}
                 >
@@ -1534,7 +1530,7 @@ export default function PengaturanJamPage() {
                   }}
                   className={`flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-black transition-all ${
                     mode === "toko"
-                      ? "bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 text-white shadow-lg shadow-emerald-500/15"
+                      ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
                       : "border-2 border-slate-200 bg-white text-slate-700"
                   }`}
                 >
@@ -1552,7 +1548,7 @@ export default function PengaturanJamPage() {
                   }}
                   className={`flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-black transition-all ${
                     mode === "karyawan"
-                      ? "bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 text-white shadow-lg shadow-emerald-500/15"
+                      ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
                       : "border-2 border-slate-200 bg-white text-slate-700"
                   }`}
                 >
@@ -1562,15 +1558,15 @@ export default function PengaturanJamPage() {
               </div>
 
               {mode === "karyawan" && (
-                <div className="mt-3 space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3">
+                <div className="mt-3 space-y-3 rounded-2xl border border-sky-100 bg-sky-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">
                       Karyawan Aktif
                     </p>
                     {karyawanActiveLoading && (
                       <Loader2
                         size={14}
-                        className="animate-spin text-emerald-600"
+                        className="animate-spin text-sky-600"
                       />
                     )}
                   </div>
@@ -1584,7 +1580,7 @@ export default function PengaturanJamPage() {
                         setJenisKaryawan(null);
                         setShowJenisModal(false);
                       }}
-                      className="w-full appearance-none rounded-xl border-2 border-emerald-100 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                      className="w-full appearance-none rounded-xl border-2 border-sky-100 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                     >
                       <option value="">Semua Toko</option>
                       {tokoList.map((toko) => (
@@ -1610,11 +1606,11 @@ export default function PengaturanJamPage() {
                       placeholder="Cari nama override karyawan..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      className="w-full rounded-xl border-2 border-emerald-100 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                      className="w-full rounded-xl border-2 border-sky-100 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                     />
                   </div>
 
-                  <div className="max-h-72 overflow-y-auto rounded-xl border border-emerald-100 bg-white">
+                  <div className="max-h-72 overflow-y-auto rounded-xl border border-sky-100 bg-white">
                     {filteredKaryawanActiveList.length === 0 ? (
                       <div className="px-3 py-4 text-xs font-semibold text-slate-400">
                         Belum ada karyawan yang aktif mode individu.
@@ -1627,7 +1623,7 @@ export default function PengaturanJamPage() {
                           onClick={() => handleSelectActiveKaryawan(item)}
                           className={`w-full border-b border-slate-100 px-3 py-3 text-left transition-colors last:border-b-0 ${
                             selectedKaryawanId === item.karyawanId
-                              ? "bg-emerald-50"
+                              ? "bg-sky-50"
                               : "bg-white hover:bg-slate-50"
                           }`}
                         >
@@ -1660,7 +1656,7 @@ export default function PengaturanJamPage() {
                       setJenisKaryawan(null);
                       setShowJenisModal(false);
                     }}
-                    className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                    className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                   >
                     <option value="">Pilih Toko</option>
                     {tokoList.map((toko) => (
@@ -1696,7 +1692,7 @@ export default function PengaturanJamPage() {
                               onClick={() => handlePilihKaryawan(karyawan.id)}
                               className={`w-full border-b border-slate-100 px-3 py-3 text-left transition-colors last:border-b-0 ${
                                 selectedKaryawanId === karyawan.id
-                                  ? "bg-emerald-50"
+                                  ? "bg-sky-50"
                                   : "bg-white hover:bg-slate-50"
                               }`}
                             >
@@ -1753,7 +1749,7 @@ export default function PengaturanJamPage() {
             <div
               className={`rounded-2xl border p-3 ${
                 targetInfo.saved
-                  ? "border-emerald-200 bg-emerald-50/60"
+                  ? "border-sky-200 bg-sky-50/60"
                   : "border-amber-200 bg-amber-50/70"
               }`}
             >
@@ -1761,7 +1757,7 @@ export default function PengaturanJamPage() {
                 <div
                   className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
                     targetInfo.saved
-                      ? "bg-emerald-100 text-emerald-700"
+                      ? "bg-sky-100 text-sky-700"
                       : "bg-amber-100 text-amber-700"
                   }`}
                 >
@@ -1770,7 +1766,7 @@ export default function PengaturanJamPage() {
                 <div>
                   <p
                     className={`text-sm font-black ${
-                      targetInfo.saved ? "text-emerald-800" : "text-amber-800"
+                      targetInfo.saved ? "text-sky-800" : "text-amber-800"
                     }`}
                   >
                     {targetInfo.label}
@@ -1778,7 +1774,7 @@ export default function PengaturanJamPage() {
                   <p
                     className={`mt-1 text-xs font-semibold leading-relaxed ${
                       targetInfo.saved
-                        ? "text-emerald-700/80"
+                        ? "text-sky-700/80"
                         : "text-amber-700/80"
                     }`}
                   >
@@ -1789,17 +1785,17 @@ export default function PengaturanJamPage() {
             </div>
 
             {isWeeklyEditor && (
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+              <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
                       <History size={17} strokeWidth={2.5} />
                     </div>
                     <div>
-                      <p className="text-sm font-black text-emerald-800">
+                      <p className="text-sm font-black text-sky-800">
                         Berlaku Mulai Tanggal
                       </p>
-                      <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-700/80">
+                      <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-700/80">
                         Perubahan jadwal per hari tidak mengubah tanggal
                         sebelumnya. Jadwal lama tetap berlaku untuk tanggal yang
                         lebih awal.
@@ -1808,14 +1804,14 @@ export default function PengaturanJamPage() {
                   </div>
 
                   <div className="w-full sm:w-56">
-                    <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                    <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-sky-700">
                       Effective From
                     </label>
                     <input
                       type="date"
                       value={effectiveFrom}
                       onChange={(e) => setEffectiveFrom(e.target.value)}
-                      className="w-full rounded-xl border-2 border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                      className="w-full rounded-xl border-2 border-sky-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                     />
                   </div>
                 </div>
@@ -1823,12 +1819,12 @@ export default function PengaturanJamPage() {
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-sky-700">
+                <span className="h-2 w-2 rounded-full bg-sky-500" />
                 Sudah diatur
               </span>
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-sky-700">
+                <span className="h-2 w-2 rounded-full bg-sky-500" />
                 Belum disimpan
               </span>
               <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-slate-600">
@@ -1845,7 +1841,7 @@ export default function PengaturanJamPage() {
 
             {loading ? (
               <div className="flex items-center justify-center py-16">
-                <Loader2 size={24} className="animate-spin text-emerald-500" />
+                <Loader2 size={24} className="animate-spin text-sky-500" />
               </div>
             ) : (
               <>
@@ -1861,7 +1857,7 @@ export default function PengaturanJamPage() {
                     <button
                       type="button"
                       onClick={() => loadJenisPengaturanFromDb(selectedKaryawanId)}
-                      className="mt-4 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-500/15"
+                      className="mt-4 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15"
                     >
                       {jenisLoading ? "Memeriksa..." : "Pilih Jenis Jadwal"}
                     </button>
@@ -1902,7 +1898,7 @@ export default function PengaturanJamPage() {
                                             e.target.checked,
                                           )
                                         }
-                                        className="accent-emerald-500"
+                                        className="accent-sky-500"
                                       />
                                       <span className="text-sm font-black text-slate-800">
                                         {hari}
@@ -1976,7 +1972,7 @@ export default function PengaturanJamPage() {
                               type="month"
                               value={selectedMonth}
                               onChange={(e) => setSelectedMonth(e.target.value)}
-                              className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                              className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                             />
                           </div>
                         </div>
@@ -2009,7 +2005,7 @@ export default function PengaturanJamPage() {
                                           className={
                                             lintasTanggal
                                               ? "text-violet-600"
-                                              : "text-emerald-600"
+                                              : "text-sky-600"
                                           }
                                         />
                                         <p className="text-sm font-black text-slate-800">
@@ -2036,7 +2032,7 @@ export default function PengaturanJamPage() {
                                           className={
                                             lintasTanggal
                                               ? "accent-violet-500"
-                                              : "accent-emerald-500"
+                                              : "accent-sky-500"
                                           }
                                         />
                                         <span className="text-sm font-bold text-slate-700">
@@ -2163,7 +2159,7 @@ export default function PengaturanJamPage() {
                       (mode === "karyawan" &&
                         (!selectedTokoId || !selectedKaryawanId))
                     }
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-500/15 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? (
                       <>
@@ -2221,7 +2217,7 @@ function FieldTime({
           lintasTanggal
             ? "text-violet-500"
             : touched
-              ? "text-emerald-500"
+              ? "text-sky-500"
               : "text-slate-400"
         }`}
       >

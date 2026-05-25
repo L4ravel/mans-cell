@@ -14,7 +14,7 @@
   - Support effectiveSchedules, monthlyOverrides, dan lintasTanggal.
   - Alfa virtual dihitung dari karyawan aktif + jadwal dinamis + karyawan_tidak_wajib_absen.
   - Karyawan tidak wajib absen tidak muncul dan tidak dihitung alfa.
-  - Layout hijau emerald konsisten dengan laporan PTK.
+  - Layout dikonsistenkan dengan dashboard/laporan terbaru: tema sky-blue, wrapper aman untuk shell/sidebar, filter collapse, dan mobile card rapi.
   - Pagination: 10, 25, 50, 100, Semua.
 */
 
@@ -526,7 +526,7 @@ function SelisihMasukBadge({
 
   if (diff <= 0) {
     return (
-      <span className="inline-flex rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+      <span className="inline-flex rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
         {diff === 0 ? "Tepat waktu" : `${Math.abs(diff)}m awal`}
       </span>
     )
@@ -553,7 +553,7 @@ function SelisihPulangBadge({
 
   if (diff >= 0) {
     return (
-      <span className="inline-flex rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+      <span className="inline-flex rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
         {diff === 0 ? "Tepat waktu" : `${diff}m lama`}
       </span>
     )
@@ -597,12 +597,12 @@ function StatusBadge({ d }: { d: AbsensiRow }) {
         : d.status
 
   const colorMap: Record<string, string> = {
-    hadir: "bg-emerald-100 text-emerald-700",
-    masuk: "bg-emerald-100 text-emerald-700",
+    hadir: "bg-sky-100 text-sky-700",
+    masuk: "bg-sky-100 text-sky-700",
     terlambat: "bg-yellow-100 text-yellow-700",
     pulang_cepat: "bg-orange-100 text-orange-700",
     terlambat_pulang_cepat: "bg-orange-100 text-orange-700",
-    izin: "bg-emerald-100 text-emerald-700",
+    izin: "bg-sky-100 text-sky-700",
     sakit: "bg-red-100 text-red-700",
     alfa: "bg-rose-100 text-rose-700",
   }
@@ -622,7 +622,7 @@ function ApprovalBadge({ status }: { status?: string }) {
   if (!status) return <span className="text-xs text-slate-300">—</span>
 
   const colorMap: Record<string, string> = {
-    approved: "bg-emerald-100 text-emerald-700",
+    approved: "bg-sky-100 text-sky-700",
     pending: "bg-amber-100 text-amber-700",
     rejected: "bg-rose-100 text-rose-700",
   }
@@ -669,7 +669,7 @@ function FilterSelect({
           onChange={(e) => onChange(e.target.value)}
           className={`w-full appearance-none rounded-xl border-2 border-slate-200 bg-white ${
             Icon ? "pl-8" : "pl-3"
-          } py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+          } py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20`}
         >
           {children}
         </select>
@@ -1151,7 +1151,7 @@ export default function LaporanAbsensiKaryawanPage() {
             onClick={() => goToPage(p as number)}
             className={`h-8 min-w-[2rem] rounded-xl px-2 text-xs font-black transition-all ${
               currentPage === p
-                ? "bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 text-white shadow-sm shadow-emerald-200/50"
+                ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-200/50"
                 : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
@@ -1161,19 +1161,13 @@ export default function LaporanAbsensiKaryawanPage() {
       )
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-900">
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />
-        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-50/80 blur-[110px]" />
-      </div>
-
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
         >
           <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-start gap-4">
@@ -1185,7 +1179,7 @@ export default function LaporanAbsensiKaryawanPage() {
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                   Laporan Absensi Karyawan
                 </h1>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                   {isDailyMode
                     ? `Fokus tanggal ${tanggalFilter}`
                     : "Rekap kehadiran karyawan per bulan."}
@@ -1193,33 +1187,7 @@ export default function LaporanAbsensiKaryawanPage() {
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              {!loading && totalCount > 0 ? (
-                <div className="hidden rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.06em] text-white sm:block">
-                  {summaryCounts.total} data
-                </div>
-              ) : null}
-
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.12, ease: "easeOut" }}
-                onClick={fetchData}
-                disabled={loading}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Refresh data"
-              >
-                <motion.span
-                  animate={loading ? { rotate: 360 } : {}}
-                  transition={
-                    loading
-                      ? { duration: 0.8, repeat: Infinity, ease: "linear" }
-                      : {}
-                  }
-                >
-                  <RefreshCw size={14} className="text-white" strokeWidth={2.8} />
-                </motion.span>
-              </motion.button>
-            </div>
+          
           </div>
 
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
@@ -1233,17 +1201,17 @@ export default function LaporanAbsensiKaryawanPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-sm sm:p-4 sm:text-left"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <div className="flex flex-col items-center gap-1.5 sm:flex-row sm:gap-3">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 sm:flex">
                 <ClipboardList size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <p className="text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-[0.14em]">
                   Data
                 </p>
-                <p className="mt-0.5 text-xl font-black text-slate-800">
+                <p className="mt-0.5 text-sm font-black leading-tight text-slate-800 sm:text-xl">
                   {summaryCounts.total}
                 </p>
               </div>
@@ -1253,17 +1221,17 @@ export default function LaporanAbsensiKaryawanPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-sm sm:p-4 sm:text-left"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <div className="flex flex-col items-center gap-1.5 sm:flex-row sm:gap-3">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 sm:flex">
                 <Store size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <p className="text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-[0.14em]">
                   Toko
                 </p>
-                <p className="mt-0.5 text-xl font-black text-slate-800">
+                <p className="mt-0.5 text-sm font-black leading-tight text-slate-800 sm:text-xl">
                   {tokoList.length}
                 </p>
               </div>
@@ -1273,17 +1241,17 @@ export default function LaporanAbsensiKaryawanPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-sm sm:p-4 sm:text-left"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <div className="flex flex-col items-center gap-1.5 sm:flex-row sm:gap-3">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 sm:flex">
                 <Users size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <p className="text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-[0.14em]">
                   Hadir
                 </p>
-                <p className="mt-0.5 text-xl font-black text-slate-800">
+                <p className="mt-0.5 text-sm font-black leading-tight text-slate-800 sm:text-xl">
                   {summaryCounts.hadir}
                 </p>
               </div>
@@ -1293,17 +1261,17 @@ export default function LaporanAbsensiKaryawanPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-sm sm:p-4 sm:text-left"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+            <div className="flex flex-col items-center gap-1.5 sm:flex-row sm:gap-3">
+              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 sm:flex">
                 <Calendar size={21} strokeWidth={2.5} />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <p className="text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-[0.14em]">
                   Alfa
                 </p>
-                <p className="mt-0.5 text-xl font-black text-slate-800">
+                <p className="mt-0.5 text-sm font-black leading-tight text-slate-800 sm:text-xl">
                   {summaryCounts.alfa}
                 </p>
               </div>
@@ -1343,7 +1311,7 @@ export default function LaporanAbsensiKaryawanPage() {
             className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 lg:hidden"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                 <Filter size={18} strokeWidth={2.5} />
               </div>
               <div className="min-w-0">
@@ -1364,7 +1332,7 @@ export default function LaporanAbsensiKaryawanPage() {
 
           <div className="hidden border-b border-slate-100 px-4 py-3 lg:block">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                 <Filter size={17} strokeWidth={2.5} />
               </div>
               <div className="min-w-0">
@@ -1385,7 +1353,7 @@ export default function LaporanAbsensiKaryawanPage() {
                   type="date"
                   value={tanggalFilter}
                   onChange={(e) => setTanggalFilter(e.target.value)}
-                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                 />
               </div>
 
@@ -1456,7 +1424,7 @@ export default function LaporanAbsensiKaryawanPage() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Nama / jabatan / toko / status..."
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all placeholder:font-normal placeholder:text-slate-300 hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm font-semibold text-slate-700 transition-all placeholder:font-normal placeholder:text-slate-300 hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                   />
                 </div>
               </div>
@@ -1484,7 +1452,7 @@ export default function LaporanAbsensiKaryawanPage() {
                       setTahun(new Date().getFullYear())
                       setBulan(new Date().getMonth() + 1)
                     }}
-                    className="flex-1 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
+                    className="flex-1 rounded-xl border-2 border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100"
                   >
                     Hari Ini
                   </button>
@@ -1507,7 +1475,7 @@ export default function LaporanAbsensiKaryawanPage() {
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
+                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
               />
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                 Memuat data...
@@ -1539,7 +1507,7 @@ export default function LaporanAbsensiKaryawanPage() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25, delay: idx * 0.03 }}
-                className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                className="space-y-2.5 bg-transparent p-0 shadow-none sm:rounded-2xl sm:border sm:border-slate-200 sm:bg-white sm:p-3 sm:shadow-sm"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -1707,12 +1675,12 @@ export default function LaporanAbsensiKaryawanPage() {
                           </span>
                         )}
                         {d.alasanMasuk && (
-                          <span className="inline-flex rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          <span className="inline-flex rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                             {d.alasanMasuk}
                           </span>
                         )}
                         {d.alasanPulang && (
-                          <span className="inline-flex rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          <span className="inline-flex rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                             {d.alasanPulang}
                           </span>
                         )}

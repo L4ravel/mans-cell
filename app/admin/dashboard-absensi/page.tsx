@@ -1,4 +1,5 @@
 // Dashboard absensi admin karyawan.
+// Layout dibuat konsisten dengan laporan harian terbaru: header biru, filter collapse, stat card rapi, dan wrapper tidak menutup layout.
 // Revisi:
 // - Filter Semua Toko / per toko ditambahkan agar konsisten dengan dashboard PTK.
 // // - Jika filter Semua Toko, dashboard menghitung semua karyawan aktif.
@@ -799,7 +800,7 @@ function TokoComparisonDashboard({
   function getRankStyle(persen: number) {
     if (persen >= 90) return {
       badge: "bg-emerald-500 text-white shadow-emerald-200",
-      bar: "from-emerald-500 to-green-500",
+      bar: "from-sky-500 to-blue-500",
       text: "text-emerald-600",
       label: "Tinggi",
     };
@@ -824,7 +825,7 @@ function TokoComparisonDashboard({
         <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                 <BarChart3 size={20} strokeWidth={2.7} />
               </div>
               <div className="min-w-0">
@@ -1154,7 +1155,7 @@ function LineStatusChart({
       <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
               <LineChartIcon size={17} strokeWidth={2.5} />
             </div>
             <div className="min-w-0">
@@ -1204,7 +1205,7 @@ function LineStatusChart({
                 disabled={item.isFuture}
                 className={`flex h-10 min-w-10 items-center justify-center rounded-xl border text-xs font-black transition ${
                   active
-                    ? "border-emerald-300 bg-emerald-500 text-white shadow-sm shadow-emerald-200"
+                    ? "border-sky-300 bg-sky-500 text-white shadow-sm shadow-sky-200"
                     : item.isFuture
                       ? "border-slate-200 bg-slate-50 text-slate-300"
                       : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
@@ -1542,11 +1543,11 @@ export default function DashboardAbsensiAdminPage() {
   ], [selectedDay]);
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-white text-slate-900">
-      <main className="relative z-10 w-full space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
 
         {/* ── HEADER ── */}
-        <div className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5">
+        <div className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5">
           <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
@@ -1556,25 +1557,14 @@ export default function DashboardAbsensiAdminPage() {
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                   Dashboard Absensi
                 </h1>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                   Rekap absensi harian khusus karyawan.
                 </p>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => loadDashboardData()}
-                disabled={loading}
-                className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Refresh data"
-              >
-                <RefreshCw size={15} strokeWidth={2.5} className={loading ? "animate-spin" : ""} />
-              </button>
-            </div>
+            </div>            
           </div>
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-white/10 blur-3xl" />
           <div className="pointer-events-none absolute right-0 top-0 opacity-[0.05]">
             <Cpu size={170} className="text-white" strokeWidth={1} />
           </div>
@@ -1588,7 +1578,7 @@ export default function DashboardAbsensiAdminPage() {
             className="flex w-full items-center justify-between gap-3 px-4 py-3 lg:hidden"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                 <CalendarRange size={17} strokeWidth={2.5} />
               </div>
               <div className="min-w-0 text-left">
@@ -1620,7 +1610,7 @@ export default function DashboardAbsensiAdminPage() {
                   <select
                     value={filterTokoId}
                     onChange={(e) => handleFilterChange({ tokoId: e.target.value })}
-                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400"
+                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm font-bold text-slate-700 outline-none focus:border-sky-400"
                   >
                     <option value="">Semua Toko</option>
                     {tokoOptions.map((item) => (
@@ -1640,7 +1630,7 @@ export default function DashboardAbsensiAdminPage() {
                   <select
                     value={filterBulan}
                     onChange={(e) => handleFilterChange({ bulan: e.target.value })}
-                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400"
+                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm font-bold text-slate-700 outline-none focus:border-sky-400"
                   >
                     {bulanOptions.map((item) => (
                       <option key={item.value} value={item.value}>{item.label}</option>
@@ -1659,7 +1649,7 @@ export default function DashboardAbsensiAdminPage() {
                   inputMode="numeric"
                   value={filterTahun}
                   onChange={(e) => handleFilterChange({ tahun: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-sky-400"
                   placeholder="2026"
                 />
               </div>
@@ -1692,7 +1682,7 @@ export default function DashboardAbsensiAdminPage() {
                     <button
                       type="button"
                       onClick={() => setShowTanggalDropdown((prev) => !prev)}
-                      className="flex w-full items-center justify-between rounded-xl border border-emerald-300 bg-white px-3 py-2.5 text-sm font-black text-slate-700 outline-none ring-2 ring-emerald-500/10"
+                      className="flex w-full items-center justify-between rounded-xl border border-sky-300 bg-white px-3 py-2.5 text-sm font-black text-slate-700 outline-none ring-2 ring-emerald-500/10"
                     >
                       <span>{selectedDateKey ? formatTanggalIndonesia(selectedDateKey) : "Pilih tanggal"}</span>
                       <ChevronDown
@@ -1747,7 +1737,7 @@ export default function DashboardAbsensiAdminPage() {
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
+                className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
               />
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Memuat data...</p>
             </div>
@@ -1880,7 +1870,7 @@ export default function DashboardAbsensiAdminPage() {
 ═══════════════════════════════════════ */
 const colorConfig = {
   green: { border: "border-l-green-500", iconBg: "bg-green-500/10", iconColor: "text-green-600", watermark: "text-green-500/5" },
-  blue: { border: "border-l-blue-500", iconBg: "bg-blue-500/10", iconColor: "text-blue-600", watermark: "text-blue-500/5" },
+  blue: { border: "border-l-sky-500", iconBg: "bg-sky-50", iconColor: "text-sky-600", watermark: "text-sky-500/5" },
   red: { border: "border-l-red-500", iconBg: "bg-red-500/10", iconColor: "text-red-600", watermark: "text-red-500/5" },
   orange: { border: "border-l-orange-500", iconBg: "bg-orange-500/10", iconColor: "text-orange-600", watermark: "text-orange-500/5" },
   yellow: { border: "border-l-yellow-500", iconBg: "bg-yellow-500/10", iconColor: "text-yellow-600", watermark: "text-yellow-500/5" },
@@ -1901,20 +1891,17 @@ function SummaryCard({
 }) {
   const c = colorConfig[color];
   return (
-    <div className={`group relative overflow-hidden rounded-xl border-l-4 ${c.border} border-t border-r border-b border-slate-200 bg-white p-3 transition-all duration-300 hover:shadow-md sm:p-4`}>
-      <div className="flex items-center gap-2 sm:gap-3">
-        <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${c.iconBg} transition-transform duration-300 group-hover:scale-105 sm:h-10 sm:w-10`}>
-          <Icon size={17} className={`sm:h-[19px] sm:w-[19px] ${c.iconColor}`} strokeWidth={2.5} />
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+      <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+        <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${c.iconBg} sm:flex sm:h-11 sm:w-11`}>
+          <Icon size={18} className={`sm:h-[21px] sm:w-[21px] ${c.iconColor}`} strokeWidth={2.5} />
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[9px] font-bold uppercase leading-tight tracking-wide text-slate-400 sm:text-[10px]">
+        <div className="min-w-0">
+          <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
             {label}
           </p>
-          <p className="text-xl font-black leading-tight text-slate-800 sm:text-2xl">{value}</p>
+          <p className="truncate text-sm font-black leading-tight text-slate-800 sm:text-xl">{value}</p>
         </div>
-      </div>
-      <div className="pointer-events-none absolute -bottom-4 -right-4">
-        <Icon size={68} className={c.watermark} strokeWidth={1.5} />
       </div>
     </div>
   );

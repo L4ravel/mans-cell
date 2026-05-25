@@ -22,6 +22,8 @@ import {
 } from "firebase/firestore"
 import {
   ArrowDownToLine,
+  AlertCircle,
+  Boxes,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -31,6 +33,7 @@ import {
   CircleOff,
   Cpu,
   Eye,
+  ListFilter,
   Mail,
   RefreshCw,
   Search,
@@ -126,7 +129,8 @@ const ITEMS_OPTIONS = [
   { value: 10, label: "10" },
   { value: 25, label: "25" },
   { value: 50, label: "50" },
-  { value: 0, label: "Semua" },
+  { value: 100, label: "100" },
+  { value: 0, label: "ALL" },
 ]
 
 const EMPTY_RECEIVE_FORM: ReceiveForm = {
@@ -164,7 +168,7 @@ function FormInput({
       </label>
       <input
         {...props}
-        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
       />
     </div>
   )
@@ -187,7 +191,7 @@ function FormTextArea({
       </label>
       <textarea
         {...props}
-        className="min-h-[96px] w-full resize-y rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+        className="min-h-[96px] w-full resize-y rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-300 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
       />
     </div>
   )
@@ -213,7 +217,7 @@ function FilterSelect({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
         >
           {children}
         </select>
@@ -278,6 +282,220 @@ function Modal({
         </motion.div>
       ) : null}
     </AnimatePresence>
+  )
+}
+
+
+function TabButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean
+  icon: any
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
+        active
+          ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
+          : "border-2 border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+      }`}
+    >
+      <Icon size={16} strokeWidth={2.5} />
+      {label}
+    </button>
+  )
+}
+
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string
+  value: number
+  icon: any
+  tone: "slate" | "sky" | "blue" | "amber"
+}) {
+  const cls =
+    tone === "sky"
+      ? "bg-sky-50 text-sky-600"
+      : tone === "blue"
+        ? "bg-blue-50 text-blue-600"
+        : tone === "amber"
+          ? "bg-amber-50 text-amber-600"
+          : "bg-slate-100 text-slate-500"
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+      <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
+        <div className={`hidden h-9 w-9 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${cls}`}>
+          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
+            {label}
+          </p>
+          <p className="text-lg font-black leading-tight text-slate-800 sm:text-2xl">{value}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReadonlyFilterBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </label>
+      <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function MobileFilterContent({
+  isAdminUser,
+  currentUserProfile,
+  search,
+  setSearch,
+  filterStatus,
+  setFilterStatus,
+  filterAsal,
+  setFilterAsal,
+  filterTujuan,
+  setFilterTujuan,
+  filterStartDate,
+  setFilterStartDate,
+  filterEndDate,
+  setFilterEndDate,
+  tokoList,
+  resetDateFilter,
+  setPage,
+}: {
+  isAdminUser: boolean
+  currentUserProfile: UserProfile | null
+  search: string
+  setSearch: (value: string) => void
+  filterStatus: TransferStatus | ""
+  setFilterStatus: (value: TransferStatus | "") => void
+  filterAsal: string
+  setFilterAsal: (value: string) => void
+  filterTujuan: string
+  setFilterTujuan: (value: string) => void
+  filterStartDate: string
+  setFilterStartDate: (value: string) => void
+  filterEndDate: string
+  setFilterEndDate: (value: string) => void
+  tokoList: Toko[]
+  resetDateFilter: () => void
+  setPage: (value: number) => void
+}) {
+  return (
+    <>
+      <FormInput
+        label="Cari"
+        value={search}
+        onChange={(e: any) => {
+          setSearch(e.target.value)
+          setPage(1)
+        }}
+        placeholder="Kode, barang, toko, supplier, user..."
+      />
+
+      <FilterSelect
+        label="Status"
+        value={filterStatus}
+        onChange={(v) => {
+          setFilterStatus(v as TransferStatus | "")
+          setPage(1)
+        }}
+      >
+        <option value="">Semua status</option>
+        <option value="DIKIRIM">Terkirim</option>
+        <option value="DITERIMA">Diterima</option>
+      </FilterSelect>
+
+      {isAdminUser ? (
+        <>
+          <FilterSelect
+            label="Toko Asal"
+            value={filterAsal}
+            onChange={(v) => {
+              setFilterAsal(v)
+              setPage(1)
+            }}
+          >
+            <option value="">Semua toko asal</option>
+            {tokoList.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nama}
+              </option>
+            ))}
+          </FilterSelect>
+
+          <FilterSelect
+            label="Toko Tujuan"
+            value={filterTujuan}
+            onChange={(v) => {
+              setFilterTujuan(v)
+              setPage(1)
+            }}
+          >
+            <option value="">Semua toko tujuan</option>
+            {tokoList.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nama}
+              </option>
+            ))}
+          </FilterSelect>
+        </>
+      ) : (
+        <>
+          <ReadonlyFilterBox label="Toko User" value={currentUserProfile?.tokoNama || "Toko belum terhubung"} />
+          <ReadonlyFilterBox label="Scope Data" value="Asal atau tujuan toko sendiri" />
+        </>
+      )}
+
+      <FormInput
+        label="Dari Tanggal"
+        type="date"
+        value={filterStartDate}
+        onChange={(e: any) => {
+          setFilterStartDate(e.target.value)
+          setPage(1)
+        }}
+      />
+
+      <FormInput
+        label="Sampai Tanggal"
+        type="date"
+        value={filterEndDate}
+        onChange={(e: any) => {
+          setFilterEndDate(e.target.value)
+          setPage(1)
+        }}
+      />
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <button
+          type="button"
+          onClick={resetDateFilter}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
+        >
+          Reset Tanggal
+        </button>
+      </div>
+    </>
   )
 }
 
@@ -367,7 +585,7 @@ const getStatusMeta = (status: TransferStatus) => {
   if (status === "DITERIMA") {
     return {
       label: "Diterima",
-      className: "bg-emerald-100 text-emerald-700",
+      className: "bg-emerald-100 text-sky-700",
       icon: CircleCheckBig,
     }
   }
@@ -402,6 +620,8 @@ export default function TerimaBarangPage() {
   const [filterEndDate, setFilterEndDate] = useState(defaultRange.endDate)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
+  const [mobileTab, setMobileTab] = useState<"pending" | "history">("pending")
+  const [filterMobileOpen, setFilterMobileOpen] = useState(false)
 
   const [selectedDetail, setSelectedDetail] = useState<TransferBarang | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<TransferBarang | null>(null)
@@ -662,6 +882,19 @@ export default function TerimaBarangPage() {
     isAdminUser,
   ])
 
+  const stats = useMemo(() => {
+    const perluDiterima = scopedTransferList.filter((item) => item.status === "DIKIRIM").length
+    const sudahDiterima = scopedTransferList.filter((item) => item.status === "DITERIMA").length
+    const totalQty = filteredTransfer.reduce((sum, item) => sum + Number(item.qty || 0), 0)
+
+    return {
+      perluDiterima,
+      sudahDiterima,
+      totalTransfer: filteredTransfer.length,
+      totalQty,
+    }
+  }, [scopedTransferList, filteredTransfer])
+
   const totalPages =
     itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filteredTransfer.length / itemsPerPage))
 
@@ -791,370 +1024,474 @@ export default function TerimaBarangPage() {
       : null
 
   return (
-    <div className="space-y-4 text-slate-900 sm:space-y-5">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-lg shadow-emerald-200/50 sm:h-14 sm:w-14">
-              <ArrowDownToLine size={22} className="text-white sm:h-7 sm:w-7" strokeWidth={2.5} />
+    <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
+      <main className="relative w-full space-y-4 pb-28">
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
+                <ArrowDownToLine size={28} className="text-white sm:h-8 sm:w-8" strokeWidth={2.5} />
+              </div>
+
+              <div className="min-w-0">
+                <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
+                  Terima Barang
+                </h1>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
+                  Konfirmasi penerimaan transfer stok antar toko dan pantau riwayatnya.
+                </p>
+              </div>
             </div>
 
-            <div className="min-w-0 self-center sm:self-auto">
-              <h1 className="text-lg font-black leading-none tracking-tight text-slate-800 sm:text-2xl">
-                Terima Barang
-              </h1>
-              <p className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">
-                Khusus penerimaan transfer barang antar toko
-              </p>
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">
+              <button
+                type="button"
+                onClick={() => fetchAll(currentUserProfile)}
+                disabled={loading}
+                className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:opacity-60"
+                title="Refresh"
+              >
+                <RefreshCw size={12} strokeWidth={2.8} className={loading ? "animate-spin" : ""} />
+                <span>Refresh</span>
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 sm:flex-shrink-0 sm:flex-wrap sm:justify-end">
-            <div className="flex items-center gap-2">
-              {filteredTransfer.length > 0 && (
-                <div className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-emerald-500 px-2.5 shadow-sm shadow-emerald-200/50">
-                  <span className="text-xs font-black text-white">
-                    {itemsPerPage === 0 ? filteredTransfer.length : pagedTransfer.length}
-                  </span>
-                </div>
-              )}
-            </div>
+          <div className="pointer-events-none absolute right-0 top-0 opacity-[0.04]">
+            <Cpu size={150} className="text-white" strokeWidth={1} />
+          </div>
+        </motion.div>
 
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => fetchAll(currentUserProfile)}
-              disabled={loading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 disabled:opacity-50"
+        <AnimatePresence>
+          {(error || successMsg) && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={`fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border px-4 py-3 shadow-lg ${
+                successMsg ? "border-sky-200 bg-sky-50" : "border-red-200 bg-red-50"
+              }`}
             >
-              <motion.span
-                animate={loading ? { rotate: 360 } : {}}
-                transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}
-              >
-                <RefreshCw size={14} className="text-slate-500" strokeWidth={2.5} />
-              </motion.span>
-            </motion.button>
-          </div>
-        </div>
-
-        <div className="pointer-events-none absolute right-0 top-0 opacity-[0.03]">
-          <Cpu size={140} strokeWidth={1} />
-        </div>
-      </motion.div>
-
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
-          >
-            <p className="text-[11px] font-bold text-red-700">{error}</p>
-            <button onClick={() => setError(null)} className="text-red-500">
-              <X size={14} strokeWidth={3} />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {successMsg && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
-          >
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
-              <Check size={11} className="text-white" strokeWidth={3} />
-            </div>
-            <p className="text-[11px] font-bold text-emerald-700">{successMsg}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.08 }}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <div className="mb-4">
-          <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Penerimaan</h2>
-          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Fokus untuk barang yang akan atau sudah diterima
-          </p>
-        </div>
-
-        <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${isAdminUser ? "xl:grid-cols-6" : "xl:grid-cols-4"}`}>
-          <FormInput
-            label="Cari"
-            value={search}
-            onChange={(e: any) => {
-              setSearch(e.target.value)
-              setPage(1)
-            }}
-            placeholder="Kode, barang, toko, supplier, user..."
-          />
-
-          <FilterSelect
-            label="Status"
-            value={filterStatus}
-            onChange={(v) => {
-              setFilterStatus(v as TransferStatus | "")
-              setPage(1)
-            }}
-          >
-            <option value="">Semua status</option>
-            <option value="DIKIRIM">Terkirim</option>
-            <option value="DITERIMA">Diterima</option>
-          </FilterSelect>
-
-          {isAdminUser ? (
-            <>
-              <FilterSelect
-                label="Toko Asal"
-                value={filterAsal}
-                onChange={(v) => {
-                  setFilterAsal(v)
-                  setPage(1)
-                }}
-              >
-                <option value="">Semua toko asal</option>
-                {tokoList.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nama}
-                  </option>
-                ))}
-              </FilterSelect>
-
-              <FilterSelect
-                label="Toko Tujuan"
-                value={filterTujuan}
-                onChange={(v) => {
-                  setFilterTujuan(v)
-                  setPage(1)
-                }}
-              >
-                <option value="">Semua toko tujuan</option>
-                {tokoList.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nama}
-                  </option>
-                ))}
-              </FilterSelect>
-            </>
-          ) : (
-            <>
-              <div>
-                <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  Toko User
-                </label>
-                <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
-                  {currentUserProfile?.tokoNama || "Toko belum terhubung"}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  Scope Data
-                </label>
-                <div className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
-                  Asal atau tujuan toko sendiri
-                </div>
-              </div>
-            </>
+              {successMsg ? (
+                <Check size={16} className="text-sky-600" strokeWidth={3} />
+              ) : (
+                <AlertCircle size={16} className="text-red-600" strokeWidth={2.5} />
+              )}
+              <p className={`max-w-xs text-xs font-black ${successMsg ? "text-sky-700" : "text-red-700"}`}>
+                {successMsg || error}
+              </p>
+              {error ? (
+                <button type="button" onClick={() => setError(null)} className="text-red-500">
+                  <X size={14} strokeWidth={3} />
+                </button>
+              ) : null}
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          <FormInput
-            label="Dari Tanggal"
-            type="date"
-            value={filterStartDate}
-            onChange={(e: any) => {
-              setFilterStartDate(e.target.value)
-              setPage(1)
-            }}
-          />
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:hidden"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <TabButton
+              active={mobileTab === "pending"}
+              icon={Truck}
+              label="Perlu Diterima"
+              onClick={() => {
+                setMobileTab("pending")
+                setFilterStatus("DIKIRIM")
+                setPage(1)
+              }}
+            />
+            <TabButton
+              active={mobileTab === "history"}
+              icon={ListFilter}
+              label="Riwayat"
+              onClick={() => {
+                setMobileTab("history")
+                setFilterStatus("")
+                setPage(1)
+              }}
+            />
+          </div>
+        </motion.div>
 
-          <FormInput
-            label="Sampai Tanggal"
-            type="date"
-            value={filterEndDate}
-            onChange={(e: any) => {
-              setFilterEndDate(e.target.value)
-              setPage(1)
-            }}
-          />
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+          <StatCard label="Perlu Diterima" value={stats.perluDiterima} icon={Truck} tone="amber" />
+          <StatCard label="Sudah Diterima" value={stats.sudahDiterima} icon={CircleCheckBig} tone="sky" />
+          <StatCard label="Total Transfer" value={stats.totalTransfer} icon={ArrowDownToLine} tone="slate" />
+          <StatCard label="Total Qty" value={stats.totalQty} icon={Boxes} tone="blue" />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={resetDateFilter}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
-          >
-            Reset Tanggal
-          </button>
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+        >
+          <div className="flex items-start justify-between gap-3 sm:mb-4">
+            <div>
+              <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Penerimaan</h2>
+                        </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("")
-              setFilterStatus("DIKIRIM")
-              setFilterAsal("")
-              setFilterTujuan("")
-              resetDateFilter()
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
-          >
-            Reset Semua Filter
-          </button>
-        </div>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="rounded-xl border border-slate-200 border-l-4 border-l-blue-500 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-black text-slate-800 sm:text-base">Daftar Penerimaan</h2>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Total {filteredTransfer.length} transfer
-            </p>
+            <button
+              type="button"
+              onClick={() => setFilterMobileOpen((prev) => !prev)}
+              className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 text-[10px] font-black uppercase tracking-[0.08em] transition sm:hidden ${
+                filterMobileOpen
+                  ? "border-sky-200 bg-sky-100 text-sky-700"
+                  : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              <ListFilter size={14} strokeWidth={2.5} />
+              Filter
+            </button>
           </div>
 
-          <div className="w-full sm:w-40">
+          <AnimatePresence initial={false}>
+            {filterMobileOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden sm:hidden"
+              >
+                <div className="mt-3 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                  <MobileFilterContent
+                    isAdminUser={isAdminUser}
+                    currentUserProfile={currentUserProfile}
+                    search={search}
+                    setSearch={setSearch}
+                    filterStatus={filterStatus}
+                    setFilterStatus={(value) => {
+                      setFilterStatus(value)
+                      setMobileTab(value === "DIKIRIM" ? "pending" : "history")
+                    }}
+                    filterAsal={filterAsal}
+                    setFilterAsal={setFilterAsal}
+                    filterTujuan={filterTujuan}
+                    setFilterTujuan={setFilterTujuan}
+                    filterStartDate={filterStartDate}
+                    setFilterStartDate={setFilterStartDate}
+                    filterEndDate={filterEndDate}
+                    setFilterEndDate={setFilterEndDate}
+                    tokoList={tokoList}
+                    resetDateFilter={resetDateFilter}
+                    setPage={setPage}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className={`hidden grid-cols-1 gap-3 md:grid-cols-2 sm:grid ${isAdminUser ? "xl:grid-cols-6" : "xl:grid-cols-4"}`}>
+            <FormInput
+              label="Cari"
+              value={search}
+              onChange={(e: any) => {
+                setSearch(e.target.value)
+                setPage(1)
+              }}
+              placeholder="Kode, barang, toko, supplier, user..."
+            />
+
             <FilterSelect
-              label="Tampil"
-              value={itemsPerPage}
+              label="Status"
+              value={filterStatus}
               onChange={(v) => {
-                setItemsPerPage(Number(v))
+                setFilterStatus(v as TransferStatus | "")
+                setMobileTab(v === "DIKIRIM" ? "pending" : "history")
                 setPage(1)
               }}
             >
-              {ITEMS_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
+              <option value="">Semua status</option>
+              <option value="DIKIRIM">Terkirim</option>
+              <option value="DITERIMA">Diterima</option>
             </FilterSelect>
-          </div>
-        </div>
 
-        {pagedTransfer.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
-            Belum ada data penerimaan
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {pagedTransfer.map((item) => {
-              const meta = getStatusMeta(item.status)
-              const StatusIcon = meta.icon
-              const canReceive = item.status === "DIKIRIM" && (isAdminUser || item.tokoTujuanId === userTokoId)
-
-              return (
-                <div
-                  key={item.id}
-                  className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+            {isAdminUser ? (
+              <>
+                <FilterSelect
+                  label="Toko Asal"
+                  value={filterAsal}
+                  onChange={(v) => {
+                    setFilterAsal(v)
+                    setPage(1)
+                  }}
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black ${meta.className}`}
-                        >
-                          <StatusIcon size={12} strokeWidth={2.5} />
-                          {meta.label}
-                        </span>
+                  <option value="">Semua toko asal</option>
+                  {tokoList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nama}
+                    </option>
+                  ))}
+                </FilterSelect>
 
-                        <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-700 ring-1 ring-slate-200">
-                          {item.kodeTransfer}
-                        </span>
+                <FilterSelect
+                  label="Toko Tujuan"
+                  value={filterTujuan}
+                  onChange={(v) => {
+                    setFilterTujuan(v)
+                    setPage(1)
+                  }}
+                >
+                  <option value="">Semua toko tujuan</option>
+                  {tokoList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nama}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </>
+            ) : (
+              <>
+                <ReadonlyFilterBox label="Toko User" value={currentUserProfile?.tokoNama || "Toko belum terhubung"} />
+                <ReadonlyFilterBox label="Scope Data" value="Asal atau tujuan toko sendiri" />
+              </>
+            )}
+
+            <FormInput
+              label="Dari Tanggal"
+              type="date"
+              value={filterStartDate}
+              onChange={(e: any) => {
+                setFilterStartDate(e.target.value)
+                setPage(1)
+              }}
+            />
+
+            <FormInput
+              label="Sampai Tanggal"
+              type="date"
+              value={filterEndDate}
+              onChange={(e: any) => {
+                setFilterEndDate(e.target.value)
+                setPage(1)
+              }}
+            />
+          </div>
+
+          <div className="mt-3 hidden flex-wrap items-center gap-2 sm:flex">
+            <button
+              type="button"
+              onClick={resetDateFilter}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
+            >
+              Reset Tanggal
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("")
+                setFilterStatus("DIKIRIM")
+                setMobileTab("pending")
+                setFilterAsal("")
+                setFilterTujuan("")
+                resetDateFilter()
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
+            >
+              Reset Semua Filter
+            </button>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+        >
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-black text-slate-800 sm:text-base">Daftar Penerimaan</h2>
+                         </div>
+
+            <div className="w-full sm:w-40">
+              <FilterSelect
+                label="Tampil"
+                value={itemsPerPage}
+                onChange={(v) => {
+                  setItemsPerPage(Number(v))
+                  setPage(1)
+                }}
+              >
+                {ITEMS_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </FilterSelect>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
+                />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Memuat data penerimaan...
+                </p>
+              </div>
+            </div>
+          ) : pagedTransfer.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+              Belum ada data penerimaan
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pagedTransfer.map((item, idx) => {
+                const meta = getStatusMeta(item.status)
+                const StatusIcon = meta.icon
+                const canReceive = item.status === "DIKIRIM" && (isAdminUser || item.tokoTujuanId === userTokoId)
+
+                return (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, delay: idx * 0.02 }}
+                    className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black ${meta.className}`}>
+                            <StatusIcon size={12} strokeWidth={2.5} />
+                            {meta.label}
+                          </span>
+
+                          <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-700 ring-1 ring-slate-200">
+                            {item.kodeTransfer}
+                          </span>
+                        </div>
+
+                        <p className="mt-3 text-sm font-black text-slate-800">
+                          {item.kodeBarang} · {item.namaBarang}
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                          {item.tokoAsalNama} → {item.tokoTujuanNama} • Qty {item.qty} • {item.satuan}
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                          Dikirim {formatDateTime(item.sentAt || item.createdAt)}
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-sky-700">
+                          Pengirim {item.sentByNama || item.createdByNama || "-"}
+                        </p>
                       </div>
 
-                      <p className="mt-3 text-sm font-black text-slate-800">
-                        {item.kodeBarang} · {item.namaBarang}
-                      </p>
-                      <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                        {item.tokoAsalNama} → {item.tokoTujuanNama} • Qty {item.qty} •{" "}
-                        {item.satuan}
-                      </p>
-                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
-                        Dikirim {formatDateTime(item.sentAt || item.createdAt)}
-                      </p>
-                      <p className="mt-1 text-[11px] font-semibold text-cyan-700">
-                        Pengirim {item.sentByNama || item.createdByNama || "-"}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDetail(item)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
-                      >
-                        <Eye size={14} />
-                        Detail
-                      </button>
-
-                      {canReceive && (
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => {
-                            setReceiveTarget(item)
-                            setReceiveForm(EMPTY_RECEIVE_FORM)
-                          }}
-                          disabled={actionLoading === item.id}
-                          className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
+                          onClick={() => setSelectedDetail(item)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition-all hover:bg-slate-50"
                         >
-                          <CircleCheckBig size={14} />
-                          Konfirmasi Diterima
+                          <Eye size={14} />
+                          Detail
                         </button>
-                      )}
+
+                        {canReceive && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReceiveTarget(item)
+                              setReceiveForm(EMPTY_RECEIVE_FORM)
+                            }}
+                            disabled={actionLoading === item.id}
+                            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-[11px] font-black text-white transition-all hover:bg-sky-700 disabled:opacity-60"
+                          >
+                            {actionLoading === item.id ? (
+                              <RefreshCw size={14} className="animate-spin" />
+                            ) : (
+                              <CircleCheckBig size={14} />
+                            )}
+                            Konfirmasi Diterima
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+                  </motion.div>
+                )
+              })}
+            </div>
+          )}
 
-        {itemsPerPage !== 0 && totalPages > 1 && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[11px] font-bold text-slate-500">
-              Halaman {page} dari {totalPages}
-            </p>
-
-            <div className="flex items-center gap-2">
+          {itemsPerPage !== 0 && totalPages > 1 && (
+            <div className="mt-4 flex justify-center gap-1.5">
               <button
                 type="button"
                 onClick={() => goPage(page - 1)}
                 disabled={page <= 1}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50"
+                className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
               >
-                <ChevronLeft size={16} />
+                <ChevronLeft size={14} strokeWidth={2.5} />
               </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(
+                  (p) =>
+                    totalPages <= 7 ||
+                    p === 1 ||
+                    p === totalPages ||
+                    Math.abs(p - page) <= 2,
+                )
+                .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                  if (
+                    idx > 0 &&
+                    typeof arr[idx - 1] === "number" &&
+                    p - (arr[idx - 1] as number) > 1
+                  ) {
+                    acc.push("...")
+                  }
+                  acc.push(p)
+                  return acc
+                }, [])
+                .map((p, idx) =>
+                  p === "..." ? (
+                    <span key={`e-${idx}`} className="px-1 text-xs font-bold text-slate-400">
+                      ···
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => goPage(p)}
+                      className={`h-8 min-w-8 rounded-xl px-2 text-xs font-black transition ${
+                        page === p
+                          ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+                          : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
 
               <button
                 type="button"
                 onClick={() => goPage(page + 1)}
                 disabled={page >= totalPages}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50"
+                className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={14} strokeWidth={2.5} />
               </button>
             </div>
-          </div>
-        )}
-      </motion.div>
+          )}
+        </motion.div>
 
       <Modal
         open={Boolean(detailData)}
@@ -1275,7 +1612,7 @@ export default function TerimaBarangPage() {
               <p className="mt-1 text-[12px] font-semibold text-slate-500">
                 {receiveTarget.tokoAsalNama} → {receiveTarget.tokoTujuanNama}
               </p>
-              <p className="mt-1 text-[12px] font-semibold text-cyan-700">
+              <p className="mt-1 text-[12px] font-semibold text-sky-700">
                 Dikirim oleh {receiveTarget.sentByNama || receiveTarget.createdByNama || "-"}
               </p>
             </div>
@@ -1308,7 +1645,7 @@ export default function TerimaBarangPage() {
                 type="button"
                 onClick={handleReceiveTransfer}
                 disabled={actionLoading === receiveTarget.id}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-emerald-600 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-sky-700 disabled:opacity-60"
               >
                 {actionLoading === receiveTarget.id ? (
                   <RefreshCw size={16} className="animate-spin" />
@@ -1321,6 +1658,7 @@ export default function TerimaBarangPage() {
           </div>
         ) : null}
       </Modal>
+      </main>
     </div>
   )
 }

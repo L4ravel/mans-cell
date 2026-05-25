@@ -17,6 +17,8 @@
   - Ranking laporan memakai poin internal: H 100, T/PC 85, TPC 70, tidak absen pulang 65 dan tampil sebagai ?, S 70, I 60, A 0.
   - Poin tidak ditampilkan, hanya dipakai untuk menentukan posisi karyawan.
   - Cache localStorage 5 menit agar tidak reload terus.
+  - Layout direvisi konsisten dengan dashboard/laporan absensi terbaru: header biru, filter collapse mobile, wrapper aman layout.
+  - Warna utama disamakan dengan contoh: sky-500 → sky-600 → blue-500.
 */
 
 import { useEffect, useState } from "react"
@@ -498,6 +500,7 @@ export default function LaporanAbsenBulananPage() {
   const [bulanFilter, setBulanFilter] = useState<number>(new Date().getMonth() + 1)
   const [tahunFilter, setTahunFilter] = useState<number>(new Date().getFullYear())
   const [downloading, setDownloading] = useState<"pdf" | "xls" | null>(null)
+  const [showFilter, setShowFilter] = useState(false)
 
   const tahun = tahunFilter
 
@@ -1315,12 +1318,12 @@ export default function LaporanAbsenBulananPage() {
   }
 
   return (
-    <div className="relative min-h-screen space-y-4 bg-white p-3 pb-28 text-slate-900 sm:space-y-5 sm:p-4 lg:p-5">
+    <div className="relative min-h-full space-y-4 overflow-x-hidden bg-transparent pb-28 text-slate-900 sm:space-y-5">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative overflow-hidden rounded-xl border-l-4 border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5"
+        className="relative overflow-hidden rounded-2xl border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(2,132,199,0.24)] sm:px-5 sm:py-5"
       >
         <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-start gap-4">
@@ -1332,7 +1335,7 @@ export default function LaporanAbsenBulananPage() {
               <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                 Laporan Absensi Bulanan
               </h1>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-50/85 sm:text-sm">
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
                 Rekap kehadiran per individu karyawan
               </p>
             </div>
@@ -1350,18 +1353,46 @@ export default function LaporanAbsenBulananPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, delay: 0.1 }}
-        className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
       >
-        <div className="mb-3 flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
-            <Filter size={14} className="text-emerald-600" strokeWidth={2.5} />
+        <button
+          type="button"
+          onClick={() => setShowFilter((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 lg:hidden"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+              <Filter size={18} strokeWidth={2.5} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">
+                Filter Laporan
+              </p>
+              <p className="truncate text-[11px] font-semibold text-slate-400">
+                {namaToko || "Pilih Toko"} · {bulanNama}
+              </p>
+            </div>
           </div>
-          <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
-            Filter Laporan
-          </span>
+          <ChevronDown
+            size={18}
+            strokeWidth={2.5}
+            className={`shrink-0 text-slate-400 transition-transform ${showFilter ? "rotate-180" : "rotate-0"}`}
+          />
+        </button>
+
+        <div className="hidden border-b border-slate-100 px-4 py-3 lg:block">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+              <Filter size={15} strokeWidth={2.5} />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
+              Filter Laporan
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className={`${showFilter ? "block" : "hidden"} border-t border-slate-100 p-4 lg:block lg:border-t-0`}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="sm:col-span-1">
             <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
               Toko
@@ -1375,7 +1406,7 @@ export default function LaporanAbsenBulananPage() {
               <select
                 value={tokoFilter}
                 onChange={(e) => setTokoFilter(e.target.value)}
-                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
               >
                 <option value="">Pilih Toko</option>
                 {tokoList.map((i) => (
@@ -1400,7 +1431,7 @@ export default function LaporanAbsenBulananPage() {
               <select
                 value={bulanFilter}
                 onChange={(e) => setBulanFilter(Number(e.target.value))}
-                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
               >
                 {Array.from({ length: 12 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>
@@ -1424,7 +1455,7 @@ export default function LaporanAbsenBulananPage() {
               <select
                 value={tahunFilter}
                 onChange={(e) => setTahunFilter(Number(e.target.value))}
-                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold text-slate-700 transition-all hover:border-sky-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
               >
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
@@ -1437,6 +1468,7 @@ export default function LaporanAbsenBulananPage() {
             </div>
           </div>
         </div>
+        </div>
       </motion.div>
 
       {loading && (
@@ -1445,7 +1477,7 @@ export default function LaporanAbsenBulananPage() {
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-emerald-500"
+              className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
             />
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
               Memuat data...
@@ -1484,8 +1516,8 @@ export default function LaporanAbsenBulananPage() {
               className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
             >
               <div className="flex items-center gap-2 border-b border-slate-100 bg-white/80 px-4 py-3">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50">
-                  <TrendingUp size={12} className="text-emerald-600" strokeWidth={2.5} />
+                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-sky-50">
+                  <TrendingUp size={12} className="text-sky-600" strokeWidth={2.5} />
                 </div>
                 <span className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">
                   Ringkasan Kehadiran · {namaToko} · {bulanNama}
@@ -1512,7 +1544,7 @@ export default function LaporanAbsenBulananPage() {
                 </div>
 
                 <div className="flex flex-col items-center justify-center gap-0.5 p-4">
-                  <span className="text-xl font-black tabular-nums text-emerald-600">
+                  <span className="text-xl font-black tabular-nums text-sky-600">
                     {agg.totalHadir}
                   </span>
                   <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
@@ -1596,13 +1628,13 @@ export default function LaporanAbsenBulananPage() {
                 <button
                   onClick={handleDownloadXLS}
                   disabled={!!downloading || filteredBulanan.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {downloading === "xls" ? (
                     <motion.span
                       animate={{ rotate: 360 }}
                       transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-                      className="inline-block h-3.5 w-3.5 rounded-full border-2 border-emerald-300 border-t-emerald-700"
+                      className="inline-block h-3.5 w-3.5 rounded-full border-2 border-sky-300 border-t-sky-700"
                     />
                   ) : (
                     <FileSpreadsheet size={13} strokeWidth={2.5} />
@@ -1616,11 +1648,11 @@ export default function LaporanAbsenBulananPage() {
           <div className="overflow-x-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <table className="min-w-full text-xs">
               <thead>
-                <tr className="bg-emerald-800 text-white">
-                  <th className="sticky left-0 z-10 w-8 whitespace-nowrap bg-emerald-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em]">
+                <tr className="bg-sky-600 text-white">
+                  <th className="sticky left-0 z-10 w-8 whitespace-nowrap bg-sky-600 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em]">
                     #
                   </th>
-                  <th className="sticky left-8 z-10 min-w-[180px] whitespace-nowrap bg-emerald-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em]">
+                  <th className="sticky left-8 z-10 min-w-[180px] whitespace-nowrap bg-sky-600 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.12em]">
                     Nama Karyawan
                   </th>
                   <th
@@ -1644,7 +1676,7 @@ export default function LaporanAbsenBulananPage() {
                   {Array.from({ length: daysInMonth }, (_, i) => (
                     <th
                       key={i}
-                      className="w-7 whitespace-nowrap bg-emerald-800 px-1.5 py-2.5 text-center text-[9px] font-black"
+                      className="w-7 whitespace-nowrap bg-sky-600 px-1.5 py-2.5 text-center text-[9px] font-black"
                     >
                       {i + 1}
                     </th>
@@ -1718,7 +1750,7 @@ export default function LaporanAbsenBulananPage() {
                         </span>
                       </td>
 
-                      <td className="px-2 py-2 text-center font-black text-emerald-600">
+                      <td className="px-2 py-2 text-center font-black text-sky-600">
                         {hadir}
                       </td>
 
@@ -1760,9 +1792,9 @@ export default function LaporanAbsenBulananPage() {
                 })}
 
                 {filteredBulanan.length > 0 && (
-                  <tr className="border-t-2 border-emerald-300 bg-emerald-800">
-                    <td className="sticky left-0 z-10 bg-emerald-800 px-3 py-2.5 text-center" />
-                    <td className="sticky left-8 z-10 border-r border-emerald-700 bg-emerald-800 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-white">
+                  <tr className="border-t-2 border-sky-300 bg-sky-600">
+                    <td className="sticky left-0 z-10 bg-sky-600 px-3 py-2.5 text-center" />
+                    <td className="sticky left-8 z-10 border-r border-sky-500 bg-sky-600 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-white">
                       Total {filteredBulanan.length} Karyawan
                     </td>
                     <td className="px-1.5 py-2.5 text-center">
