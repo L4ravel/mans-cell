@@ -15,6 +15,7 @@
   - akses halaman di luar hak role diarahkan ke halaman not-found tanpa menampilkan dashboard terlebih dahulu
   - tombol Akun Karyawan tidak tampil jika akun memiliki role owner
   - logo brand sidebar/header mengambil dari public/logo-icon.png dengan tag img agar stabil di mobile
+  - fallback auth/route checking dibuat putih penuh agar tidak muncul blank hitam
 */
 
 "use client"
@@ -610,11 +611,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }
 
-  if (!hasHydrated) return null
+  if (!hasHydrated) {
+    return <div className="min-h-screen bg-white" />
+  }
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white p-6">
+      <div className="flex min-h-screen items-center justify-center bg-white p-6" style={{ backgroundColor: "#ffffff" }}>
         <div className="w-full max-w-sm rounded-[2rem] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-100/80">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-100 bg-sky-50">
@@ -633,9 +636,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
-  if (!isAuthorized) return null
+  if (!isAuthorized) {
+    return <div className="min-h-screen bg-white" />
+  }
 
-  if (routeChecking) return null
+  if (routeChecking) {
+    return <div className="min-h-screen bg-white" />
+  }
 
   const roleLabel = getRoleLabel(userRoles)
   const homeHref = cashierOnly ? "/admin/transaksi" : "/admin"
@@ -806,7 +813,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div className="relative min-h-screen bg-white">
+    <div className="relative min-h-screen bg-white" style={{ backgroundColor: "#ffffff" }}>
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-white/70 blur-[110px]" />
         <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-100/70 blur-[120px]" />

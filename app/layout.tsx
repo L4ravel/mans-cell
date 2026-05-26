@@ -1,8 +1,9 @@
 /* 
   Root layout utama untuk PWA Mans Cell.
-  File ini mengaktifkan metadata aplikasi, manifest, icon iPhone/Android, theme color,
-  dan membungkus seluruh halaman dengan ClientLayout agar service worker, tombol install,
-  dan panduan install iPhone bisa berjalan global.
+  Revisi:
+  - metadata manifest dan icon disamakan dengan icon v2
+  - background root/html/body dipaksa putih agar transisi PWA tidak hitam
+  - theme color tetap konsisten dengan layout Mans Cell
 */
 
 import type { Metadata, Viewport } from "next"
@@ -25,7 +26,8 @@ export const metadata: Metadata = {
     default: "Mans Cell",
     template: "%s | Mans Cell",
   },
-  description: "Sistem absensi karyawan",
+  description:
+    "Sistem operasional Mans Cell untuk transaksi, stok, laporan, dan absensi karyawan.",
   applicationName: "Mans Cell",
   manifest: "/manifest.json",
   appleWebApp: {
@@ -35,18 +37,23 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192-v4.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512-v4.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      {
+        url: "/icons/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
     ],
-    shortcut: ["/icons/icon-192.png"],
+    shortcut: ["/icons/icon-192-v4.png"],
   },
 }
 
 export const viewport: Viewport = {
   themeColor: "#3d78eb",
+  colorScheme: "light",
 }
 
 export default function RootLayout({
@@ -55,10 +62,15 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="id">
+    <html
+      lang="id"
+      className={`${geistSans.variable} ${geistMono.variable} bg-white`}
+      style={{ backgroundColor: "#ffffff", colorScheme: "light" }}
+    >
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen flex flex-col antialiased bg-white text-slate-900`}
+        className="min-h-screen bg-white text-slate-900 antialiased"
+        style={{ backgroundColor: "#ffffff" }}
       >
         <ClientLayout>{children}</ClientLayout>
       </body>
