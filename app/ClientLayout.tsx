@@ -77,9 +77,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       return
     }
 
-    if (!installHidden) {
-      setShowInstallButton(true)
-    }
+   if (!installHidden && isIos && isSafari) {
+  setShowInstallButton(true)
+}
   }, [])
 
   useEffect(() => {

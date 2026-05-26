@@ -1,12 +1,13 @@
 /*
   Service Worker PWA Mans Cell.
   Revisi:
-  - Cache dinaikkan ke v4 agar cache lama dibersihkan.
+  - Cache dinaikkan ke v5 agar cache lama v4 ikut dibersihkan.
   - Manifest dan icon PWA dibuat network-first supaya update icon lebih cepat terbaca.
+  - Icon disamakan dengan manifest: icon-192-v2.png dan icon-512-v2.png.
   - Fallback tetap ke /login jika offline.
 */
 
-const CACHE_NAME = "mans-cell-v4"
+const CACHE_NAME = "mans-cell-v5"
 
 const APP_SHELL = [
   "/login",
@@ -14,15 +15,15 @@ const APP_SHELL = [
 ]
 
 const OPTIONAL_ASSETS = [
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icons/icon-192-v2.png",
+  "/icons/icon-512-v2.png",
   "/icons/apple-touch-icon.png",
 ]
 
 const FRESH_ASSETS = [
   "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icons/icon-192-v2.png",
+  "/icons/icon-512-v2.png",
   "/icons/apple-touch-icon.png",
 ]
 
