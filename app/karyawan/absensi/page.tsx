@@ -1,7 +1,7 @@
 /*
   Halaman absensi harian karyawan berbasis GPS.
   Revisi:
-  - Layout dikonsistensikan dengan sistem Absensi PTK.
+  - Layout dikonsistensikan dengan layout karyawan Mans-Cell.
   - Jadwal dinamis memakai pengaturan_jam_absensi.
   - Prioritas jadwal: default sistem -> toko -> karyawan.
   - Mendukung effectiveSchedules, monthlyOverrides, dan lintasTanggal.
@@ -9,7 +9,7 @@
   - Karyawan tidak wajib absen menampilkan animasi no-absen.
   - Lokasi toko dinamis, validasi radius GPS, dan validasi akurasi GPS.
   - Izin dibuat seperti sakit: tanpa pilihan jenis izin.
-  - Tombol dibuat compact modern dan hanya berwarna ketika benar-benar bisa diklik.
+  - Warna disesuaikan ke tema sky/blue, wrapper aman di dalam layout karyawan.
 */
 
 "use client"
@@ -1154,9 +1154,9 @@ export default function AbsensiKaryawanPage() {
 
     circleRef.current = Leaflet.circle([lokasiAbsensi.lat, lokasiAbsensi.lng], {
       radius,
-      color: "green",
+      color: "#0ea5e9",
       weight: 2,
-      fillColor: "rgb(20, 231, 83)",
+      fillColor: "#38bdf8",
       fillOpacity: 0.25,
     }).addTo(mapInstanceRef.current)
 
@@ -1593,7 +1593,7 @@ export default function AbsensiKaryawanPage() {
     onClick: () => void
     active?: boolean
     done?: boolean
-    tone: "cyan" | "emerald"
+    tone: "cyan" | "sky"
   }) => {
     const toneClass =
       tone === "cyan"
@@ -1606,10 +1606,10 @@ export default function AbsensiKaryawanPage() {
           }
         : {
             active:
-              "border-emerald-400 bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-[0_10px_24px_rgba(16,185,129,0.24)]",
-            done: "border-emerald-200 bg-emerald-50 text-emerald-700",
-            idle: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100/80",
-            icon: "bg-white/85 text-emerald-700 shadow-sm",
+              "border-sky-400 bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_10px_24px_rgba(14,165,233,0.24)]",
+            done: "border-sky-200 bg-sky-50 text-sky-700",
+            idle: "border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300 hover:bg-sky-100/80",
+            icon: "bg-white/85 text-sky-700 shadow-sm",
           }
 
     const clickableClass = active ? toneClass.active : done ? toneClass.done : toneClass.idle
@@ -1712,20 +1712,15 @@ export default function AbsensiKaryawanPage() {
 
   return (
     <>
-      <div className="relative flex min-h-screen flex-col overflow-hidden bg-white text-slate-900">
-        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden lg:hidden">
-          <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-emerald-300/25 blur-[110px]" />
-          <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-yellow-200/20 blur-[120px]" />
-          <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-emerald-200/20 blur-[110px]" />
-        </div>
+      <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
 
         {isTidakWajib ? (
-          <div className="relative z-10 flex min-h-screen items-center justify-center bg-white p-4">
+          <div className="relative z-10 flex min-h-[60vh] items-center justify-center bg-transparent p-4">
             <AnimasiNoAbsen />
           </div>
         ) : (
-          <main className="relative z-10 mx-auto w-full max-w-5xl space-y-4 p-3 pb-28 sm:p-4 lg:p-5">
-            <div className="relative overflow-hidden rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-800 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5">
+          <main className="relative z-10 w-full space-y-4 pb-28">
+            <div className="relative overflow-hidden rounded-[1.35rem] border border-sky-300/30 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-18px_42px_rgba(6,78,59,0.24)] sm:px-5 sm:py-5">
               <div className="relative z-10 flex items-start gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
                   <MapPin size={27} strokeWidth={2.5} />
@@ -1735,14 +1730,14 @@ export default function AbsensiKaryawanPage() {
                   <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
                     Absensi Karyawan
                   </h1>
-                  <p className="mt-1 text-xs font-medium leading-relaxed text-emerald-50/80 sm:text-sm">
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-sky-50/85 sm:text-sm">
                     Catat kehadiran harian dengan verifikasi lokasi dan jadwal yang berlaku.
                   </p>
                 </div>
               </div>
 
               <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl lg:hidden" />
-              <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-yellow-300/10 blur-3xl lg:hidden" />
+              <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-cyan-300/10 blur-3xl lg:hidden" />
               <div className="pointer-events-none absolute right-0 top-0 opacity-[0.05]">
                 <Cpu size={170} className="text-white" strokeWidth={1} />
               </div>
@@ -1753,12 +1748,12 @@ export default function AbsensiKaryawanPage() {
                 initial={{ opacity: 0, y: 10, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.25, ease: "easeOut" }}
-                className="flex flex-col items-center gap-3 rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm lg:border-slate-200"
+                className="flex flex-col items-center gap-3 rounded-2xl border border-sky-100 bg-white p-8 shadow-sm lg:border-slate-200"
               >
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                  className="h-8 w-8 rounded-full border-2 border-emerald-400 border-t-transparent lg:border-slate-300 lg:border-t-transparent"
+                  className="h-8 w-8 rounded-full border-2 border-sky-400 border-t-transparent lg:border-slate-300 lg:border-t-transparent"
                 />
 
                 <div className="text-center">
@@ -1772,8 +1767,8 @@ export default function AbsensiKaryawanPage() {
               </motion.div>
             ) : isJamAbsensiAktif ? (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-                <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white lg:border-slate-200">
-                  <div className="flex items-center justify-between gap-2 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-yellow-50/60 px-4 py-3 lg:border-slate-200 lg:bg-white lg:bg-none">
+                <div className="overflow-hidden rounded-2xl border border-sky-100 bg-white lg:border-slate-200">
+                  <div className="flex items-center justify-between gap-2 border-b border-sky-100 bg-gradient-to-r from-sky-50 via-white to-cyan-50/60 px-4 py-3 lg:border-slate-200 lg:bg-white lg:bg-none">
                     <div>
                       <p className="text-xs font-black uppercase tracking-wide text-slate-700">
                         Lokasi Absensi
@@ -1785,7 +1780,7 @@ export default function AbsensiKaryawanPage() {
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
                         diDalamRadius
-                          ? "bg-emerald-100 text-emerald-700"
+                          ? "bg-sky-100 text-sky-700"
                           : "bg-amber-100 text-amber-700"
                       }`}
                     >
@@ -1808,7 +1803,7 @@ export default function AbsensiKaryawanPage() {
                             ? "bg-blue-100"
                             : userLat !== null && userLng !== null
                               ? diDalamRadius
-                                ? "bg-emerald-100"
+                                ? "bg-sky-100"
                                 : "bg-orange-100"
                               : "bg-red-100"
                         }`}
@@ -1825,7 +1820,7 @@ export default function AbsensiKaryawanPage() {
                             strokeWidth={2.5}
                             className={
                               userLat !== null && userLng !== null
-                                ? "text-emerald-600"
+                                ? "text-sky-600"
                                 : "text-red-600"
                             }
                           />
@@ -1836,7 +1831,7 @@ export default function AbsensiKaryawanPage() {
                             className={
                               userLat !== null && userLng !== null
                                 ? diDalamRadius
-                                  ? "text-emerald-600"
+                                  ? "text-sky-600"
                                   : "text-orange-600"
                                 : "text-red-600"
                             }
@@ -1896,7 +1891,7 @@ export default function AbsensiKaryawanPage() {
                           transition={{ duration: 0.12, ease: "easeOut" }}
                           onClick={handleRefreshGPS}
                           disabled={gpsLoading}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <RefreshCw
                             size={13}
@@ -1911,8 +1906,8 @@ export default function AbsensiKaryawanPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white lg:border-slate-200">
-                    <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-yellow-50/60 px-4 py-3 lg:border-slate-200 lg:bg-white lg:bg-none">
+                  <div className="overflow-hidden rounded-2xl border border-sky-100 bg-white lg:border-slate-200">
+                    <div className="border-b border-sky-100 bg-gradient-to-r from-sky-50 via-white to-cyan-50/60 px-4 py-3 lg:border-slate-200 lg:bg-white lg:bg-none">
                       <p className="text-xs font-black uppercase tracking-wide text-slate-700">
                         Status Jadwal
                       </p>
@@ -1973,7 +1968,7 @@ export default function AbsensiKaryawanPage() {
                     )}
                   </div>
 
-                  <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white p-3 shadow-sm lg:border-slate-200">
+                  <div className="overflow-hidden rounded-2xl border border-sky-100 bg-white p-3 shadow-sm lg:border-slate-200">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs font-black uppercase tracking-wide text-slate-700">
@@ -1987,7 +1982,7 @@ export default function AbsensiKaryawanPage() {
                       <span
                         className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wide ${
                           diDalamRadius && isGpsAkurat
-                            ? "bg-emerald-100 text-emerald-700"
+                            ? "bg-sky-100 text-sky-700"
                             : "bg-amber-100 text-amber-700"
                         }`}
                       >
@@ -2031,7 +2026,7 @@ export default function AbsensiKaryawanPage() {
                           onClick={() => handleMasukPulang("pulang")}
                           active={sudahMasuk && !sudahPulang && !sudahIzinAtauSakit}
                           done={sudahPulang}
-                          tone="emerald"
+                          tone="sky"
                         />
                       </div>
                     </div>
@@ -2092,7 +2087,7 @@ export default function AbsensiKaryawanPage() {
                       ? "bg-gradient-to-br from-amber-400 to-orange-500 shadow-amber-200/50"
                       : modal === "sakit"
                         ? "bg-gradient-to-br from-red-400 to-pink-500 shadow-red-200/50"
-                        : "bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-emerald-200/50"
+                        : "bg-gradient-to-br from-sky-500 to-blue-500 shadow-sky-200/50"
                   }`}
                 >
                   {modal === "izin" ? (
@@ -2116,7 +2111,7 @@ export default function AbsensiKaryawanPage() {
                   <select
                     value={alasan}
                     onChange={(e) => setAlasan(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400/50"
                   >
                     <option value="">Pilih alasan</option>
                     {ALASAN_KHUSUS.map((a, i) => (
@@ -2136,7 +2131,7 @@ export default function AbsensiKaryawanPage() {
                   rows={3}
                   value={keterangan}
                   onChange={(e) => setKeterangan(e.target.value)}
-                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-400/50"
                   placeholder="Tuliskan keterangan..."
                 />
               </div>
@@ -2156,7 +2151,7 @@ export default function AbsensiKaryawanPage() {
                   transition={{ duration: 0.12, ease: "easeOut" }}
                   disabled={submitModalDisabled}
                   onClick={handleSubmitModal}
-                  className="flex-1 rounded-full bg-gradient-to-r from-emerald-500 to-green-600 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-200/50 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-full bg-gradient-to-r from-sky-500 to-green-600 px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-200/50 transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading ? "Mengirim..." : "Kirim"}
                 </motion.button>
@@ -2181,7 +2176,7 @@ export default function AbsensiKaryawanPage() {
               className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                   <MapPin size={24} strokeWidth={2.5} />
                 </div>
                 <h2 className="text-xl font-black tracking-tight text-slate-800">
@@ -2204,7 +2199,7 @@ export default function AbsensiKaryawanPage() {
                 <button
                   type="button"
                   onClick={handleConfirmGPS}
-                  className="rounded-full bg-emerald-600 px-4 py-3 text-xs font-black text-white"
+                  className="rounded-full bg-sky-600 px-4 py-3 text-xs font-black text-white"
                 >
                   Aktifkan
                 </button>
@@ -2234,7 +2229,7 @@ export default function AbsensiKaryawanPage() {
                 <div
                   className={`flex h-12 w-12 items-center justify-center rounded-2xl shadow-lg ${
                     alertModal.type === "success"
-                      ? "bg-gradient-to-br from-emerald-400 to-green-500 shadow-emerald-200/50"
+                      ? "bg-gradient-to-br from-sky-500 to-blue-500 shadow-sky-200/50"
                       : alertModal.type === "error"
                         ? "bg-gradient-to-br from-red-400 to-pink-500 shadow-red-200/50"
                         : alertModal.type === "warning"
@@ -2284,7 +2279,7 @@ export default function AbsensiKaryawanPage() {
                   onClick={closeAlert}
                   className={`w-full rounded-full px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg transition-all ${
                     alertModal.type === "success"
-                      ? "bg-gradient-to-r from-emerald-400 to-green-500 shadow-emerald-200/50 hover:shadow-xl"
+                      ? "bg-gradient-to-r from-sky-500 to-blue-500 shadow-sky-200/50 hover:shadow-xl"
                       : alertModal.type === "error"
                         ? "bg-gradient-to-r from-red-400 to-pink-500 shadow-red-200/50 hover:shadow-xl"
                         : alertModal.type === "warning"

@@ -1,19 +1,29 @@
 /*
   Service Worker PWA Mans Cell.
-  File ini menangani cache asset dasar dengan cara yang lebih aman.
-  Fokus start app diarahkan ke /login agar sesuai entry point aplikasi.
+  Revisi:
+  - Cache dinaikkan ke v4 agar cache lama dibersihkan.
+  - Manifest dan icon PWA dibuat network-first supaya update icon lebih cepat terbaca.
+  - Fallback tetap ke /login jika offline.
 */
 
-const CACHE_NAME = "mans-cell-v3"
+const CACHE_NAME = "mans-cell-v4"
+
 const APP_SHELL = [
   "/login",
-  "/manifest.json"
+  "/manifest.json",
 ]
 
 const OPTIONAL_ASSETS = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
-  "/icons/apple-touch-icon.png"
+  "/icons/apple-touch-icon.png",
+]
+
+const FRESH_ASSETS = [
+  "/manifest.json",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/apple-touch-icon.png",
 ]
 
 self.addEventListener("install", (event) => {
@@ -32,7 +42,7 @@ self.addEventListener("install", (event) => {
       }
 
       await self.skipWaiting()
-    })()
+    })(),
   )
 })
 
@@ -44,11 +54,11 @@ self.addEventListener("activate", (event) => {
       await Promise.all(
         keys
           .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
+          .map((key) => caches.delete(key)),
       )
 
       await self.clients.claim()
-    })()
+    })(),
   )
 })
 
@@ -57,20 +67,40 @@ self.addEventListener("fetch", (event) => {
 
   if (request.method !== "GET") return
 
+  const url = new URL(request.url)
+  const isSameOrigin = url.origin === self.location.origin
+  const isFreshAsset = isSameOrigin && FRESH_ASSETS.includes(url.pathname)
+
   event.respondWith(
     (async () => {
+      const cache = await caches.open(CACHE_NAME)
+
+      if (isFreshAsset) {
+        try {
+          const networkResponse = await fetch(request, { cache: "no-store" })
+
+          if (networkResponse.status === 200) {
+            await cache.put(request, networkResponse.clone())
+          }
+
+          return networkResponse
+        } catch (error) {
+          const cachedResponse = await caches.match(request)
+          if (cachedResponse) return cachedResponse
+
+          const fallback = await caches.match("/login")
+          return fallback || Response.error()
+        }
+      }
+
       const cachedResponse = await caches.match(request)
       if (cachedResponse) return cachedResponse
 
       try {
         const networkResponse = await fetch(request)
 
-        if (
-          request.url.startsWith(self.location.origin) &&
-          networkResponse.status === 200
-        ) {
-          const cache = await caches.open(CACHE_NAME)
-          cache.put(request, networkResponse.clone())
+        if (isSameOrigin && networkResponse.status === 200) {
+          await cache.put(request, networkResponse.clone())
         }
 
         return networkResponse
@@ -78,6 +108,6 @@ self.addEventListener("fetch", (event) => {
         const fallback = await caches.match("/login")
         return fallback || Response.error()
       }
-    })()
+    })(),
   )
 })

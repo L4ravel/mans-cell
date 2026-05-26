@@ -10,6 +10,7 @@
   - Qty retur dilacak di transaksi asal agar tidak bisa retur dobel.
   - Layout riwayat dan modal retur dibuat konsisten hijau sky.
   - Tambah pelanggan opsional agar diskon member masuk transaksi tanpa terlalu menonjol.
+  - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
 */
 
 "use client";
@@ -25,6 +26,7 @@ import {
   runTransaction,
   serverTimestamp,
   getDoc,
+  where,
 } from "firebase/firestore";
 import {
   ShoppingCart,
@@ -275,6 +277,7 @@ const isAdminProfile = (profile: UserProfile | null) => {
 
 export default function TransaksiPage() {
   const [loading, setLoading] = useState(false);
+  const [barangLoading, setBarangLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
 
   const [tokoList, setTokoList] = useState<Toko[]>([]);
@@ -450,47 +453,72 @@ export default function TransaksiPage() {
     setTokoList(list);
   };
 
-  const fetchBarang = async () => {
-    const snap = await getDocs(
-      query(collection(db, "barang"), orderBy("nama")),
-    );
-    const list: Barang[] = snap.docs
-      .map((d) => {
-        const x = d.data() as any;
-        return {
-          id: d.id,
-          kodeBarang: x?.kodeBarang || "",
-          nama: x?.nama || "",
-          kategoriId: x?.kategoriId || "",
-          kategoriNama: x?.kategoriNama || "",
-          tokoId: x?.tokoId || "",
-          tokoNama: x?.tokoNama || "",
-          merk: x?.merk || "",
-          supplier: x?.supplier || "",
-          satuan: x?.satuan || x?.satuanNama || "",
-          satuanId: x?.satuanId || "",
-          satuanNama: x?.satuanNama || x?.satuan || "",
-          hargaModal: Number(x?.hargaModal || 0),
-          hargaJual: Number(x?.hargaJual || 0),
-          stok: Number(x?.stok || 0),
-          stokMinimum: Number(x?.stokMinimum || 0),
-          pakaiKodeUnik: Boolean(x?.pakaiKodeUnik),
-          jenisKodeUnik: x?.jenisKodeUnik || "",
-          kodeUnik: x?.kodeUnik || "",
-          jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
-          subJenisDigital: x?.subJenisDigital || "",
-          providerId: x?.providerId || "",
-          provider: x?.provider || "",
-          saldoSourceId: x?.saldoSourceId || "",
-          saldoSourceNama: x?.saldoSourceNama || "",
-          nominalProduk: Number(x?.nominalProduk || 0),
-          aktif: x?.aktif !== false,
-          createdAt: Number(x?.createdAt || Date.now()),
-          updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
-        };
-      })
-      .filter((item) => item.nama && item.tokoId);
-    setBarangList(list);
+  const fetchBarang = async (tokoId: string) => {
+    const safeTokoId = String(tokoId || "").trim();
+
+    if (!safeTokoId) {
+      setBarangList([]);
+      return;
+    }
+
+    setBarangLoading(true);
+
+    try {
+      const snap = await getDocs(
+        query(collection(db, "barang"), where("tokoId", "==", safeTokoId)),
+      );
+
+      const list: Barang[] = snap.docs
+        .map((d) => {
+          const x = d.data() as any;
+          return {
+            id: d.id,
+            kodeBarang: x?.kodeBarang || "",
+            nama: x?.nama || "",
+            kategoriId: x?.kategoriId || "",
+            kategoriNama: x?.kategoriNama || "",
+            tokoId: x?.tokoId || "",
+            tokoNama: x?.tokoNama || "",
+            merk: x?.merk || "",
+            supplier: x?.supplier || "",
+            satuan: x?.satuan || x?.satuanNama || "",
+            satuanId: x?.satuanId || "",
+            satuanNama: x?.satuanNama || x?.satuan || "",
+            hargaModal: Number(x?.hargaModal || 0),
+            hargaJual: Number(x?.hargaJual || 0),
+            stok: Number(x?.stok || 0),
+            stokMinimum: Number(x?.stokMinimum || 0),
+            pakaiKodeUnik: Boolean(x?.pakaiKodeUnik),
+            jenisKodeUnik: x?.jenisKodeUnik || "",
+            kodeUnik: x?.kodeUnik || "",
+            jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
+            subJenisDigital: x?.subJenisDigital || "",
+            providerId: x?.providerId || "",
+            provider: x?.provider || "",
+            saldoSourceId: x?.saldoSourceId || "",
+            saldoSourceNama: x?.saldoSourceNama || "",
+            nominalProduk: Number(x?.nominalProduk || 0),
+            aktif: x?.aktif !== false,
+            createdAt: Number(x?.createdAt || Date.now()),
+            updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
+          };
+        })
+        .filter((item) => item.nama && item.tokoId === safeTokoId)
+        .sort((a, b) =>
+          a.nama.localeCompare(b.nama, "id-ID", {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        );
+
+      setBarangList(list);
+    } catch (e) {
+      console.error("Gagal memuat barang toko:", e);
+      setBarangList([]);
+      setError("Gagal memuat barang dari toko yang dipilih");
+    } finally {
+      setBarangLoading(false);
+    }
   };
 
   const fetchDiskon = async () => {
@@ -641,14 +669,17 @@ export default function TransaksiPage() {
   const fetchAll = async () => {
     setLoading(true);
     setError(null);
+
     try {
+      const tokoIdAktif = String(selectedTokoId || "").trim();
+
       await Promise.all([
         fetchToko(),
-        fetchBarang(),
         fetchDiskon(),
         fetchMetode(),
         fetchSaldo(),
         fetchPelanggan(),
+        tokoIdAktif ? fetchBarang(tokoIdAktif) : Promise.resolve(setBarangList([])),
       ]);
 
       if (!isAdminProfile(currentUserProfile)) {
@@ -683,6 +714,19 @@ export default function TransaksiPage() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    const tokoIdAktif = String(selectedTokoId || "").trim();
+
+    setBarangList([]);
+    setSearchBarang("");
+    setCameraOpen(false);
+
+    if (!tokoIdAktif) return;
+
+    void fetchBarang(tokoIdAktif);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTokoId]);
 
   useEffect(() => {
     const supported =
@@ -1846,7 +1890,7 @@ export default function TransaksiPage() {
         setStrukModal(strukFromFirestore);
       }
 
-      await fetchBarang();
+      await fetchBarang(selectedTokoId);
       await fetchRiwayatTransaksi();
       if (selectedPelanggan) {
         const poinTambah = Math.floor(grandTotalSnapshot / 1000);
@@ -2337,7 +2381,11 @@ export default function TransaksiPage() {
         });
       });
 
-      await Promise.all([fetchBarang(), fetchSaldo(), fetchRiwayatTransaksi()]);
+      await Promise.all([
+        fetchBarang(selectedTokoId),
+        fetchSaldo(),
+        fetchRiwayatTransaksi(),
+      ]);
 
       setReturModal(null);
       setReturSelections({});
@@ -2738,6 +2786,63 @@ export default function TransaksiPage() {
         onSubmit={handleReturTransaksi}
       />
 
+      <AnimatePresence>
+        {(error || successMsg) && (
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="fixed right-3 top-3 z-[9999] w-[calc(100vw-1.5rem)] max-w-sm sm:right-5 sm:top-5 sm:w-full"
+          >
+            <div
+              className={`overflow-hidden rounded-2xl border px-4 py-3 text-sm font-semibold shadow-2xl backdrop-blur-xl ${
+                error
+                  ? "border-red-200/80 bg-red-50/95 text-red-700 shadow-red-500/10"
+                  : "border-sky-200/80 bg-sky-50/95 text-sky-700 shadow-sky-500/10"
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <div
+                  className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${
+                    error ? "bg-red-100 text-red-600" : "bg-sky-100 text-sky-700"
+                  }`}
+                >
+                  {error ? (
+                    <AlertCircle size={17} strokeWidth={2.6} />
+                  ) : (
+                    <CheckCircle2 size={17} strokeWidth={2.6} />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-black uppercase tracking-[0.08em]">
+                    {error ? "Perhatian" : "Berhasil"}
+                  </p>
+                  <p className="mt-0.5 text-xs font-bold leading-relaxed sm:text-sm">
+                    {error || successMsg}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl transition ${
+                    error
+                      ? "text-red-500 hover:bg-red-100"
+                      : "text-sky-600 hover:bg-sky-100"
+                  }`}
+                  title="Tutup notifikasi"
+                >
+                  <X size={15} strokeWidth={2.7} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="space-y-4 text-slate-900 sm:space-y-5">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -2915,38 +3020,6 @@ export default function TransaksiPage() {
             tone="rose"
           />
         </div>
-
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-            >
-              <div className="flex items-start gap-2">
-                <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {successMsg && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700"
-            >
-              <div className="flex items-start gap-2">
-                <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0" />
-                <span>{successMsg}</span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {isMobileLayout ? (
           <div className="space-y-3 sm:hidden">
@@ -3193,9 +3266,9 @@ export default function TransaksiPage() {
                 </span>
               </div>
 
-              {loading ? (
+              {barangLoading ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
-                  Memuat data barang...
+                  Memuat barang toko...
                 </div>
               ) : !selectedTokoId ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
@@ -3915,9 +3988,9 @@ export default function TransaksiPage() {
                   </span>
                 </div>
 
-                {loading ? (
+                {barangLoading ? (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
-                    Memuat data barang...
+                    Memuat barang toko...
                   </div>
                 ) : !selectedTokoId ? (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm font-semibold text-slate-500">
