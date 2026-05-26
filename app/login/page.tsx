@@ -2,7 +2,7 @@
   Halaman login Mans Cell dengan layout 2 kolom sesuai template.
   Sisi kiri berisi penjelasan aplikasi, sisi kanan berisi form login.
   Notifikasi error dibuat fixed toast agar tidak menggeser layout.
-  Revisi: halaman login tidak ditampilkan dulu saat sesi akun masih aktif.
+  Revisi: login tidak flash saat sesi aktif; transisi sesi dibuat putih penuh.
 */
 
 "use client"
@@ -94,6 +94,10 @@ function readLocalSession(): { redirectTo: string } | null {
   }
 }
 
+function hasLocalSession() {
+  return readLocalSession() !== null
+}
+
 function saveLocalSession({
   uid,
   raw,
@@ -180,7 +184,7 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [sessionReady, setSessionReady] = useState(false)
+  const [sessionReady, setSessionReady] = useState(() => !hasLocalSession())
 
   useEffect(() => {
     let isMounted = true
@@ -297,7 +301,7 @@ export default function LoginPage() {
   }
 
   if (!sessionReady) {
-    return null
+    return <main className="min-h-screen bg-white" />
   }
 
   return (
