@@ -2,7 +2,7 @@
   Halaman login Mans Cell dengan layout 2 kolom sesuai template.
   Sisi kiri berisi penjelasan aplikasi, sisi kanan berisi form login.
   Notifikasi error dibuat fixed toast agar tidak menggeser layout.
-  Revisi: tidak lagi menampilkan loading memeriksa sesi akun saat aplikasi dibuka.
+  Revisi: halaman login tidak ditampilkan dulu saat sesi akun masih aktif.
 */
 
 "use client"
@@ -122,6 +122,11 @@ function saveLocalSession({
   )
 }
 
+function clearLocalSession() {
+  if (typeof window === "undefined") return
+  localStorage.removeItem(SESSION_KEY)
+}
+
 function ToastError({
   message,
   onClose,
@@ -175,8 +180,11 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sessionReady, setSessionReady] = useState(false)
 
   useEffect(() => {
+    let isMounted = true
+
     const cached = readLocalSession()
 
     if (cached?.redirectTo) {
@@ -184,14 +192,23 @@ export default function LoginPage() {
     }
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) return
+      if (!isMounted) return
+
+      if (!user) {
+        clearLocalSession()
+        setSessionReady(true)
+        return
+      }
 
       try {
         const snap = await getDoc(doc(db, "users", user.uid))
 
+        if (!isMounted) return
+
         if (!snap.exists()) {
-          localStorage.removeItem(SESSION_KEY)
+          clearLocalSession()
           await signOut(auth)
+          setSessionReady(true)
           return
         }
 
@@ -205,20 +222,27 @@ export default function LoginPage() {
             raw,
             target,
           })
+
           router.replace(target.redirectTo)
           return
         }
 
-        localStorage.removeItem(SESSION_KEY)
+        clearLocalSession()
         await signOut(auth)
         setError("Akun ini tidak punya akses ke panel.")
+        setSessionReady(true)
       } catch (err) {
         console.error(err)
-        localStorage.removeItem(SESSION_KEY)
+        clearLocalSession()
+        setError("Gagal memeriksa sesi akun.")
+        setSessionReady(true)
       }
     })
 
-    return () => unsub()
+    return () => {
+      isMounted = false
+      unsub()
+    }
   }, [router])
 
   useEffect(() => {
@@ -270,6 +294,10 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (!sessionReady) {
+    return null
   }
 
   return (
