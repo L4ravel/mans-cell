@@ -1,12 +1,12 @@
-/* 
+/*
   Client layout global untuk kebutuhan PWA Mans Cell.
-  Fungsi file ini:
-  1. Register service worker
-  2. Menampilkan banner Install di header atas semua halaman termasuk login
-  3. Menangani install untuk Chrome/Android/Desktop Chromium
-  4. Menampilkan panduan Add to Home Screen untuk iPhone Safari
-  5. Menyembunyikan tombol install jika aplikasi sudah terpasang
-  6. Banner install dibuat seperti alarm/notifikasi profesional; mode sembunyi hanya icon di kiri atas
+  Revisi:
+  - Tidak memakai cache API di ClientLayout.
+  - Mode development hanya unregister service worker lama agar testing tidak nyangkut.
+  - Mode production register /sw.js untuk validasi PWA.
+  - Banner install tetap tampil untuk Chrome/Android/Desktop Chromium.
+  - Panduan Add to Home Screen tetap tersedia untuk iPhone Safari.
+  - Status banner hanya memakai localStorage, bukan cache.
 */
 
 "use client"
@@ -41,17 +41,20 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   const isIos = useMemo(() => {
     if (typeof window === "undefined") return false
+
     const ua = window.navigator.userAgent.toLowerCase()
     return /iphone|ipad|ipod/.test(ua)
   }, [])
 
   const isSafari = useMemo(() => {
     if (typeof window === "undefined") return false
+
     const ua = window.navigator.userAgent.toLowerCase()
     const safari = ua.includes("safari")
     const notChrome = !ua.includes("crios") && !ua.includes("chrome")
     const notFirefox = !ua.includes("fxios")
     const notEdge = !ua.includes("edgios")
+
     return safari && notChrome && notFirefox && notEdge
   }, [])
 
@@ -77,15 +80,15 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       return
     }
 
-   if (!installHidden && isIos && isSafari) {
-  setShowInstallButton(true)
-}
-  }, [])
+    if (!installHidden && isIos && isSafari) {
+      setShowInstallButton(true)
+    }
+  }, [isIos, isSafari])
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return
 
-    const setupSW = async () => {
+    const setupServiceWorker = async () => {
       try {
         if (process.env.NODE_ENV !== "production") {
           const registrations = await navigator.serviceWorker.getRegistrations()
@@ -94,12 +97,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             registrations.map((registration) => registration.unregister()),
           )
 
-          if ("caches" in window) {
-            const cacheNames = await caches.keys()
-            await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
-          }
-
-          console.log("Service Worker dan cache PWA dibersihkan di mode development")
+          console.log("Service Worker lama dibersihkan di mode development")
           return
         }
 
@@ -110,20 +108,24 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       }
     }
 
-    setupSW()
+    setupServiceWorker()
   }, [])
 
   useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault()
-      window.deferredPrompt = e
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault()
+
+      window.deferredPrompt = event
       setShowInstallButton(true)
+      setShowUnavailableInfo(false)
     }
 
     const handleAppInstalled = () => {
       localStorage.setItem(INSTALL_DISMISSED_KEY, "1")
       localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
+
       window.deferredPrompt = null
+
       setIsStandalone(true)
       setShowInstallButton(false)
       setInstallBannerHidden(false)
@@ -168,17 +170,20 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   const handleInstallClick = async () => {
     if (isStandalone) {
-      setShowInstallButton(false)
       localStorage.setItem(INSTALL_DISMISSED_KEY, "1")
       localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
+
+      setShowInstallButton(false)
+      setInstallBannerHidden(false)
       return
     }
 
     if (isIos && isSafari) {
+      localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
+
       setShowUnavailableInfo(false)
       setShowIosGuide(true)
       setInstallBannerHidden(false)
-      localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
       return
     }
 
@@ -188,11 +193,13 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       setShowUnavailableInfo(false)
 
       promptEvent.prompt()
+
       const choiceResult = await promptEvent.userChoice
 
       if (choiceResult?.outcome === "accepted") {
         localStorage.setItem(INSTALL_DISMISSED_KEY, "1")
         localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
+
         setShowInstallButton(false)
         setInstallBannerHidden(false)
       }
@@ -201,10 +208,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       return
     }
 
+    localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
+
     setShowIosGuide(false)
     setShowUnavailableInfo(true)
     setInstallBannerHidden(false)
-    localStorage.removeItem(INSTALL_BANNER_HIDDEN_KEY)
   }
 
   if (!isMounted) {
@@ -233,7 +241,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                       Install Mans Cell
                     </p>
                     <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/86 sm:text-sm">
-                      Pasang aplikasi di HP agar akses kasir, stok, laporan, dan absensi lebih cepat tanpa membuka browser manual.
+                      Pasang aplikasi di HP agar akses kasir, stok, laporan, dan
+                      absensi lebih cepat tanpa membuka browser manual.
                     </p>
                   </div>
                 </div>
@@ -252,7 +261,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
             <div className="flex flex-col gap-2 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <p className="text-[11px] font-bold leading-relaxed text-slate-500 sm:text-xs">
-                Setelah terpasang, Mans Cell akan tampil seperti aplikasi biasa di layar utama.
+                Setelah terpasang, Mans Cell akan tampil seperti aplikasi biasa
+                di layar utama.
               </p>
 
               <div className="flex shrink-0 items-center gap-2">
@@ -365,10 +375,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
             <div className="px-4 py-4">
               <p className="text-sm font-semibold leading-6 text-slate-600">
-                Browser belum memberikan izin install sekarang. Pastikan aplikasi
-                dibuka memakai <strong>HTTPS</strong>, service worker aktif,
-                manifest valid, dan untuk iPhone gunakan <strong>Safari</strong>{" "}
-                lalu pilih <strong>Add to Home Screen</strong>.
+                Browser belum memberikan izin install sekarang. Pastikan
+                aplikasi dibuka memakai <strong>HTTPS</strong>, service worker
+                aktif, manifest valid, dan untuk iPhone gunakan{" "}
+                <strong>Safari</strong> lalu pilih{" "}
+                <strong>Add to Home Screen</strong>.
               </p>
             </div>
           </div>
