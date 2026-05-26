@@ -2,6 +2,7 @@
   Halaman login Mans Cell dengan layout 2 kolom sesuai template.
   Sisi kiri berisi penjelasan aplikasi, sisi kanan berisi form login.
   Notifikasi error dibuat fixed toast agar tidak menggeser layout.
+  Revisi: tidak lagi menampilkan loading memeriksa sesi akun saat aplikasi dibuka.
 */
 
 "use client"
@@ -69,6 +70,58 @@ function getRedirectByRoles(roles: string[]): { role: UserRole; redirectTo: stri
   return null
 }
 
+const SESSION_KEY = "mans_cell_session"
+
+function readLocalSession(): { redirectTo: string } | null {
+  if (typeof window === "undefined") return null
+
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+    const roles = extractRoles(parsed)
+    const target = getRedirectByRoles(roles)
+
+    if (!parsed?.uid || !target?.redirectTo) return null
+
+    return {
+      redirectTo: target.redirectTo,
+    }
+  } catch {
+    localStorage.removeItem(SESSION_KEY)
+    return null
+  }
+}
+
+function saveLocalSession({
+  uid,
+  raw,
+  target,
+}: {
+  uid: string
+  raw: any
+  target: { role: UserRole; redirectTo: string }
+}) {
+  if (typeof window === "undefined") return
+
+  const roles = extractRoles(raw)
+  const userName =
+    String(raw?.nama || raw?.name || raw?.displayName || "User").trim() || "User"
+
+  localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      uid,
+      role: target.role,
+      roles,
+      userName,
+      redirectTo: target.redirectTo,
+      checkedAt: Date.now(),
+    }),
+  )
+}
+
 function ToastError({
   message,
   onClose,
@@ -122,21 +175,23 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [checkingSession, setCheckingSession] = useState(true)
 
   useEffect(() => {
+    const cached = readLocalSession()
+
+    if (cached?.redirectTo) {
+      router.replace(cached.redirectTo)
+    }
+
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setCheckingSession(false)
-        return
-      }
+      if (!user) return
 
       try {
         const snap = await getDoc(doc(db, "users", user.uid))
 
         if (!snap.exists()) {
+          localStorage.removeItem(SESSION_KEY)
           await signOut(auth)
-          setCheckingSession(false)
           return
         }
 
@@ -145,17 +200,21 @@ export default function LoginPage() {
         const target = getRedirectByRoles(roles)
 
         if (target) {
+          saveLocalSession({
+            uid: user.uid,
+            raw,
+            target,
+          })
           router.replace(target.redirectTo)
           return
         }
 
+        localStorage.removeItem(SESSION_KEY)
         await signOut(auth)
         setError("Akun ini tidak punya akses ke panel.")
       } catch (err) {
         console.error(err)
-        setError("Gagal memeriksa sesi akun.")
-      } finally {
-        setCheckingSession(false)
+        localStorage.removeItem(SESSION_KEY)
       }
     })
 
@@ -198,16 +257,11 @@ export default function LoginPage() {
         return
       }
 
-      localStorage.setItem(
-        "mans_cell_session",
-        JSON.stringify({
-          uid,
-          role: target.role,
-          roles,
-          redirectTo: target.redirectTo,
-          checkedAt: Date.now(),
-        }),
-      )
+      saveLocalSession({
+        uid,
+        raw,
+        target,
+      })
 
       router.replace(target.redirectTo)
     } catch (err) {
@@ -216,17 +270,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  if (checkingSession) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-4">
-        <div className="flex flex-col items-center gap-3 rounded-[1.5rem] bg-white px-6 py-5 shadow-sm shadow-sky-500/5 ring-1 ring-sky-100">
-          <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
-          <p className="text-sm font-semibold text-slate-500">Memeriksa sesi akun...</p>
-        </div>
-      </main>
-    )
   }
 
   return (
