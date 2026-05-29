@@ -7,6 +7,7 @@ import {
   getDocs,
   query,
   orderBy,
+  where,
   doc,
   runTransaction,
   serverTimestamp,
@@ -63,6 +64,16 @@ type BarangTetap = {
   tokoNama: string
   merk: string
   harga: number
+  statusAset?: "aset" | "terjual"
+  sudahDijual?: boolean
+  hargaAwal?: number
+  hargaAsetSebelumDijual?: number
+  hargaAsetSesudahDijual?: number
+  hargaJual?: number
+  nominalPengurangAset?: number
+  keuntungan?: number
+  soldAtMs?: number
+  soldBy?: string
   createdAt: number
   updatedAt?: number
 }
@@ -72,6 +83,9 @@ type LaporanBarangTetapKategori = {
   kategoriNama: string
   jumlahAset: number
   totalNilai: number
+  jumlahTerjual?: number
+  totalHargaJual?: number
+  totalKeuntunganJual?: number
 }
 
 type ApplyLaporanBarangTetapDeltaParams = {
@@ -87,8 +101,23 @@ type ApplyLaporanBarangTetapDeltaParams = {
   now: number
 }
 
+type ApplyLaporanBarangTetapSaleSyncParams = {
+  transaction: Transaction
+  laporanRef: DocumentReference
+  existingData: any
+  tokoId: string
+  tokoNama: string
+  kategoriId: string
+  kategoriNama: string
+  hargaAsetLama: number
+  hargaJual: number
+  keuntungan: number
+  now: number
+}
+
 const COLLECTION_NAME = "barang_tetap"
 const LAPORAN_COLLECTION_NAME = "laporan_barang_tetap"
+const PENJUALAN_COLLECTION_NAME = "penjualan_barang_tetap"
 
 const ITEMS_OPTIONS = [
   { value: 10, label: "10" },
@@ -118,6 +147,17 @@ function formatRupiah(value: number) {
   }).format(Number(value || 0))
 }
 
+function formatSignedRupiah(value: number) {
+  const n = Number(value || 0)
+  if (n < 0) return `-${formatRupiah(Math.abs(n))}`
+  if (n > 0) return formatRupiah(n)
+  return formatRupiah(0)
+}
+
+function isBarangTerjual(item?: BarangTetap | null) {
+  return Boolean(item?.sudahDijual || item?.statusAset === "terjual")
+}
+
 function buildKategoriBreakdown(
   existing: any,
   kategoriId: string,
@@ -131,6 +171,9 @@ function buildKategoriBreakdown(
         kategoriNama: String(item?.kategoriNama || "Tanpa Kategori").trim(),
         jumlahAset: Number(item?.jumlahAset || 0),
         totalNilai: Number(item?.totalNilai || 0),
+        jumlahTerjual: Number(item?.jumlahTerjual || 0),
+        totalHargaJual: Number(item?.totalHargaJual || 0),
+        totalKeuntunganJual: Number(item?.totalKeuntunganJual || 0),
       }))
     : []
 
@@ -153,13 +196,20 @@ function buildKategoriBreakdown(
       kategoriNama: safeKategoriNama,
       jumlahAset: Number(jumlahDelta || 0),
       totalNilai: Number(nilaiDelta || 0),
+      jumlahTerjual: 0,
+      totalHargaJual: 0,
+      totalKeuntunganJual: 0,
     })
   }
 
   return list
     .filter(
       (item) =>
-        Number(item.jumlahAset || 0) > 0 || Number(item.totalNilai || 0) > 0
+        Number(item.jumlahAset || 0) > 0 ||
+        Number(item.totalNilai || 0) > 0 ||
+        Number(item.jumlahTerjual || 0) > 0 ||
+        Number(item.totalHargaJual || 0) > 0 ||
+        Number(item.totalKeuntunganJual || 0) !== 0
     )
     .sort((a, b) => {
       if (b.totalNilai !== a.totalNilai) return b.totalNilai - a.totalNilai
@@ -211,6 +261,218 @@ function applyLaporanBarangTetapDelta({
       createdAtMs: Number(existingData?.createdAtMs || now),
       updatedAt: serverTimestamp(),
       updatedAtMs: now,
+    },
+    { merge: true }
+  )
+}
+
+
+function buildKategoriTerjualBreakdown(
+  existing: any,
+  kategoriId: string,
+  kategoriNama: string,
+  jumlahTerjualDelta: number,
+  hargaJualDelta: number,
+  keuntunganDelta: number
+): LaporanBarangTetapKategori[] {
+  const list: LaporanBarangTetapKategori[] = Array.isArray(existing)
+    ? existing.map((item: any) => ({
+        kategoriId: String(item?.kategoriId || "").trim(),
+        kategoriNama: String(item?.kategoriNama || "Tanpa Kategori").trim(),
+        jumlahAset: Number(item?.jumlahAset || 0),
+        totalNilai: Number(item?.totalNilai || 0),
+        jumlahTerjual: Number(item?.jumlahTerjual || 0),
+        totalHargaJual: Number(item?.totalHargaJual || 0),
+        totalKeuntunganJual: Number(item?.totalKeuntunganJual || 0),
+      }))
+    : []
+
+  const safeKategoriId = String(kategoriId || "").trim()
+  const safeKategoriNama =
+    String(kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori"
+
+  const index = list.findIndex((item) => item.kategoriId === safeKategoriId)
+
+  if (index >= 0) {
+    list[index] = {
+      ...list[index],
+      kategoriNama: safeKategoriNama,
+      jumlahTerjual: Math.max(
+        0,
+        Number(list[index].jumlahTerjual || 0) + Number(jumlahTerjualDelta || 0)
+      ),
+      totalHargaJual: Math.max(
+        0,
+        Number(list[index].totalHargaJual || 0) + Number(hargaJualDelta || 0)
+      ),
+      totalKeuntunganJual:
+        Number(list[index].totalKeuntunganJual || 0) + Number(keuntunganDelta || 0),
+    }
+  } else {
+    list.push({
+      kategoriId: safeKategoriId,
+      kategoriNama: safeKategoriNama,
+      jumlahAset: 0,
+      totalNilai: 0,
+      jumlahTerjual: Math.max(0, Number(jumlahTerjualDelta || 0)),
+      totalHargaJual: Math.max(0, Number(hargaJualDelta || 0)),
+      totalKeuntunganJual: Number(keuntunganDelta || 0),
+    })
+  }
+
+  return list
+    .filter(
+      (item) =>
+        Number(item.jumlahAset || 0) > 0 ||
+        Number(item.totalNilai || 0) > 0 ||
+        Number(item.jumlahTerjual || 0) > 0 ||
+        Number(item.totalHargaJual || 0) > 0 ||
+        Number(item.totalKeuntunganJual || 0) !== 0
+    )
+    .sort((a, b) => {
+      if (Number(b.totalNilai || 0) !== Number(a.totalNilai || 0)) {
+        return Number(b.totalNilai || 0) - Number(a.totalNilai || 0)
+      }
+      if (Number(b.totalKeuntunganJual || 0) !== Number(a.totalKeuntunganJual || 0)) {
+        return Number(b.totalKeuntunganJual || 0) - Number(a.totalKeuntunganJual || 0)
+      }
+      return a.kategoriNama.localeCompare(b.kategoriNama)
+    })
+}
+
+function applyLaporanBarangTetapSaleSync({
+  transaction,
+  laporanRef,
+  existingData,
+  tokoId,
+  tokoNama,
+  kategoriId,
+  kategoriNama,
+  hargaAsetLama,
+  hargaJual,
+  keuntungan,
+  now,
+}: ApplyLaporanBarangTetapSaleSyncParams) {
+  const safeHargaAsetLama = Math.max(0, Number(hargaAsetLama || 0))
+  const safeHargaJual = Math.max(0, Number(hargaJual || 0))
+  const safeKeuntungan = Number(keuntungan || 0)
+
+  const jumlahAsetBaru = Math.max(0, Number(existingData?.jumlahAset || 0) - 1)
+  const totalNilaiBaru = Math.max(
+    0,
+    Number(existingData?.totalNilai || 0) - safeHargaAsetLama
+  )
+  const jumlahTerjualBaru = Math.max(0, Number(existingData?.jumlahTerjual || 0) + 1)
+  const totalHargaJualBaru = Math.max(
+    0,
+    Number(existingData?.totalHargaJual || 0) + safeHargaJual
+  )
+  const totalKeuntunganJualBaru =
+    Number(existingData?.totalKeuntunganJual || 0) + safeKeuntungan
+
+  const kategoriAktifBaru = buildKategoriBreakdown(
+    existingData?.kategoriBreakdown,
+    kategoriId,
+    kategoriNama,
+    -1,
+    -safeHargaAsetLama
+  )
+
+  const kategoriBreakdownBaru = buildKategoriTerjualBreakdown(
+    kategoriAktifBaru,
+    kategoriId,
+    kategoriNama,
+    1,
+    safeHargaJual,
+    safeKeuntungan
+  )
+
+  transaction.set(
+    laporanRef,
+    {
+      id: laporanRef.id,
+      tokoId,
+      tokoNama,
+      jumlahAset: jumlahAsetBaru,
+      totalNilai: totalNilaiBaru,
+      jumlahTerjual: jumlahTerjualBaru,
+      totalHargaJual: totalHargaJualBaru,
+      totalKeuntunganJual: totalKeuntunganJualBaru,
+      kategoriBreakdown: kategoriBreakdownBaru,
+      createdAt: existingData?.createdAt || serverTimestamp(),
+      createdAtMs: Number(existingData?.createdAtMs || now),
+      updatedAt: serverTimestamp(),
+      updatedAtMs: now,
+      lastSoldAt: serverTimestamp(),
+      lastSoldAtMs: now,
+    },
+    { merge: true }
+  )
+}
+
+
+function applyLaporanBarangTetapDeleteSoldSync({
+  transaction,
+  laporanRef,
+  existingData,
+  tokoId,
+  tokoNama,
+  kategoriId,
+  kategoriNama,
+  hargaJual,
+  keuntungan,
+  now,
+}: {
+  transaction: Transaction
+  laporanRef: DocumentReference
+  existingData: any
+  tokoId: string
+  tokoNama: string
+  kategoriId: string
+  kategoriNama: string
+  hargaJual: number
+  keuntungan: number
+  now: number
+}) {
+  const safeHargaJual = Math.max(0, Number(hargaJual || 0))
+  const safeKeuntungan = Number(keuntungan || 0)
+
+  const jumlahTerjualBaru = Math.max(
+    0,
+    Number(existingData?.jumlahTerjual || 0) - 1
+  )
+  const totalHargaJualBaru = Math.max(
+    0,
+    Number(existingData?.totalHargaJual || 0) - safeHargaJual
+  )
+  const totalKeuntunganJualBaru =
+    Number(existingData?.totalKeuntunganJual || 0) - safeKeuntungan
+
+  const kategoriBreakdownBaru = buildKategoriTerjualBreakdown(
+    existingData?.kategoriBreakdown,
+    kategoriId,
+    kategoriNama,
+    -1,
+    -safeHargaJual,
+    -safeKeuntungan
+  )
+
+  transaction.set(
+    laporanRef,
+    {
+      id: laporanRef.id,
+      tokoId,
+      tokoNama,
+      jumlahTerjual: jumlahTerjualBaru,
+      totalHargaJual: totalHargaJualBaru,
+      totalKeuntunganJual: totalKeuntunganJualBaru,
+      kategoriBreakdown: kategoriBreakdownBaru,
+      createdAt: existingData?.createdAt || serverTimestamp(),
+      createdAtMs: Number(existingData?.createdAtMs || now),
+      updatedAt: serverTimestamp(),
+      updatedAtMs: now,
+      lastDeletedSaleAt: serverTimestamp(),
+      lastDeletedSaleAtMs: now,
     },
     { merge: true }
   )
@@ -406,6 +668,9 @@ export default function TambahBarangTetapPage() {
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [sellId, setSellId] = useState<string | null>(null)
+  const [sellHarga, setSellHarga] = useState("")
+  const [sellLoading, setSellLoading] = useState(false)
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
@@ -414,6 +679,7 @@ export default function TambahBarangTetapPage() {
   const [search, setSearch] = useState("")
   const [filterKategori, setFilterKategori] = useState("")
   const [filterToko, setFilterToko] = useState("")
+  const [filterStatus, setFilterStatus] = useState("")
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
@@ -482,6 +748,16 @@ export default function TambahBarangTetapPage() {
           tokoNama: x?.tokoNama || "",
           merk: x?.merk || "",
           harga: Number(x?.harga || 0),
+          statusAset: (x?.statusAset || (x?.sudahDijual ? "terjual" : "aset")) as "aset" | "terjual",
+          sudahDijual: Boolean(x?.sudahDijual || x?.statusAset === "terjual"),
+          hargaAwal: x?.hargaAwal !== undefined ? Number(x.hargaAwal || 0) : undefined,
+          hargaAsetSebelumDijual: x?.hargaAsetSebelumDijual !== undefined ? Number(x.hargaAsetSebelumDijual || 0) : undefined,
+          hargaAsetSesudahDijual: x?.hargaAsetSesudahDijual !== undefined ? Number(x.hargaAsetSesudahDijual || 0) : undefined,
+          hargaJual: x?.hargaJual !== undefined ? Number(x.hargaJual || 0) : undefined,
+          nominalPengurangAset: x?.nominalPengurangAset !== undefined ? Number(x.nominalPengurangAset || 0) : undefined,
+          keuntungan: x?.keuntungan !== undefined ? Number(x.keuntungan || 0) : undefined,
+          soldAtMs: x?.soldAtMs ? Number(x.soldAtMs) : undefined,
+          soldBy: x?.soldBy || "",
           createdAt: Number(x?.createdAt || Date.now()),
           updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
         }
@@ -516,12 +792,14 @@ export default function TambahBarangTetapPage() {
         d.kategoriNama.toLowerCase().includes(q) ||
         d.tokoNama.toLowerCase().includes(q)
 
+      const statusAset = isBarangTerjual(d) ? "terjual" : "aset"
       const matchKategori = !filterKategori || d.kategoriId === filterKategori
       const matchToko = !filterToko || d.tokoId === filterToko
+      const matchStatus = !filterStatus || statusAset === filterStatus
 
-      return matchSearch && matchKategori && matchToko
+      return matchSearch && matchKategori && matchToko && matchStatus
     })
-  }, [data, search, filterKategori, filterToko])
+  }, [data, search, filterKategori, filterToko, filterStatus])
 
   const totalPages =
     itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / itemsPerPage))
@@ -535,11 +813,11 @@ export default function TambahBarangTetapPage() {
 
   const stats = useMemo(() => {
     const totalAset = filtered.length
-    const totalNilai = filtered.reduce((sum, item) => sum + Number(item.harga || 0), 0)
-    const totalKategori = new Set(filtered.map((item) => item.kategoriId).filter(Boolean)).size
-    const totalToko = new Set(filtered.map((item) => item.tokoId).filter(Boolean)).size
+    const totalAktif = filtered.filter((item) => !isBarangTerjual(item)).length
+    const totalTerjual = filtered.filter((item) => isBarangTerjual(item)).length
+    const totalKeuntungan = filtered.reduce((sum, item) => sum + Number(item.keuntungan || 0), 0)
 
-    return { totalAset, totalNilai, totalKategori, totalToko }
+    return { totalAset, totalAktif, totalTerjual, totalKeuntungan }
   }, [filtered])
 
   useEffect(() => {
@@ -561,6 +839,12 @@ export default function TambahBarangTetapPage() {
   }
 
   const openEdit = (d: BarangTetap) => {
+    if (isBarangTerjual(d)) {
+      setSuccessMsg(`Barang ${d.nama} sudah dijual dan tidak bisa diedit lagi`)
+      setTimeout(() => setSuccessMsg(null), 3000)
+      return
+    }
+
     setForm({
       nama: d.nama,
       kategoriId: d.kategoriId,
@@ -571,6 +855,25 @@ export default function TambahBarangTetapPage() {
     setEditId(d.id)
     setError(null)
     setShowModal(true)
+  }
+
+  const openSell = (d: BarangTetap) => {
+    if (isBarangTerjual(d)) {
+      setSuccessMsg(`Barang ${d.nama} sudah dijual dan tidak bisa dijual lagi`)
+      setTimeout(() => setSuccessMsg(null), 3000)
+      return
+    }
+
+    setSellId(d.id)
+    setSellHarga("")
+    setError(null)
+  }
+
+  const closeSellModal = () => {
+    if (sellLoading) return
+    setSellId(null)
+    setSellHarga("")
+    setError(null)
   }
 
   const setField =
@@ -803,6 +1106,159 @@ export default function TambahBarangTetapPage() {
     }
   }
 
+  const handleSell = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const user = auth.currentUser
+    if (!user || !sellId) return
+
+    const existingItem = data.find((item) => item.id === sellId)
+    if (!existingItem) {
+      closeSellModal()
+      setError("Data barang tetap tidak ditemukan")
+      return
+    }
+
+    if (isBarangTerjual(existingItem)) {
+      closeSellModal()
+      setSuccessMsg(`Barang ${existingItem.nama} sudah dijual dan tidak bisa dijual lagi`)
+      setTimeout(() => setSuccessMsg(null), 3000)
+      return
+    }
+
+    const hargaJual = Number(sellHarga || 0)
+    if (Number.isNaN(hargaJual) || hargaJual <= 0) {
+      setError("Nominal jual wajib diisi dan harus lebih dari 0")
+      return
+    }
+
+    setSellLoading(true)
+    setError(null)
+
+    try {
+      const now = Date.now()
+      const hargaAsetLama = Number(
+        existingItem.hargaAwal ||
+          existingItem.hargaAsetSebelumDijual ||
+          existingItem.harga ||
+          0
+      )
+      const nominalPengurangAset = hargaAsetLama
+      const hargaAsetBaru = 0
+      const keuntungan = hargaJual - hargaAsetLama
+      const penjualanRef = doc(collection(db, PENJUALAN_COLLECTION_NAME))
+
+      await runTransaction(db, async (transaction) => {
+        const barangRef = doc(db, COLLECTION_NAME, existingItem.id)
+        const laporanRef = doc(db, LAPORAN_COLLECTION_NAME, existingItem.tokoId)
+
+        const laporanSnap = await transaction.get(laporanRef)
+        const laporanData = laporanSnap.exists() ? laporanSnap.data() : null
+
+        transaction.update(barangRef, {
+          harga: hargaAsetBaru,
+          statusAset: "terjual",
+          sudahDijual: true,
+          hargaAwal: existingItem.hargaAwal || hargaAsetLama,
+          hargaAsetSebelumDijual: hargaAsetLama,
+          hargaAsetSesudahDijual: hargaAsetBaru,
+          hargaJual,
+          nominalPengurangAset,
+          keuntungan,
+          soldAt: serverTimestamp(),
+          soldAtMs: now,
+          soldBy: user.uid,
+          updatedAt: now,
+          updatedBy: user.uid,
+        })
+
+        transaction.set(penjualanRef, {
+          id: penjualanRef.id,
+          barangTetapId: existingItem.id,
+          nama: existingItem.nama,
+          kategoriId: existingItem.kategoriId || normalizeKategoriKey(existingItem.kategoriNama),
+          kategoriNama: existingItem.kategoriNama || "Tanpa Kategori",
+          tokoId: existingItem.tokoId,
+          tokoNama: existingItem.tokoNama,
+          merk: existingItem.merk || "",
+          statusAset: "terjual",
+          hargaAwal: existingItem.hargaAwal || hargaAsetLama,
+          hargaAsetSebelum: hargaAsetLama,
+          hargaAsetSesudah: hargaAsetBaru,
+          hargaJual,
+          nominalPengurangAset,
+          keuntungan,
+          keterangan:
+            keuntungan > 0
+              ? `Untung ${formatRupiah(keuntungan)}`
+              : keuntungan < 0
+                ? `Rugi -${formatRupiah(Math.abs(keuntungan))}`
+                : "Impas",
+          soldAt: serverTimestamp(),
+          soldAtMs: now,
+          soldBy: user.uid,
+          createdAt: serverTimestamp(),
+          createdAtMs: now,
+        })
+
+        applyLaporanBarangTetapSaleSync({
+          transaction,
+          laporanRef,
+          existingData: laporanData,
+          tokoId: existingItem.tokoId,
+          tokoNama: existingItem.tokoNama,
+          kategoriId:
+            existingItem.kategoriId ||
+            normalizeKategoriKey(existingItem.kategoriNama),
+          kategoriNama: existingItem.kategoriNama || "Tanpa Kategori",
+          hargaAsetLama,
+          hargaJual,
+          keuntungan,
+          now,
+        })
+      })
+
+      setData((prev) =>
+        prev
+          .map((item): BarangTetap => {
+            if (item.id !== existingItem.id) return item
+
+            return {
+              ...item,
+              harga: hargaAsetBaru,
+              statusAset: "terjual" as const,
+              sudahDijual: true,
+              hargaAwal: item.hargaAwal || hargaAsetLama,
+              hargaAsetSebelumDijual: hargaAsetLama,
+              hargaAsetSesudahDijual: hargaAsetBaru,
+              hargaJual,
+              nominalPengurangAset,
+              keuntungan,
+              soldAtMs: now,
+              soldBy: user.uid,
+              updatedAt: now,
+            }
+          })
+          .sort((a, b) => a.nama.localeCompare(b.nama))
+      )
+
+      closeSellModal()
+      setSuccessMsg(
+        keuntungan > 0
+          ? `Barang berhasil dijual. Untung ${formatRupiah(keuntungan)} · Sisa nilai ${formatRupiah(hargaAsetBaru)}`
+          : keuntungan < 0
+            ? `Barang berhasil dijual. Rugi -${formatRupiah(Math.abs(keuntungan))} · Sisa nilai ${formatRupiah(hargaAsetBaru)}`
+            : `Barang berhasil dijual. Impas · Sisa nilai ${formatRupiah(hargaAsetBaru)}`
+      )
+      setTimeout(() => setSuccessMsg(null), 3500)
+    } catch (e) {
+      console.error(e)
+      setError("Gagal menjual barang tetap")
+    } finally {
+      setSellLoading(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!deleteId) return
 
@@ -816,6 +1272,58 @@ export default function TambahBarangTetapPage() {
       }
 
       const now = Date.now()
+      const sudahDijual = isBarangTerjual(existingItem)
+
+      const penjualanSnap = sudahDijual
+        ? await getDocs(
+            query(
+              collection(db, PENJUALAN_COLLECTION_NAME),
+              where("barangTetapId", "==", existingItem.id)
+            )
+          )
+        : null
+
+      const penjualanList =
+        penjualanSnap?.docs.map((d) => {
+          const x = d.data() as any
+          const hargaAwal = Number(
+            x?.hargaAwal ||
+              x?.hargaAsetSebelum ||
+              x?.hargaAsetSebelumDijual ||
+              existingItem.hargaAwal ||
+              existingItem.hargaAsetSebelumDijual ||
+              0
+          )
+          const hargaJual = Number(x?.hargaJual || existingItem.hargaJual || 0)
+          const keuntungan = Number(
+            x?.keuntungan ?? hargaJual - hargaAwal
+          )
+
+          return {
+            ref: d.ref,
+            hargaAwal,
+            hargaJual,
+            keuntungan,
+          }
+        }) || []
+
+      const totalHargaJualTerhapus =
+        penjualanList.length > 0
+          ? penjualanList.reduce((sum, item) => sum + Number(item.hargaJual || 0), 0)
+          : Number(existingItem.hargaJual || 0)
+
+      const totalKeuntunganTerhapus =
+        penjualanList.length > 0
+          ? penjualanList.reduce((sum, item) => sum + Number(item.keuntungan || 0), 0)
+          : Number(
+              existingItem.keuntungan ??
+                Number(existingItem.hargaJual || 0) -
+                  Number(
+                    existingItem.hargaAwal ||
+                      existingItem.hargaAsetSebelumDijual ||
+                      0
+                  )
+            )
 
       await runTransaction(db, async (transaction) => {
         const barangRef = doc(db, COLLECTION_NAME, deleteId)
@@ -825,26 +1333,44 @@ export default function TambahBarangTetapPage() {
         const laporanData = laporanSnap.exists() ? laporanSnap.data() : null
 
         transaction.delete(barangRef)
+        penjualanList.forEach((item) => transaction.delete(item.ref))
 
-        applyLaporanBarangTetapDelta({
-          transaction,
-          laporanRef,
-          existingData: laporanData,
-          tokoId: existingItem.tokoId,
-          tokoNama: existingItem.tokoNama,
-          kategoriId:
-            existingItem.kategoriId ||
-            normalizeKategoriKey(existingItem.kategoriNama),
-          kategoriNama: existingItem.kategoriNama || "Tanpa Kategori",
-          jumlahDelta: -1,
-          nilaiDelta: -Number(existingItem.harga || 0),
-          now,
-        })
+        if (sudahDijual) {
+          applyLaporanBarangTetapDeleteSoldSync({
+            transaction,
+            laporanRef,
+            existingData: laporanData,
+            tokoId: existingItem.tokoId,
+            tokoNama: existingItem.tokoNama,
+            kategoriId:
+              existingItem.kategoriId ||
+              normalizeKategoriKey(existingItem.kategoriNama),
+            kategoriNama: existingItem.kategoriNama || "Tanpa Kategori",
+            hargaJual: totalHargaJualTerhapus,
+            keuntungan: totalKeuntunganTerhapus,
+            now,
+          })
+        } else {
+          applyLaporanBarangTetapDelta({
+            transaction,
+            laporanRef,
+            existingData: laporanData,
+            tokoId: existingItem.tokoId,
+            tokoNama: existingItem.tokoNama,
+            kategoriId:
+              existingItem.kategoriId ||
+              normalizeKategoriKey(existingItem.kategoriNama),
+            kategoriNama: existingItem.kategoriNama || "Tanpa Kategori",
+            jumlahDelta: -1,
+            nilaiDelta: -Number(existingItem.harga || 0),
+            now,
+          })
+        }
       })
 
       setData((prev) => prev.filter((item) => item.id !== deleteId))
       setDeleteId(null)
-      setSuccessMsg("Data barang tetap berhasil dihapus")
+      setSuccessMsg("Data barang tetap berhasil dihapus dan laporan sudah disinkronkan")
 
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
@@ -924,10 +1450,10 @@ export default function TambahBarangTetapPage() {
         </AnimatePresence>
 
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-          <StatCard label="Total Aset" value={String(stats.totalAset)} icon={Boxes} tone="sky" />
-          <StatCard label="Total Nilai" value={formatRupiah(stats.totalNilai)} icon={BadgeDollarSign} tone="blue" />
-          <StatCard label="Kategori" value={String(stats.totalKategori)} icon={Layers3} tone="slate" />
-          <StatCard label="Toko" value={String(stats.totalToko)} icon={Store} tone="rose" />
+          <StatCard label="Total Data" value={String(stats.totalAset)} icon={Boxes} tone="sky" />
+          <StatCard label="Aset Tetap" value={String(stats.totalAktif)} icon={Building2} tone="blue" />
+          <StatCard label="Sudah Dijual" value={String(stats.totalTerjual)} icon={CheckCircle2} tone="slate" />
+          <StatCard label="Selisih Jual" value={formatSignedRupiah(stats.totalKeuntungan)} icon={BadgeDollarSign} tone="rose" />
         </div>
 
         <motion.div
@@ -936,7 +1462,7 @@ export default function TambahBarangTetapPage() {
           transition={{ duration: 0.35, delay: 0.08 }}
           className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="lg:col-span-1">
               <FieldBox label="Cari Barang Tetap">
                 <div className="relative">
@@ -991,6 +1517,20 @@ export default function TambahBarangTetapPage() {
                     {t.nama}
                   </option>
                 ))}
+              </FilterSelect>
+
+              <FilterSelect
+                label="Status"
+                value={filterStatus}
+                onChange={(v) => {
+                  setFilterStatus(v)
+                  setPage(1)
+                }}
+                icon={CheckCircle2}
+              >
+                <option value="">Semua Status</option>
+                <option value="aset">Aset Tetap</option>
+                <option value="terjual">Sudah Dijual</option>
               </FilterSelect>
 
               <FilterSelect
@@ -1092,6 +1632,20 @@ export default function TambahBarangTetapPage() {
                   </FilterSelect>
 
                   <FilterSelect
+                    label="Status"
+                    value={filterStatus}
+                    onChange={(v) => {
+                      setFilterStatus(v)
+                      setPage(1)
+                    }}
+                    icon={CheckCircle2}
+                  >
+                    <option value="">Semua Status</option>
+                    <option value="aset">Aset Tetap</option>
+                    <option value="terjual">Sudah Dijual</option>
+                  </FilterSelect>
+
+                  <FilterSelect
                     label="Tampilkan"
                     value={itemsPerPage}
                     onChange={(v) => {
@@ -1121,6 +1675,7 @@ export default function TambahBarangTetapPage() {
           goPage={goPage}
           openAdd={openAdd}
           openEdit={openEdit}
+          openSell={openSell}
           setDeleteId={setDeleteId}
         />
 
@@ -1135,6 +1690,16 @@ export default function TambahBarangTetapPage() {
           setField={setField}
           closeModal={closeModal}
           handleSubmit={handleSubmit}
+        />
+
+        <SellModal
+          target={sellId ? data.find((item) => item.id === sellId) || null : null}
+          hargaJual={sellHarga}
+          error={error}
+          loading={sellLoading}
+          onChangeHarga={setSellHarga}
+          onClose={closeSellModal}
+          onSubmit={handleSell}
         />
 
         <DeleteModal
@@ -1240,6 +1805,7 @@ function BarangTetapSection({
   goPage,
   openAdd,
   openEdit,
+  openSell,
   setDeleteId,
 }: {
   loading: boolean
@@ -1251,6 +1817,7 @@ function BarangTetapSection({
   goPage: (page: number) => void
   openAdd: () => void
   openEdit: (item: BarangTetap) => void
+  openSell: (item: BarangTetap) => void
   setDeleteId: (id: string) => void
 }) {
   if (loading) {
@@ -1296,7 +1863,10 @@ function BarangTetapSection({
   return (
     <>
       <div className="space-y-2 sm:hidden">
-        {paged.map((item, idx) => (
+        {paged.map((item, idx) => {
+          const sudahDijual = isBarangTerjual(item)
+
+          return (
           <motion.div
             key={item.id}
             initial={{ opacity: 0, y: 8 }}
@@ -1320,8 +1890,14 @@ function BarangTetapSection({
                     </p>
                   </div>
 
-                  <span className="inline-flex shrink-0 rounded-full bg-sky-50 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-sky-700">
-                    Aset
+                  <span
+                    className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${
+                      sudahDijual
+                        ? "bg-slate-100 text-slate-600"
+                        : "bg-sky-50 text-sky-700"
+                    }`}
+                  >
+                    {sudahDijual ? "Sudah Dijual" : "Aset Tetap"}
                   </span>
                 </div>
 
@@ -1336,20 +1912,68 @@ function BarangTetapSection({
                   </p>
                   <p className="flex min-w-0 items-center gap-2 text-xs font-black text-slate-800">
                     <BadgeDollarSign size={13} className="shrink-0 text-slate-400" strokeWidth={2.5} />
-                    <span className="truncate">{formatRupiah(item.harga)}</span>
+                    <span className="truncate">{sudahDijual ? `Sisa nilai: ${formatRupiah(item.harga)}` : formatRupiah(item.harga)}</span>
                   </p>
+                  {sudahDijual ? (
+                    <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="col-span-2">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          Barang sudah dijual
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-white px-2 py-1.5 ring-1 ring-slate-200">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Harga Jual</p>
+                        <p className="mt-0.5 text-[11px] font-black text-slate-700">{formatRupiah(item.hargaJual || 0)}</p>
+                      </div>
+                      <div className="rounded-lg bg-white px-2 py-1.5 ring-1 ring-slate-200">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Keterangan</p>
+                        <p
+                          className={`mt-0.5 text-[11px] font-black ${
+                            Number(item.keuntungan || 0) < 0
+                              ? "text-red-700"
+                              : Number(item.keuntungan || 0) > 0
+                                ? "text-emerald-700"
+                                : "text-slate-700"
+                          }`}
+                        >
+                          {formatSignedRupiah(item.keuntungan || 0)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-3 gap-2">
                   <motion.button
-                    whileTap={{ scale: 0.97 }}
+                    whileTap={{ scale: sudahDijual ? 1 : 0.97 }}
                     transition={{ duration: 0.12, ease: "easeOut" }}
-                    onClick={() => openEdit(item)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-sky-700 shadow-sm transition hover:bg-sky-100"
+                    onClick={() => !sudahDijual && openEdit(item)}
+                    disabled={sudahDijual}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide shadow-sm transition ${
+                      sudahDijual
+                        ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                        : "border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                    }`}
                     type="button"
                   >
                     <Pencil size={13} strokeWidth={2.6} />
-                    Edit
+                    {sudahDijual ? "Terkunci" : "Edit"}
+                  </motion.button>
+
+                  <motion.button
+                    whileTap={{ scale: sudahDijual ? 1 : 0.97 }}
+                    transition={{ duration: 0.12, ease: "easeOut" }}
+                    onClick={() => !sudahDijual && openSell(item)}
+                    disabled={sudahDijual}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide shadow-sm transition ${
+                      sudahDijual
+                        ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                        : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                    type="button"
+                  >
+                    <BadgeDollarSign size={13} strokeWidth={2.6} />
+                    {sudahDijual ? "Terjual" : "Jual"}
                   </motion.button>
 
                   <motion.button
@@ -1366,7 +1990,8 @@ function BarangTetapSection({
               </div>
             </div>
           </motion.div>
-        ))}
+          )
+        })}
       </div>
 
       <motion.div
@@ -1379,7 +2004,7 @@ function BarangTetapSection({
           <table className="w-full text-xs">
             <thead className="border-b border-slate-100 bg-slate-50/70">
               <tr>
-                {["No", "Nama", "Toko", "Kategori", "Merk", "Harga", "Aksi"].map((head) => (
+                {["No", "Nama", "Status", "Toko", "Kategori", "Merk", "Nilai Aset", "Harga Jual", "Keterangan", "Aksi"].map((head) => (
                   <th
                     key={head}
                     className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
@@ -1392,25 +2017,83 @@ function BarangTetapSection({
               </tr>
             </thead>
             <tbody>
-              {paged.map((item, index) => (
+              {paged.map((item, index) => {
+                const sudahDijual = isBarangTerjual(item)
+
+                return (
                 <tr key={item.id} className="border-t border-slate-100 transition-colors hover:bg-sky-50/40">
                   <td className="px-3 py-3 text-center font-bold text-slate-400">
                     {itemsPerPage === 0 ? index + 1 : (page - 1) * itemsPerPage + index + 1}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">{item.nama}</td>
+                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
+                    <div>{item.nama}</div>
+                    {sudahDijual ? (
+                      <p className="mt-1 text-[10px] font-bold text-slate-500">
+                        Barang sudah dijual
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${
+                        sudahDijual
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-sky-50 text-sky-700"
+                      }`}
+                    >
+                      {sudahDijual ? "Sudah Dijual" : "Aset Tetap"}
+                    </span>
+                  </td>
                   <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.tokoNama || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.kategoriNama || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.merk || "-"}</td>
-                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">{formatRupiah(item.harga)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
+                    {sudahDijual ? formatRupiah(item.harga) : formatRupiah(item.harga)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
+                    {sudahDijual ? formatRupiah(item.hargaJual || 0) : "-"}
+                  </td>
+                  <td
+                    className={`whitespace-nowrap px-3 py-3 font-black ${
+                      !sudahDijual
+                        ? "text-slate-400"
+                        : Number(item.keuntungan || 0) < 0
+                          ? "text-red-700"
+                          : Number(item.keuntungan || 0) > 0
+                            ? "text-emerald-700"
+                            : "text-slate-700"
+                    }`}
+                  >
+                    {sudahDijual ? formatSignedRupiah(item.keuntungan || 0) : "-"}
+                  </td>
                   <td className="px-3 py-3 text-center">
                     <div className="flex justify-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => openEdit(item)}
-                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition hover:bg-sky-100"
-                        title="Edit barang tetap"
+                        onClick={() => !sudahDijual && openEdit(item)}
+                        disabled={sudahDijual}
+                        className={`flex h-8 w-8 items-center justify-center rounded-xl shadow-sm transition ${
+                          sudahDijual
+                            ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                            : "border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                        }`}
+                        title={sudahDijual ? "Barang sudah dijual dan tidak bisa diedit" : "Edit barang tetap"}
                       >
                         <Pencil size={13} strokeWidth={2.6} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => !sudahDijual && openSell(item)}
+                        disabled={sudahDijual}
+                        className={`flex h-8 w-8 items-center justify-center rounded-xl shadow-sm transition ${
+                          sudahDijual
+                            ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                            : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        }`}
+                        title={sudahDijual ? "Barang sudah dijual" : "Jual barang tetap"}
+                      >
+                        <BadgeDollarSign size={13} strokeWidth={2.6} />
                       </button>
 
                       <button
@@ -1424,7 +2107,8 @@ function BarangTetapSection({
                     </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -1717,6 +2401,222 @@ function FieldSelect({
         <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
       </div>
     </div>
+  )
+}
+
+
+function SellModal({
+  target,
+  hargaJual,
+  error,
+  loading,
+  onChangeHarga,
+  onClose,
+  onSubmit,
+}: {
+  target: BarangTetap | null
+  hargaJual: string
+  error: string | null
+  loading: boolean
+  onChangeHarga: (value: string) => void
+  onClose: () => void
+  onSubmit: (e: React.FormEvent) => void
+}) {
+  const nominalJual = Number(hargaJual || 0)
+  const nilaiAset = Number(target?.harga || 0)
+  const nominalPengurangAset = Math.min(nilaiAset, nominalJual)
+  const sisaNilaiAset = Math.max(0, nilaiAset - nominalJual)
+  const keuntungan = nominalJual - nilaiAset
+  const sudahDijual = isBarangTerjual(target)
+
+  return (
+    <AnimatePresence>
+      {target && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !loading) onClose()
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 20 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+          >
+            <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-sky-600 p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+                  <BadgeDollarSign size={20} className="text-white" strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-black leading-none tracking-tight text-white">
+                    Jual Barang Tetap
+                  </h2>
+                  <p className="mt-1 max-w-[280px] truncate text-[10px] font-bold uppercase tracking-[0.15em] text-white/75">
+                    {target.nama}
+                  </p>
+                </div>
+              </div>
+              <div className="pointer-events-none absolute right-0 top-0 opacity-10">
+                <Cpu size={100} strokeWidth={1} className="text-white" />
+              </div>
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-4 p-5">
+              {error && (
+                <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2.5">
+                  <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-600" strokeWidth={2.5} />
+                  <p className="text-[11px] font-bold text-red-700">{error}</p>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-black text-slate-800">{target.nama}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      {target.tokoNama || "-"} · {target.kategoriNama || "-"} · {target.merk || "-"}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${
+                      sudahDijual ? "bg-slate-200 text-slate-600" : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    {sudahDijual ? "Sudah Dijual" : "Aset Tetap"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs font-black text-slate-700">
+                  Nilai aset sekarang: {formatRupiah(target.harga)}
+                </p>
+              </div>
+
+              {sudahDijual ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Barang sudah dijual
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                    Barang ini tidak bisa dijual lagi. Harga jual sebelumnya {formatRupiah(target.hargaJual || 0)} dan keterangan {formatSignedRupiah(target.keuntungan || 0)}.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <FieldInput
+                    label="Nominal Jual"
+                    value={hargaJual}
+                    onChange={(value) => onChangeHarga(value.replace(/[^\d]/g, ""))}
+                    icon={BadgeDollarSign}
+                    inputMode="numeric"
+                    placeholder="Contoh: 2500000"
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                        Harga Jual
+                      </p>
+                      <p className="mt-1 text-xs font-black text-sky-700">
+                        {formatRupiah(nominalJual)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">
+                        Nilai Dikurangi
+                      </p>
+                      <p className="mt-1 text-xs font-black text-blue-700">
+                        {formatRupiah(nominalPengurangAset)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        Sisa Nilai Aset
+                      </p>
+                      <p className="mt-1 text-xs font-black text-slate-800">
+                        {formatRupiah(sisaNilaiAset)}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`rounded-xl border px-3 py-2.5 ${
+                        keuntungan < 0
+                          ? "border-red-100 bg-red-50/80"
+                          : keuntungan > 0
+                            ? "border-emerald-100 bg-emerald-50/80"
+                            : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      <p
+                        className={`${
+                          keuntungan < 0
+                            ? "text-red-600"
+                            : keuntungan > 0
+                              ? "text-emerald-600"
+                              : "text-slate-500"
+                        } text-[10px] font-black uppercase tracking-widest`}
+                      >
+                        Keterangan
+                      </p>
+                      <p
+                        className={`${
+                          keuntungan < 0
+                            ? "text-red-700"
+                            : keuntungan > 0
+                              ? "text-emerald-700"
+                              : "text-slate-700"
+                        } mt-1 text-xs font-black`}
+                      >
+                        {formatSignedRupiah(keuntungan)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="rounded-2xl border border-sky-100 bg-sky-50/70 px-3 py-2 text-[11px] font-semibold leading-relaxed text-sky-700">
+                    Setelah dijual, barang diberi status sudah dijual dan tidak bisa dijual lagi. Nilai aset dikurangi sesuai nominal jual. Kolom keterangan akan merah jika rugi dan hijau jika untung.
+                  </p>
+                </>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ duration: 0.12, ease: "easeOut" }}
+                  type="button"
+                  onClick={onClose}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <X size={16} strokeWidth={2.5} />
+                  Batal
+                </motion.button>
+
+                <motion.button
+                  whileTap={{ scale: sudahDijual ? 1 : 0.97 }}
+                  transition={{ duration: 0.12, ease: "easeOut" }}
+                  type="submit"
+                  disabled={loading || sudahDijual}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-sky-600 px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-emerald-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? (
+                    <RefreshCw size={16} className="animate-spin" strokeWidth={2.5} />
+                  ) : (
+                    <BadgeDollarSign size={16} strokeWidth={2.5} />
+                  )}
+                  {loading ? "Proses" : sudahDijual ? "Sudah Dijual" : "Jual"}
+                </motion.button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 

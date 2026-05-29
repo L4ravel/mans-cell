@@ -5,7 +5,8 @@
   Isi:
   - Header dashboard biru/sky premium.
   - Akses cepat dinamis sesuai role owner/admin/karyawan.
-  - Tombol cepat dibuat 4 card utama + 4 icon launcher kecil.
+  - Shortcut owner dibuat 3 card ringkas utama, omzet 2 kolom, lalu launcher kecil.
+  - Card ketiga owner adalah Aset yang mengarah ke tambah-barang-tetap.
   - Tombol cepat dan menu aplikasi konsisten tanpa border-slate dominan.
   - 5 grup menu dibuat menjadi tab icon.
   - Hanya menu dari tab aktif yang ditampilkan.
@@ -249,6 +250,13 @@ const OWNER_SHORTCUTS: OwnerShortcut[] = [
     desc: "Untung bersih bulanan",
     icon: TrendingUp,
     tone: "blue",
+  },
+  {
+    href: "/admin/tambah-barang-tetap",
+    label: "Aset",
+    desc: "Tambah aset tetap",
+    icon: Building2,
+    tone: "sky",
   },
   {
     href: "/admin/laporan-harian",
@@ -782,7 +790,7 @@ export default function AdminPage() {
 
   const renderOwnerShortcut = (
     item: OwnerShortcut,
-    variant: "utama" | "mini" = "utama",
+    variant: "utama" | "mini" | "ownerTop" = "utama",
   ) => {
     const Icon = item.icon;
     const isApprovalShortcut =
@@ -797,6 +805,35 @@ export default function AdminPage() {
           : item.tone === "sky"
             ? "from-sky-500/80 via-sky-600/70 to-cyan-500/70 shadow-sky-500/10"
             : "from-slate-500/75 via-slate-600/65 to-slate-500/65 shadow-slate-500/10";
+
+    if (variant === "ownerTop") {
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          className="group relative flex min-h-[82px] flex-col items-center justify-center overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-white via-sky-50/35 to-white px-1.5 py-2 text-center shadow-sm shadow-sky-500/5 ring-1 ring-sky-100/60 transition hover:bg-sky-50/70 hover:shadow-md hover:shadow-sky-500/10"
+        >
+          {badgeCount > 0 && (
+            <span className="absolute right-2 top-2 z-10 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-orange-500 px-1 py-0.5 text-[8px] font-black text-white shadow-sm shadow-orange-500/20 ring-2 ring-white">
+              {badgeCount}
+            </span>
+          )}
+
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-[1rem] bg-gradient-to-br ${toneClass} text-white shadow-sm ring-1 ring-white/70 transition group-hover:scale-[1.04]`}
+          >
+            <Icon size={18} strokeWidth={2.55} />
+          </div>
+
+          <p className="mt-1.5 line-clamp-2 text-center text-[10px] font-black leading-[1.05] text-slate-800 sm:text-[11px]">
+            {item.label}
+          </p>
+          <p className="mt-0.5 hidden max-w-[86px] truncate text-center text-[8px] font-bold text-slate-400 sm:block">
+            {badgeCount > 0 ? `${badgeCount} menunggu` : item.desc}
+          </p>
+        </Link>
+      );
+    }
 
     if (variant === "mini") {
       return (
@@ -970,18 +1007,44 @@ export default function AdminPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {quickShortcuts
-              .slice(0, 4)
-              .map((item) => renderOwnerShortcut(item, "utama"))}
-          </div>
+          {hasOwnerRole ? (
+            <>
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                {quickShortcuts
+                  .slice(0, 3)
+                  .map((item) => renderOwnerShortcut(item, "ownerTop"))}
+              </div>
 
-          {quickShortcuts.length > 4 && (
-            <div className="mt-2 grid grid-cols-4 gap-1.5 rounded-[1.35rem] bg-sky-50/45 p-1.5 ring-1 ring-sky-100/60">
-              {quickShortcuts
-                .slice(4)
-                .map((item) => renderOwnerShortcut(item, "mini"))}
-            </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {quickShortcuts
+                  .slice(3, 5)
+                  .map((item) => renderOwnerShortcut(item, "utama"))}
+              </div>
+
+              {quickShortcuts.length > 5 && (
+                <div className="mt-2 grid grid-cols-4 gap-1.5 rounded-[1.35rem] bg-sky-50/45 p-1.5 ring-1 ring-sky-100/60">
+                  {quickShortcuts
+                    .slice(5)
+                    .map((item) => renderOwnerShortcut(item, "mini"))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                {quickShortcuts
+                  .slice(0, 4)
+                  .map((item) => renderOwnerShortcut(item, "utama"))}
+              </div>
+
+              {quickShortcuts.length > 4 && (
+                <div className="mt-2 grid grid-cols-4 gap-1.5 rounded-[1.35rem] bg-sky-50/45 p-1.5 ring-1 ring-sky-100/60">
+                  {quickShortcuts
+                    .slice(4)
+                    .map((item) => renderOwnerShortcut(item, "mini"))}
+                </div>
+              )}
+            </>
           )}
         </section>
 

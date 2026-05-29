@@ -1,7 +1,7 @@
 /*
   Halaman admin laporan sisa keuntungan setelah modal tetap.
-  Membaca laporan_bulanan, pengeluaran, dan laporan_barang_tetap untuk menghitung
-  keuntungan operasional, modal tetap, serta sisa keuntungan setelah modal tetap.
+  Revisi: label akumulasi diganti menjadi keuntungan bersih.
+  Harga jual aset tetap dipakai untuk mengurangi Modal Aktif.
 */
 
 "use client"
@@ -74,11 +74,58 @@ type Pengeluaran = {
   nominal: number
 }
 
+type BarangTetap = {
+  id: string
+  nama: string
+  kategoriId: string
+  kategoriNama: string
+  tokoId: string
+  tokoNama: string
+  merk: string
+  harga: number
+  statusAset?: "aset" | "terjual"
+  sudahDijual?: boolean
+  hargaAwal?: number
+  hargaAsetSebelumDijual?: number
+  hargaAsetSesudahDijual?: number
+  hargaJual?: number
+  nominalPengurangAset?: number
+  keuntungan?: number
+  soldAtMs?: number
+  createdAt?: number
+  updatedAt?: number
+}
+
+type PenjualanBarangTetap = {
+  id: string
+  barangTetapId: string
+  nama: string
+  kategoriId: string
+  kategoriNama: string
+  tokoId: string
+  tokoNama: string
+  merk: string
+  hargaAwal: number
+  hargaAsetSebelum: number
+  hargaAsetSesudah: number
+  hargaJual: number
+  nominalPengurangAset: number
+  keuntungan: number
+  keterangan: string
+  soldAtMs?: number
+  createdAtMs?: number
+  updatedAtMs?: number
+}
+
 type LaporanBarangTetapKategori = {
   kategoriId: string
   kategoriNama: string
   jumlahAset: number
+  jumlahAsetAktif: number
+  jumlahAsetTerjual: number
   totalNilai: number
+  totalModalAwal: number
+  totalKeuntunganJual: number
 }
 
 type LaporanBarangTetap = {
@@ -86,7 +133,11 @@ type LaporanBarangTetap = {
   tokoId: string
   tokoNama: string
   jumlahAset: number
+  jumlahAsetAktif: number
+  jumlahAsetTerjual: number
   totalNilai: number
+  totalModalAwal: number
+  totalKeuntunganJual: number
   kategoriBreakdown: LaporanBarangTetapKategori[]
   updatedAtMs?: number
 }
@@ -108,6 +159,7 @@ type RekapSetelahModal = {
   tokoId: string
   tokoNama: string
   keuntunganBersih: number
+  modalAwalTetap: number
   modalTetap: number
   sisaSetelahModal: number
   omzet: number
@@ -126,7 +178,9 @@ type ChartItem = {
   bulanKey: string
   keuntunganBersihBulan: number
   akumulasiKeuntunganBersih: number
+  modalAwalTetap: number
   modalTetap: number
+  modalTersisaAkhirBulan: number
   sisaSetelahModal: number
 }
 
@@ -167,6 +221,66 @@ function getStartOfYearMonthInput() {
 
 function shortNumber(value: number) {
   return new Intl.NumberFormat("id-ID").format(Number(value || 0))
+}
+
+function toMillis(value: any) {
+  if (!value) return 0
+  if (typeof value === "number") return Number(value || 0)
+  if (typeof value === "string") {
+    const n = Number(value)
+    return Number.isNaN(n) ? 0 : n
+  }
+  if (typeof value?.toMillis === "function") return Number(value.toMillis() || 0)
+  if (typeof value?.seconds === "number") return Number(value.seconds || 0) * 1000
+  return 0
+}
+
+function isBarangTerjual(item?: BarangTetap | null) {
+  return Boolean(item?.sudahDijual || item?.statusAset === "terjual")
+}
+
+function toBulanKeyFromMs(value?: number) {
+  const ms = Number(value || 0)
+  if (!ms) return ""
+
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ""
+
+  const y = date.getFullYear()
+  const m = `${date.getMonth() + 1}`.padStart(2, "0")
+  return `${y}-${m}`
+}
+
+function getModalAwalAset(item: BarangTetap) {
+  const hargaAwal = Number(item.hargaAwal || 0)
+  const hargaSebelumDijual = Number(item.hargaAsetSebelumDijual || 0)
+  const hargaJual = Number(item.hargaJual || 0)
+  const hargaAktif = Number(item.harga || 0)
+
+  if (hargaAwal > 0) return hargaAwal
+  if (hargaSebelumDijual > 0) return hargaSebelumDijual
+  if (isBarangTerjual(item) && hargaJual > 0) return Math.max(hargaJual - Number(item.keuntungan || 0), 0)
+  return hargaAktif
+}
+
+function getNilaiAkhirAset(item: BarangTetap) {
+  if (isBarangTerjual(item)) return getKeuntunganJualAset(item)
+  return Number(item.harga || 0)
+}
+
+function getKeuntunganJualAset(item: BarangTetap) {
+  if (!isBarangTerjual(item)) return 0
+
+  const keuntungan = Number(item.keuntungan || 0)
+  if (item.keuntungan !== undefined && !Number.isNaN(keuntungan)) return keuntungan
+
+  return Number(item.hargaJual || 0) - getModalAwalAset(item)
+}
+
+function getSisaModalSetelahProfit(totalModalAwal: number, totalKeuntunganBersih: number) {
+  const modal = Math.max(0, Number(totalModalAwal || 0))
+  const profit = Math.max(0, Number(totalKeuntunganBersih || 0))
+  return Math.max(0, modal - profit)
 }
 
 function FilterSelect({
@@ -224,7 +338,8 @@ export default function LaporanSetelahModalTetapPage() {
   const [tokoList, setTokoList] = useState<Toko[]>([])
   const [laporanBulananList, setLaporanBulananList] = useState<LaporanBulanan[]>([])
   const [pengeluaranList, setPengeluaranList] = useState<Pengeluaran[]>([])
-  const [laporanBarangTetapList, setLaporanBarangTetapList] = useState<LaporanBarangTetap[]>([])
+  const [barangTetapList, setBarangTetapList] = useState<BarangTetap[]>([])
+  const [penjualanBarangTetapList, setPenjualanBarangTetapList] = useState<PenjualanBarangTetap[]>([])
 
   const [search, setSearch] = useState("")
   const [filterToko, setFilterToko] = useState("")
@@ -240,11 +355,12 @@ export default function LaporanSetelahModalTetapPage() {
     setError(null)
 
     try {
-      const [tokoSnap, laporanSnap, pengeluaranSnap, barangTetapSnap] = await Promise.all([
+      const [tokoSnap, laporanSnap, pengeluaranSnap, barangTetapSnap, penjualanBarangTetapSnap] = await Promise.all([
         getDocs(query(collection(db, "toko"), orderBy("nama"))),
         getDocs(query(collection(db, "laporan_bulanan"), orderBy("bulanKey", "desc"))),
         getDocs(query(collection(db, "pengeluaran"), orderBy("bulanKey", "desc"))),
-        getDocs(query(collection(db, "laporan_barang_tetap"), orderBy("tokoNama"))),
+        getDocs(query(collection(db, "barang_tetap"), orderBy("nama"))),
+        getDocs(collection(db, "penjualan_barang_tetap")),
       ])
 
       const tokoData: Toko[] = tokoSnap.docs.map((d) => {
@@ -313,37 +429,80 @@ export default function LaporanSetelahModalTetapPage() {
         }
       })
 
-      const barangTetapData: LaporanBarangTetap[] = barangTetapSnap.docs.map((d) => {
+      const barangTetapData: BarangTetap[] = barangTetapSnap.docs.map((d) => {
         const x = d.data() as any
+        const statusAset = String(x?.statusAset || (x?.sudahDijual ? "terjual" : "aset")) as "aset" | "terjual"
+
         return {
           id: d.id,
-          tokoId: String(x?.tokoId || d.id || ""),
-          tokoNama: String(x?.tokoNama || ""),
-          jumlahAset: Number(x?.jumlahAset || 0),
-          totalNilai: Number(x?.totalNilai || 0),
-          kategoriBreakdown: Array.isArray(x?.kategoriBreakdown)
-            ? x.kategoriBreakdown.map((item: any) => ({
-                kategoriId: String(item?.kategoriId || "").trim(),
-                kategoriNama: String(item?.kategoriNama || "Tanpa Kategori").trim(),
-                jumlahAset: Number(item?.jumlahAset || 0),
-                totalNilai: Number(item?.totalNilai || 0),
-              }))
-            : [],
-          updatedAtMs: x?.updatedAtMs ? Number(x.updatedAtMs) : undefined,
+          nama: String(x?.nama || ""),
+          kategoriId: String(x?.kategoriId || "").trim(),
+          kategoriNama: String(x?.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori",
+          tokoId: String(x?.tokoId || "").trim(),
+          tokoNama: String(x?.tokoNama || "Tanpa Toko").trim() || "Tanpa Toko",
+          merk: String(x?.merk || ""),
+          harga: Number(x?.harga || 0),
+          statusAset,
+          sudahDijual: Boolean(x?.sudahDijual || statusAset === "terjual"),
+          hargaAwal: x?.hargaAwal !== undefined ? Number(x.hargaAwal || 0) : undefined,
+          hargaAsetSebelumDijual: x?.hargaAsetSebelumDijual !== undefined ? Number(x.hargaAsetSebelumDijual || 0) : undefined,
+          hargaAsetSesudahDijual: x?.hargaAsetSesudahDijual !== undefined ? Number(x.hargaAsetSesudahDijual || 0) : undefined,
+          hargaJual: x?.hargaJual !== undefined ? Number(x.hargaJual || 0) : undefined,
+          nominalPengurangAset: x?.nominalPengurangAset !== undefined ? Number(x.nominalPengurangAset || 0) : undefined,
+          keuntungan: x?.keuntungan !== undefined ? Number(x.keuntungan || 0) : undefined,
+          soldAtMs: toMillis(x?.soldAtMs) || undefined,
+          createdAt: toMillis(x?.createdAtMs) || toMillis(x?.createdAt) || undefined,
+          updatedAt: toMillis(x?.updatedAtMs) || toMillis(x?.updatedAt) || undefined,
+        }
+      })
+
+      const penjualanBarangTetapData: PenjualanBarangTetap[] = penjualanBarangTetapSnap.docs.map((d) => {
+        const x = d.data() as any
+        const soldAtMs = toMillis(x?.soldAtMs) || toMillis(x?.soldAt)
+        const createdAtMs = toMillis(x?.createdAtMs) || toMillis(x?.createdAt)
+        const updatedAtMs = toMillis(x?.updatedAtMs) || toMillis(x?.updatedAt)
+
+        return {
+          id: d.id,
+          barangTetapId: String(x?.barangTetapId || "").trim(),
+          nama: String(x?.nama || ""),
+          kategoriId: String(x?.kategoriId || "").trim(),
+          kategoriNama: String(x?.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori",
+          tokoId: String(x?.tokoId || "").trim(),
+          tokoNama: String(x?.tokoNama || "Tanpa Toko").trim() || "Tanpa Toko",
+          merk: String(x?.merk || ""),
+          hargaAwal: Number(x?.hargaAwal || 0),
+          hargaAsetSebelum: Number(x?.hargaAsetSebelum || x?.hargaAsetSebelumDijual || 0),
+          hargaAsetSesudah: Number(x?.hargaAsetSesudah || x?.hargaAsetSesudahDijual || 0),
+          hargaJual: Number(x?.hargaJual || 0),
+          nominalPengurangAset: Number(x?.nominalPengurangAset || 0),
+          keuntungan: Number(
+            x?.keuntungan ??
+              Number(x?.hargaJual || 0) -
+                Number(x?.hargaAwal || x?.hargaAsetSebelum || x?.hargaAsetSebelumDijual || 0)
+          ),
+          keterangan: String(x?.keterangan || ""),
+          soldAtMs: soldAtMs || undefined,
+          createdAtMs: createdAtMs || undefined,
+          updatedAtMs: updatedAtMs || undefined,
         }
       })
 
       setTokoList(tokoData.filter((item) => item.nama))
       setLaporanBulananList(laporanData.filter((item) => item.bulanKey))
       setPengeluaranList(pengeluaranData.filter((item) => item.bulanKey))
-      setLaporanBarangTetapList(barangTetapData.filter((item) => item.tokoNama || item.tokoId))
+      setBarangTetapList(barangTetapData.filter((item) => item.tokoNama || item.tokoId))
+      setPenjualanBarangTetapList(
+        penjualanBarangTetapData.filter((item) => item.tokoNama || item.tokoId || item.barangTetapId)
+      )
     } catch (err) {
       console.error(err)
       setError("Gagal memuat laporan setelah modal tetap")
       setTokoList([])
       setLaporanBulananList([])
       setPengeluaranList([])
-      setLaporanBarangTetapList([])
+      setBarangTetapList([])
+      setPenjualanBarangTetapList([])
     } finally {
       setLoading(false)
     }
@@ -359,20 +518,18 @@ export default function LaporanSetelahModalTetapPage() {
   const kategoriAsetOptions = useMemo(() => {
     const map = new Map<string, KategoriAsetOption>()
 
-    for (const item of laporanBarangTetapList) {
-      for (const row of item.kategoriBreakdown || []) {
-        const rawId = String(row.kategoriId || "").trim()
-        const rawNama = String(row.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori"
-        const key = rawId || rawNama.toLowerCase()
+    for (const item of barangTetapList) {
+      const rawId = String(item.kategoriId || "").trim()
+      const rawNama = String(item.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori"
+      const key = rawId || rawNama.toLowerCase()
 
-        if (!map.has(key)) {
-          map.set(key, { id: key, nama: rawNama })
-        }
+      if (!map.has(key)) {
+        map.set(key, { id: key, nama: rawNama })
       }
     }
 
     return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
-  }, [laporanBarangTetapList])
+  }, [barangTetapList])
 
   const rekapOperasionalList = useMemo(() => {
     const map = new Map<string, RekapOperasional>()
@@ -431,6 +588,26 @@ export default function LaporanSetelahModalTetapPage() {
       })
   }, [laporanBulananList, pengeluaranList])
 
+  const filteredBarangTetapDetail = useMemo(() => {
+    const q = search.toLowerCase().trim()
+
+    return barangTetapList.filter((item) => {
+      if (filterToko && item.tokoId !== filterToko) return false
+
+      const kategoriKey = String(item.kategoriId || "").trim() || String(item.kategoriNama || "").trim().toLowerCase()
+      if (filterKategoriAset && kategoriKey !== filterKategoriAset) return false
+
+      if (!q) return true
+
+      return (
+        item.nama.toLowerCase().includes(q) ||
+        item.merk.toLowerCase().includes(q) ||
+        item.tokoNama.toLowerCase().includes(q) ||
+        item.kategoriNama.toLowerCase().includes(q)
+      )
+    })
+  }, [barangTetapList, filterToko, filterKategoriAset, search])
+
   const filteredOperasional = useMemo(() => {
     const q = search.toLowerCase().trim()
 
@@ -445,45 +622,229 @@ export default function LaporanSetelahModalTetapPage() {
   }, [rekapOperasionalList, search, filterToko, bulanMulai, bulanSelesai])
 
   const filteredBarangTetap = useMemo(() => {
-    return laporanBarangTetapList.filter((item) => {
-      if (filterToko && item.tokoId !== filterToko) return false
+    const map = new Map<string, LaporanBarangTetap>()
 
-      const matchKategoriAset =
-        !filterKategoriAset ||
-        item.kategoriBreakdown.some((row) => {
-          const key = String(row.kategoriId || "").trim() || String(row.kategoriNama || "").trim().toLowerCase()
-          return key === filterKategoriAset
+    for (const item of filteredBarangTetapDetail) {
+      const key = item.tokoId || item.tokoNama || "tanpa-toko"
+      const sudahDijual = isBarangTerjual(item)
+      const kategoriKey = String(item.kategoriId || "").trim() || String(item.kategoriNama || "Tanpa Kategori").trim().toLowerCase()
+      const kategoriNama = String(item.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori"
+      const nilaiAkhir = getNilaiAkhirAset(item)
+      const modalAwal = getModalAwalAset(item)
+      const keuntunganJual = getKeuntunganJualAset(item)
+
+      const current = map.get(key) || {
+        id: key,
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        jumlahAset: 0,
+        jumlahAsetAktif: 0,
+        jumlahAsetTerjual: 0,
+        totalNilai: 0,
+        totalModalAwal: 0,
+        totalKeuntunganJual: 0,
+        kategoriBreakdown: [],
+        updatedAtMs: 0,
+      }
+
+      current.jumlahAset += 1
+      current.jumlahAsetAktif += sudahDijual ? 0 : 1
+      current.jumlahAsetTerjual += sudahDijual ? 1 : 0
+      current.totalNilai += Number(nilaiAkhir || 0)
+      current.totalModalAwal += Number(modalAwal || 0)
+      current.totalKeuntunganJual += Number(keuntunganJual || 0)
+      current.updatedAtMs = Math.max(Number(current.updatedAtMs || 0), Number(item.updatedAt || item.soldAtMs || 0))
+
+      const breakdownIndex = current.kategoriBreakdown.findIndex((row) => {
+        const rowKey = String(row.kategoriId || "").trim() || String(row.kategoriNama || "").trim().toLowerCase()
+        return rowKey === kategoriKey
+      })
+
+      if (breakdownIndex >= 0) {
+        const row = current.kategoriBreakdown[breakdownIndex]
+        current.kategoriBreakdown[breakdownIndex] = {
+          ...row,
+          kategoriNama,
+          jumlahAset: Number(row.jumlahAset || 0) + 1,
+          jumlahAsetAktif: Number(row.jumlahAsetAktif || 0) + (sudahDijual ? 0 : 1),
+          jumlahAsetTerjual: Number(row.jumlahAsetTerjual || 0) + (sudahDijual ? 1 : 0),
+          totalNilai: Number(row.totalNilai || 0) + Number(nilaiAkhir || 0),
+          totalModalAwal: Number(row.totalModalAwal || 0) + Number(modalAwal || 0),
+          totalKeuntunganJual: Number(row.totalKeuntunganJual || 0) + Number(keuntunganJual || 0),
+        }
+      } else {
+        current.kategoriBreakdown.push({
+          kategoriId: kategoriKey,
+          kategoriNama,
+          jumlahAset: 1,
+          jumlahAsetAktif: sudahDijual ? 0 : 1,
+          jumlahAsetTerjual: sudahDijual ? 1 : 0,
+          totalNilai: Number(nilaiAkhir || 0),
+          totalModalAwal: Number(modalAwal || 0),
+          totalKeuntunganJual: Number(keuntunganJual || 0),
         })
+      }
 
-      if (!matchKategoriAset) return false
+      map.set(key, current)
+    }
 
-      const q = search.toLowerCase().trim()
-      if (!q) return true
+    return Array.from(map.values()).sort((a, b) => a.tokoNama.localeCompare(b.tokoNama))
+  }, [filteredBarangTetapDetail])
 
-      return (
-        item.tokoNama.toLowerCase().includes(q) ||
-        item.kategoriBreakdown.some((row) => row.kategoriNama.toLowerCase().includes(q))
-      )
+  const penjualanAsetModalEffectList = useMemo(() => {
+    const map = new Map<string, {
+      bulanKey: string
+      tokoId: string
+      tokoNama: string
+      hargaJual: number
+    }>()
+    const q = search.toLowerCase().trim()
+    const penjualanIds = new Set(
+      penjualanBarangTetapList
+        .map((item) => String(item.barangTetapId || "").trim())
+        .filter(Boolean)
+    )
+
+    const addRow = ({
+      bulanKey,
+      tokoId,
+      tokoNama,
+      hargaJual,
+    }: {
+      bulanKey: string
+      tokoId: string
+      tokoNama: string
+      hargaJual: number
+    }) => {
+      if (!bulanKey) return
+      if (bulanMulai && bulanKey < bulanMulai) return
+      if (bulanSelesai && bulanKey > bulanSelesai) return
+      if (!hargaJual) return
+
+      const key = `${bulanKey}__${tokoId || tokoNama || "tanpa-toko"}`
+      const current = map.get(key) || {
+        bulanKey,
+        tokoId,
+        tokoNama: tokoNama || "Tanpa Toko",
+        hargaJual: 0,
+      }
+
+      current.hargaJual += Math.max(0, Number(hargaJual || 0))
+      map.set(key, current)
+    }
+
+    for (const item of penjualanBarangTetapList) {
+      if (filterToko && item.tokoId !== filterToko) continue
+
+      const kategoriKey =
+        String(item.kategoriId || "").trim() || String(item.kategoriNama || "").trim().toLowerCase()
+      if (filterKategoriAset && kategoriKey !== filterKategoriAset) continue
+
+      if (q) {
+        const matchSearch =
+          item.nama.toLowerCase().includes(q) ||
+          item.merk.toLowerCase().includes(q) ||
+          item.tokoNama.toLowerCase().includes(q) ||
+          item.kategoriNama.toLowerCase().includes(q) ||
+          item.keterangan.toLowerCase().includes(q)
+
+        if (!matchSearch) continue
+      }
+
+      addRow({
+        bulanKey: toBulanKeyFromMs(item.soldAtMs || item.createdAtMs || item.updatedAtMs),
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        hargaJual: Number(item.hargaJual || 0),
+      })
+    }
+
+    for (const item of filteredBarangTetapDetail) {
+      if (!isBarangTerjual(item)) continue
+      if (item.id && penjualanIds.has(item.id)) continue
+
+      addRow({
+        bulanKey: toBulanKeyFromMs(item.soldAtMs || item.updatedAt || item.createdAt),
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        hargaJual: Number(item.hargaJual || 0),
+      })
+    }
+
+    return Array.from(map.values())
+  }, [
+    penjualanBarangTetapList,
+    filteredBarangTetapDetail,
+    search,
+    filterToko,
+    filterKategoriAset,
+    bulanMulai,
+    bulanSelesai,
+  ])
+
+  const filteredOperasionalGabungan = useMemo(() => {
+    const map = new Map<string, RekapOperasional>()
+
+    for (const item of filteredOperasional) {
+      const key = `${item.bulanKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}`
+      const current = map.get(key) || {
+        bulanKey: item.bulanKey,
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        penghasilanKotor: 0,
+        pengeluaran: 0,
+        keuntunganBersih: 0,
+        omzet: 0,
+        jumlahTransaksi: 0,
+        jumlahQtyTerjual: 0,
+        jumlahDataPengeluaran: 0,
+      }
+
+      current.penghasilanKotor += Number(item.penghasilanKotor || 0)
+      current.pengeluaran += Number(item.pengeluaran || 0)
+      current.keuntunganBersih += Number(item.keuntunganBersih || 0)
+      current.omzet += Number(item.omzet || 0)
+      current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
+      current.jumlahQtyTerjual += Number(item.jumlahQtyTerjual || 0)
+      current.jumlahDataPengeluaran += Number(item.jumlahDataPengeluaran || 0)
+      map.set(key, current)
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      const bulanCompare = b.bulanKey.localeCompare(a.bulanKey)
+      if (bulanCompare !== 0) return bulanCompare
+      return b.keuntunganBersih - a.keuntunganBersih
     })
-  }, [laporanBarangTetapList, filterToko, filterKategoriAset, search])
+  }, [filteredOperasional])
 
-  const totalKeuntunganBersihOperasional = filteredOperasional.reduce((acc, item) => acc + item.keuntunganBersih, 0)
-  const totalModalTetap = filteredBarangTetap.reduce((acc, item) => acc + Number(item.totalNilai || 0), 0)
-  const sisaSetelahModal = totalKeuntunganBersihOperasional - totalModalTetap
-  const totalOmzet = filteredOperasional.reduce((acc, item) => acc + item.omzet, 0)
-  const totalTransaksi = filteredOperasional.reduce((acc, item) => acc + item.jumlahTransaksi, 0)
-  const totalQtyTerjual = filteredOperasional.reduce((acc, item) => acc + item.jumlahQtyTerjual, 0)
+  const totalKeuntunganOperasionalMurni = filteredOperasionalGabungan.reduce((acc, item) => acc + item.keuntunganBersih, 0)
+  const totalModalAwalTetap = filteredBarangTetap.reduce((acc, item) => acc + Number(item.totalModalAwal || 0), 0)
+  const totalHargaJualAset = penjualanAsetModalEffectList.reduce((acc, item) => acc + Number(item.hargaJual || 0), 0)
+  const totalModalTetap = totalModalAwalTetap - totalHargaJualAset
+  const tambahanAkumulasiDariModalMinus = totalModalTetap < 0 ? Math.abs(totalModalTetap) : 0
+  const totalKeuntunganBersihOperasional = totalKeuntunganOperasionalMurni + tambahanAkumulasiDariModalMinus
+  const sisaSetelahModal = totalKeuntunganBersihOperasional - Math.max(0, totalModalTetap)
+  const totalOmzet = filteredOperasionalGabungan.reduce((acc, item) => acc + item.omzet, 0)
+  const totalTransaksi = filteredOperasionalGabungan.reduce((acc, item) => acc + item.jumlahTransaksi, 0)
+  const totalQtyTerjual = filteredOperasionalGabungan.reduce((acc, item) => acc + item.jumlahQtyTerjual, 0)
   const totalJumlahAset = filteredBarangTetap.reduce((acc, item) => acc + Number(item.jumlahAset || 0), 0)
 
   const rekapPerToko = useMemo(() => {
     const map = new Map<string, RekapSetelahModal>()
+    const hargaJualByToko = new Map<string, number>()
 
-    for (const item of filteredOperasional) {
+    for (const item of penjualanAsetModalEffectList) {
+      const key = item.tokoId || item.tokoNama || "tanpa-toko"
+      hargaJualByToko.set(key, Number(hargaJualByToko.get(key) || 0) + Number(item.hargaJual || 0))
+    }
+
+    for (const item of filteredOperasionalGabungan) {
       const key = item.tokoId || item.tokoNama || "tanpa-toko"
       const current = map.get(key) || {
         tokoId: item.tokoId,
         tokoNama: item.tokoNama || "Tanpa Toko",
         keuntunganBersih: 0,
+        modalAwalTetap: 0,
         modalTetap: 0,
         sisaSetelahModal: 0,
         omzet: 0,
@@ -507,6 +868,7 @@ export default function LaporanSetelahModalTetapPage() {
         tokoId: item.tokoId,
         tokoNama: item.tokoNama || "Tanpa Toko",
         keuntunganBersih: 0,
+        modalAwalTetap: 0,
         modalTetap: 0,
         sisaSetelahModal: 0,
         omzet: 0,
@@ -516,40 +878,68 @@ export default function LaporanSetelahModalTetapPage() {
         jumlahAset: 0,
       }
 
-      current.modalTetap += Number(item.totalNilai || 0)
+      current.modalAwalTetap += Number(item.totalModalAwal || 0)
       current.jumlahAset += Number(item.jumlahAset || 0)
       map.set(key, current)
     }
 
     return Array.from(map.values())
-      .map((item) => ({ ...item, sisaSetelahModal: item.keuntunganBersih - item.modalTetap }))
+      .map((item) => {
+        const key = item.tokoId || item.tokoNama || "tanpa-toko"
+        const hargaJualAset = Number(hargaJualByToko.get(key) || 0)
+        const modalAktif = Number(item.modalAwalTetap || 0) - hargaJualAset
+        const tambahanDariModalMinus = modalAktif < 0 ? Math.abs(modalAktif) : 0
+        const akumulasi = Number(item.keuntunganBersih || 0) + tambahanDariModalMinus
+
+        return {
+          ...item,
+          keuntunganBersih: akumulasi,
+          modalTetap: modalAktif,
+          sisaSetelahModal: akumulasi - Math.max(0, modalAktif),
+        }
+      })
       .sort((a, b) => b.sisaSetelahModal - a.sisaSetelahModal)
-  }, [filteredOperasional, filteredBarangTetap])
+  }, [filteredOperasionalGabungan, filteredBarangTetap, penjualanAsetModalEffectList])
 
   const chartData = useMemo(() => {
-    const monthMap = new Map<string, number>()
+    const profitMonthMap = new Map<string, number>()
+    const hargaJualMonthMap = new Map<string, number>()
 
-    for (const item of filteredOperasional) {
-      monthMap.set(item.bulanKey, Number(monthMap.get(item.bulanKey) || 0) + Number(item.keuntunganBersih || 0))
+    for (const item of filteredOperasionalGabungan) {
+      profitMonthMap.set(item.bulanKey, Number(profitMonthMap.get(item.bulanKey) || 0) + Number(item.keuntunganBersih || 0))
     }
 
-    const sortedMonths = Array.from(monthMap.entries())
-      .map(([bulanKey, keuntunganBersih]) => ({ bulanKey, keuntunganBersih }))
-      .sort((a, b) => a.bulanKey.localeCompare(b.bulanKey))
+    for (const item of penjualanAsetModalEffectList) {
+      hargaJualMonthMap.set(item.bulanKey, Number(hargaJualMonthMap.get(item.bulanKey) || 0) + Number(item.hargaJual || 0))
+    }
+
+    const sortedMonths = Array.from(new Set([...profitMonthMap.keys(), ...hargaJualMonthMap.keys()]))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
 
     let runningProfit = 0
+    let runningHargaJualAset = 0
 
-    return sortedMonths.map((item) => {
-      runningProfit += Number(item.keuntunganBersih || 0)
+    return sortedMonths.map((bulanKey) => {
+      runningProfit += Number(profitMonthMap.get(bulanKey) || 0)
+      runningHargaJualAset += Number(hargaJualMonthMap.get(bulanKey) || 0)
+
+      const modalAktif = Number(totalModalAwalTetap || 0) - runningHargaJualAset
+      const tambahanDariModalMinus = modalAktif < 0 ? Math.abs(modalAktif) : 0
+      const akumulasiSetelahModalMinus = runningProfit + tambahanDariModalMinus
+      const modalTersisaAkhirBulan = Math.max(0, modalAktif)
+
       return {
-        bulanKey: item.bulanKey,
-        keuntunganBersihBulan: Number(item.keuntunganBersih || 0),
-        akumulasiKeuntunganBersih: runningProfit,
-        modalTetap: totalModalTetap,
-        sisaSetelahModal: runningProfit - totalModalTetap,
+        bulanKey,
+        keuntunganBersihBulan: Number(profitMonthMap.get(bulanKey) || 0),
+        akumulasiKeuntunganBersih: akumulasiSetelahModalMinus,
+        modalAwalTetap: totalModalAwalTetap,
+        modalTetap: modalAktif,
+        modalTersisaAkhirBulan,
+        sisaSetelahModal: akumulasiSetelahModalMinus - modalTersisaAkhirBulan,
       }
     })
-  }, [filteredOperasional, totalModalTetap])
+  }, [filteredOperasionalGabungan, penjualanAsetModalEffectList, totalModalAwalTetap])
 
   const displayChartData = useMemo(() => [...chartData].sort((a, b) => b.bulanKey.localeCompare(a.bulanKey)), [chartData])
   const maxChartValue = Math.max(...chartData.map((item) => Math.abs(item.sisaSetelahModal)), 0)
@@ -611,7 +1001,7 @@ export default function LaporanSetelahModalTetapPage() {
                   Laporan Setelah Modal Tetap
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Rekap keuntungan operasional setelah dikurangi snapshot modal aset tetap.
+                  Rekap keuntungan bersih dan modal aktif setelah sinkron hasil jual aset tetap.
                 </p>
               </div>
             </div>
@@ -655,7 +1045,7 @@ export default function LaporanSetelahModalTetapPage() {
 
         <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
           <StatCard icon={CircleDollarSign} label="Keuntungan Bersih" value={formatRupiah(totalKeuntunganBersihOperasional)} subValue={`${totalTransaksi} transaksi`} />
-          <StatCard icon={Building2} label="Modal Tetap" value={formatRupiah(totalModalTetap)} subValue={`${totalJumlahAset} aset`} />
+          <StatCard icon={Building2} label="Modal Aktif" value={formatRupiah(totalModalTetap)} subValue={`Modal awal ${formatRupiah(totalModalAwalTetap)} · Jual aset ${formatRupiah(totalHargaJualAset)}`} />
           <StatCard icon={sisaSetelahModal < 0 ? TrendingDown : TrendingUp} label="Sisa Setelah Modal" value={formatRupiah(sisaSetelahModal)} subValue={`Omzet ${formatRupiah(totalOmzet)}`} />
           <StatCard icon={ReceiptText} label="Qty Terjual" value={shortNumber(totalQtyTerjual)} subValue={`${rekapPerToko.length} toko`} />
         </div>
@@ -799,7 +1189,7 @@ export default function LaporanSetelahModalTetapPage() {
 
           <div className="hidden space-y-4 xl:col-span-5 xl:block">
             <RankingPanel title="Ranking Toko" description="Toko dengan sisa setelah modal terbesar" type="toko" rows={rekapPerToko} />
-            <RankingPanel title="Ranking Aset" description="Kategori aset tetap dengan nilai tertinggi" type="aset" rows={rankingAsetKategori} />
+            <RankingPanel title="Ranking Aset" description="Kategori aset aktif dan hasil akhir jual tertinggi" type="aset" rows={rankingAsetKategori} />
             <SummaryPanel
               totalKeuntunganBersihOperasional={totalKeuntunganBersihOperasional}
               totalModalTetap={totalModalTetap}
@@ -982,7 +1372,7 @@ function ReportChart({ chartData, maxChartValue }: { chartData: ChartItem[]; max
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
-        <h2 className="text-sm font-black text-slate-800 sm:text-base">Chart Akumulasi Setelah Modal</h2>
+        <h2 className="text-sm font-black text-slate-800 sm:text-base">Chart Keuntungan Bersih Setelah Modal</h2>
       </div>
 
       {chartData.length === 0 ? (
@@ -1011,10 +1401,10 @@ function ReportChart({ chartData, maxChartValue }: { chartData: ChartItem[]; max
 
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200">
-                    Akumulasi: {formatRupiah(item.akumulasiKeuntunganBersih)}
+                    Keuntungan Bersih: {formatRupiah(item.akumulasiKeuntunganBersih)}
                   </span>
                   <span className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-[11px] font-bold text-violet-700 ring-1 ring-violet-200">
-                    Modal: {formatRupiah(item.modalTetap)}
+                    Modal Aktif: {formatRupiah(item.modalTetap)}
                   </span>
                 </div>
               </div>
@@ -1047,7 +1437,7 @@ function RekapModalCard({ item }: { item: RekapSetelahModal }) {
 
       <div className="mt-4 space-y-2 rounded-none border-0 bg-transparent p-0 sm:rounded-2xl sm:border sm:border-slate-200 sm:bg-slate-50/70 sm:p-2">
         <MetricRow label="Operasional" value={formatRupiah(item.keuntunganBersih)} tone="slate" />
-        <MetricRow label="Modal Tetap" value={formatRupiah(item.modalTetap)} tone="violet" />
+        <MetricRow label="Modal Aktif" value={formatRupiah(item.modalTetap)} tone={item.modalTetap < 0 ? "red" : "violet"} />
         <MetricRow label="Sisa" value={formatRupiah(item.sisaSetelahModal)} tone={isNegative ? "red" : "sky"} />
       </div>
 
@@ -1103,7 +1493,7 @@ function RankingList({ type, rows }: { type: "toko" | "aset"; rows: any[] }) {
         const isNegative = value < 0
         const title = isToko ? item.tokoNama : item.kategoriNama
         const sub = isToko
-          ? `${shortNumber(item.jumlahAset)} aset • modal ${formatRupiah(item.modalTetap || 0)}`
+          ? `${shortNumber(item.jumlahAset)} aset • modal aktif ${formatRupiah(item.modalTetap || 0)}`
           : `${shortNumber(item.jumlahAset)} aset`
 
         return (
@@ -1153,8 +1543,8 @@ function SummaryPanel({
   updatedAtModalTetap?: number
 }) {
   const rows = [
-    { label: "Keuntungan Operasional", value: formatRupiah(totalKeuntunganBersihOperasional), tone: "slate" as const },
-    { label: "Total Modal Tetap", value: formatRupiah(totalModalTetap), tone: "violet" as const },
+    { label: "Keuntungan Bersih", value: formatRupiah(totalKeuntunganBersihOperasional), tone: "slate" as const },
+    { label: "Modal Aktif", value: formatRupiah(totalModalTetap), tone: totalModalTetap < 0 ? "red" as const : "violet" as const },
     { label: "Sisa Setelah Modal", value: formatRupiah(sisaSetelahModal), tone: sisaSetelahModal < 0 ? "red" as const : "sky" as const },
     { label: "Bulan Direkap", value: shortNumber(chartDataLength), tone: "slate" as const },
     { label: "Toko Direkap", value: shortNumber(rekapPerTokoLength), tone: "slate" as const },

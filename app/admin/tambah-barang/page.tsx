@@ -8,6 +8,7 @@
   - supplier fisik tetap dari koleksi supplier
   - print barcode hanya untuk barang fisik
   - download template Excel, download data Excel, dan import Excel dengan style border konsisten
+  - nominal produk digital dibuat fleksibel: bisa angka atau huruf, misalnya Pulsa 10K / Data 5GB
 */
 
 "use client"
@@ -128,7 +129,7 @@ type Barang = {
   provider?: string
   saldoSourceId?: string
   saldoSourceNama?: string
-  nominalProduk?: number
+  nominalProduk?: string
   aktif?: boolean
 
   createdAt: number
@@ -386,7 +387,7 @@ const BARANG_IMPORT_COLUMNS: BarangExcelColumn[] = [
   { key: "kodeUnik", label: "kodeUnik", width: 24, center: true, group: "unique" },
   { key: "provider", label: "provider", width: 20, group: "digital" },
   { key: "saldoSourceNama", label: "saldoSourceNama", width: 24, group: "digital" },
-  { key: "nominalProduk", label: "nominalProduk", width: 18, money: true, group: "digital" },
+  { key: "nominalProduk", label: "nominalProduk", width: 18, group: "digital" },
   { key: "aktif", label: "aktif", width: 10, center: true, group: "digital" },
 ]
 
@@ -1581,7 +1582,7 @@ export default function TambahBarangPage() {
           provider: x?.provider || "",
           saldoSourceId: x?.saldoSourceId || "",
           saldoSourceNama: x?.saldoSourceNama || "",
-          nominalProduk: Number(x?.nominalProduk || 0),
+          nominalProduk: String(x?.nominalProduk || ""),
           aktif: x?.aktif !== false,
 
           createdAt: Number(x?.createdAt || Date.now()),
@@ -1879,7 +1880,6 @@ export default function TambahBarangPage() {
     const hargaJual = Number(form.hargaJual)
     const stok = Number(form.stok || 0)
     const stokMinimum = Number(form.stokMinimum || 0)
-    const nominalProduk = Number(form.nominalProduk || 0)
 
     if (Number.isNaN(hargaModal) || hargaModal < 0) return "Harga modal tidak valid"
     if (Number.isNaN(hargaJual) || hargaJual < 0) return "Harga jual tidak valid"
@@ -1891,10 +1891,6 @@ export default function TambahBarangPage() {
     }
 
     if (isDigitalForm) {
-      if (Number.isNaN(nominalProduk) || nominalProduk <= 0) {
-        return "Nominal produk tidak valid"
-      }
-
       const saldoDipilih = saldoList.find((item) => item.id === form.saldoSourceId)
       if (!saldoDipilih) return "Sumber saldo tidak ditemukan"
       if (!saldoDipilih.aktif) return "Sumber saldo sedang nonaktif"
@@ -2040,7 +2036,7 @@ export default function TambahBarangPage() {
         provider: isDigitalForm ? providerDipilih?.nama || "" : "",
         saldoSourceId: isDigitalForm ? saldoDipilih?.id || "" : "",
         saldoSourceNama: isDigitalForm ? saldoDipilih?.namaSaldo || "" : "",
-        nominalProduk: isDigitalForm ? Number(form.nominalProduk) : 0,
+        nominalProduk: isDigitalForm ? form.nominalProduk.trim() : "",
         aktif: isDigitalForm ? Boolean(form.aktif) : true,
       }
 
@@ -2186,7 +2182,7 @@ export default function TambahBarangPage() {
       String(item.kategoriId || ""),
       String(item.providerId || ""),
       String(item.saldoSourceId || ""),
-      String(item.nominalProduk || 0),
+      String(item.nominalProduk || ""),
       uniqueCode,
     ].join("__")
   }
@@ -2274,7 +2270,7 @@ export default function TambahBarangPage() {
             provider: isDigital ? item.provider || "" : "",
             saldoSourceId: isDigital ? item.saldoSourceId || "" : "",
             saldoSourceNama: isDigital ? item.saldoSourceNama || "" : "",
-            nominalProduk: isDigital ? Number(item.nominalProduk || 0) : 0,
+            nominalProduk: isDigital ? String(item.nominalProduk || "") : "",
             aktif: isDigital ? item.aktif !== false : true,
             createdAt,
           }
@@ -2572,7 +2568,7 @@ export default function TambahBarangPage() {
           if (!providerDipilih) throw new Error(`provider "${normalizeText(row.provider)}" tidak ditemukan`)
           if (!saldoDipilih) throw new Error(`saldoSourceNama "${normalizeText(row.saldoSourceNama)}" tidak ditemukan`)
           if (!saldoDipilih.aktif) throw new Error(`saldoSourceNama "${saldoDipilih.namaSaldo}" sedang nonaktif`)
-          if (parseExcelNumber(row.nominalProduk) <= 0) throw new Error("nominalProduk wajib lebih dari 0")
+          if (!normalizeText(row.nominalProduk)) throw new Error("nominalProduk wajib diisi")
         }
 
         const editingExisting = rawId ? existingById.get(rawId) || null : null
@@ -2626,7 +2622,7 @@ export default function TambahBarangPage() {
           provider: jenisBarang === "digital" ? providerDipilih?.nama || "" : "",
           saldoSourceId: jenisBarang === "digital" ? saldoDipilih?.id || "" : "",
           saldoSourceNama: jenisBarang === "digital" ? saldoDipilih?.namaSaldo || "" : "",
-          nominalProduk: jenisBarang === "digital" ? parseExcelNumber(row.nominalProduk) : 0,
+          nominalProduk: jenisBarang === "digital" ? normalizeText(row.nominalProduk) : "",
           aktif: jenisBarang === "digital" ? parseExcelBoolean(row.aktif, true) : true,
           createdAt: editingExisting?.createdAt || now,
           updatedAt: now,
@@ -3490,7 +3486,7 @@ export default function TambahBarangPage() {
                       ) : (
                         <>
                           <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
-                            Nominal: {formatRupiah(d.nominalProduk || 0)}
+                            Nominal: {d.nominalProduk || "-"}
                           </span>
                           <span
                             className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
@@ -3537,7 +3533,7 @@ export default function TambahBarangPage() {
                             </p>
                             {d.jenisBarang === "digital" ? (
                               <p className="mt-1 text-xs font-semibold text-sky-600">
-                                {d.provider || "-"} · {d.nominalProduk ? formatRupiah(d.nominalProduk) : "-"}
+                                {d.provider || "-"} · {d.nominalProduk || "-"}
                               </p>
                             ) : null}
                           </td>
@@ -3627,7 +3623,7 @@ export default function TambahBarangPage() {
                                   {d.aktif === false ? "Nonaktif" : "Aktif"}
                                 </span>
                                 <p className="mt-1 text-xs text-slate-500">
-                                  Nominal: {formatRupiah(d.nominalProduk || 0)}
+                                  Nominal: {d.nominalProduk || "-"}
                                 </p>
                               </>
                             )}
@@ -3919,10 +3915,9 @@ export default function TambahBarangPage() {
                           label="Nominal Produk"
                           required
                           icon={Zap}
-                          inputMode="numeric"
                           value={form.nominalProduk}
-                          onChange={(e: any) => setField("nominalProduk")(e.target.value.replace(/[^\d]/g, ""))}
-                          placeholder="Contoh: 5000"
+                          onChange={(e: any) => setField("nominalProduk")(e.target.value)}
+                          placeholder="Contoh: Pulsa 10K / Data 5GB / Token 20rb"
                         />
 
                         <FormSelect
