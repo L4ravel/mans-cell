@@ -65,7 +65,7 @@ export type Barang = {
   provider?: string
   saldoSourceId?: string
   saldoSourceNama?: string
-  nominalProduk?: number
+  nominalProduk?: string
   aktif?: boolean
   createdAt: number
   updatedAt?: number
@@ -131,7 +131,7 @@ export type CartItem = {
   provider?: string
   saldoSourceId?: string
   saldoSourceNama?: string
-  nominalProduk?: number
+  nominalProduk?: string
   tujuan?: string
   diskonId?: string
   diskonNama?: string
@@ -165,7 +165,7 @@ export type StrukItem = {
   provider?: string
   saldoSourceId?: string
   saldoSourceNama?: string
-  nominalProduk?: number
+  nominalProduk?: string
   tujuan?: string
   diskonId: string
   diskonNama: string
@@ -601,12 +601,17 @@ export function getTujuanLabel(subJenis?: string) {
   return "Nomor Tujuan"
 }
 
-export function getDigitalNominalPotong(item: Pick<CartItem, "jenisBarang" | "nominalProduk" | "qty">) {
+export function getDigitalNominalPotong(
+  item: Pick<CartItem, "jenisBarang" | "hargaModal" | "qty">
+) {
   if (item.jenisBarang !== "digital") return 0
-  const nominal = Number(item.nominalProduk || 0)
+
+  const hargaModal = Number(item.hargaModal || 0)
   const qty = Number(item.qty || 0)
-  if (nominal <= 0 || qty <= 0) return 0
-  return nominal * qty
+
+  if (hargaModal <= 0 || qty <= 0) return 0
+
+  return hargaModal * qty
 }
 
 export function buildDigitalSaldoUsage(cart: CartItem[]): DigitalSaldoUsage[] {
@@ -655,8 +660,9 @@ export function validateDigitalSaldoUsage(cart: CartItem[]) {
     if (!String(item.saldoSourceId || "").trim()) {
       return `Sumber saldo untuk ${item.nama} belum dipilih`
     }
-    if (Number(item.nominalProduk || 0) <= 0) {
-      return `Nominal produk digital untuk ${item.nama} tidak valid`
+
+    if (Number(item.hargaModal || 0) <= 0) {
+      return `Harga modal produk digital untuk ${item.nama} tidak valid`
     }
   }
 

@@ -15,7 +15,14 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { auth, db } from "@/lib/firebase";
 import {
   collection,
@@ -87,9 +94,6 @@ import {
   getDigitalIcon,
   digitalButuhTujuan,
   getTujuanLabel,
-  buildDigitalSaldoUsage,
-  validateDigitalSaldoUsage,
-  buildDigitalSaldoRingkasan,
   FieldLabel,
   ModalStruk,
 } from "@/lib/transaksi/route";
@@ -102,6 +106,14 @@ type UserProfile = {
   roles: string[];
   tokoId: string;
   tokoNama: string;
+};
+
+type TransaksiBarang = Omit<Barang, "nominalProduk"> & {
+  nominalProduk?: string;
+};
+
+type TransaksiCartItem = Omit<CartItem, "nominalProduk"> & {
+  nominalProduk?: string;
 };
 
 type PelangganTransaksi = {
@@ -275,13 +287,97 @@ const isAdminProfile = (profile: UserProfile | null) => {
   );
 };
 
+const getDigitalNominalPotong = (
+  item: Pick<TransaksiCartItem, "jenisBarang" | "hargaModal" | "qty">,
+) => {
+  if (item.jenisBarang !== "digital") return 0;
+
+  const hargaModal = Number(item.hargaModal || 0);
+  const qty = Number(item.qty || 0);
+
+  if (hargaModal <= 0 || qty <= 0) return 0;
+
+  return hargaModal * qty;
+};
+
+const buildDigitalSaldoUsageTransaksi = (
+  cart: TransaksiCartItem[],
+): DigitalSaldoUsage[] => {
+  const map = new Map<string, DigitalSaldoUsage>();
+
+  for (const item of cart) {
+    if (item.jenisBarang !== "digital") continue;
+
+    const saldoSourceId = String(item.saldoSourceId || "").trim();
+    if (!saldoSourceId) continue;
+
+    const totalPotong = getDigitalNominalPotong(item);
+    const prev = map.get(saldoSourceId) || {
+      saldoSourceId,
+      saldoSourceNama:
+        String(item.saldoSourceNama || "").trim() || "Tanpa Sumber Saldo",
+      totalPotong: 0,
+      totalItem: 0,
+      totalQty: 0,
+      providers: [],
+      barangIds: [],
+    };
+
+    const provider = String(item.provider || "").trim();
+    const barangId = String(item.barangId || "").trim();
+
+    if (provider && !prev.providers.includes(provider)) prev.providers.push(provider);
+    if (barangId && !prev.barangIds.includes(barangId)) prev.barangIds.push(barangId);
+
+    prev.totalPotong += totalPotong;
+    prev.totalItem += 1;
+    prev.totalQty += Number(item.qty || 0);
+
+    if (!prev.saldoSourceNama && item.saldoSourceNama) {
+      prev.saldoSourceNama = String(item.saldoSourceNama).trim();
+    }
+
+    map.set(saldoSourceId, prev);
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.totalPotong - a.totalPotong);
+};
+
+const validateDigitalSaldoUsageTransaksi = (cart: TransaksiCartItem[]) => {
+  const digitalItems = cart.filter((item) => item.jenisBarang === "digital");
+
+  for (const item of digitalItems) {
+    if (!String(item.saldoSourceId || "").trim()) {
+      return `Sumber saldo untuk ${item.nama} belum dipilih`;
+    }
+
+    if (Number(item.hargaModal || 0) <= 0) {
+      return `Harga modal produk digital untuk ${item.nama} tidak valid`;
+    }
+  }
+
+  return null;
+};
+
+const buildDigitalSaldoRingkasanTransaksi = (cart: TransaksiCartItem[]) => {
+  return buildDigitalSaldoUsageTransaksi(cart)
+    .map((item) => {
+      const providerLabel =
+        item.providers.length > 0 ? ` · ${item.providers.join(", ")}` : "";
+      return `${item.saldoSourceNama}${providerLabel}: ${formatRupiah(
+        item.totalPotong,
+      )}`;
+    })
+    .join("");
+};
+
 export default function TransaksiPage() {
   const [loading, setLoading] = useState(false);
   const [barangLoading, setBarangLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
 
   const [tokoList, setTokoList] = useState<Toko[]>([]);
-  const [barangList, setBarangList] = useState<Barang[]>([]);
+  const [barangList, setBarangList] = useState<TransaksiBarang[]>([]);
   const [diskonList, setDiskonList] = useState<Diskon[]>([]);
   const [metodeList, setMetodeList] = useState<MetodePembayaran[]>([]);
   const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([]);
@@ -296,12 +392,13 @@ export default function TransaksiPage() {
   const [catatan, setCatatan] = useState("");
   const [activeTab, setActiveTab] = useState<"fisik" | "digital">("fisik");
   const [selectedPelangganId, setSelectedPelangganId] = useState("");
-  const [cartFisik, setCartFisik] = useState<CartItem[]>([]);
-  const [cartDigital, setCartDigital] = useState<CartItem[]>([]);
+  const [cartFisik, setCartFisik] = useState<TransaksiCartItem[]>([]);
+  const [cartDigital, setCartDigital] = useState<TransaksiCartItem[]>([]);
 
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  type StrukDataWithPelanggan = StrukData & {
+  type StrukDataWithPelanggan = Omit<StrukData, "items"> & {
+    items: Array<any>;
     pelangganId?: string;
     pelangganNama?: string;
     pelangganKode?: string;
@@ -468,7 +565,7 @@ export default function TransaksiPage() {
         query(collection(db, "barang"), where("tokoId", "==", safeTokoId)),
       );
 
-      const list: Barang[] = snap.docs
+      const list: TransaksiBarang[] = snap.docs
         .map((d) => {
           const x = d.data() as any;
           return {
@@ -497,7 +594,7 @@ export default function TransaksiPage() {
             provider: x?.provider || "",
             saldoSourceId: x?.saldoSourceId || "",
             saldoSourceNama: x?.saldoSourceNama || "",
-            nominalProduk: Number(x?.nominalProduk || 0),
+            nominalProduk: String(x?.nominalProduk || ""),
             aktif: x?.aktif !== false,
             createdAt: Number(x?.createdAt || Date.now()),
             updatedAt: x?.updatedAt ? Number(x.updatedAt) : undefined,
@@ -830,7 +927,7 @@ export default function TransaksiPage() {
   }, [barangList, selectedTokoId, searchBarang, activeTab]);
 
   const barangBarcodeMap = useMemo(() => {
-    const map = new Map<string, Barang>();
+    const map = new Map<string, TransaksiBarang>();
     for (const item of barangList) {
       if (!item?.id || !item?.kodeBarang) continue;
       if ((item.jenisBarang || "fisik") !== "fisik") continue;
@@ -847,7 +944,7 @@ export default function TransaksiPage() {
   };
 
   const addToCart = (
-    barang: Barang,
+    barang: TransaksiBarang,
     mode: AddToCartMode = "manual",
   ): AddToCartResult => {
     if (!selectedTokoId) {
@@ -863,7 +960,7 @@ export default function TransaksiPage() {
 
     setError(null);
     let status: "added" | "exists" = "added";
-    const targetSetter =
+    const targetSetter: Dispatch<SetStateAction<TransaksiCartItem[]>> =
       jenisBarang === "fisik" ? setCartFisik : setCartDigital;
 
     targetSetter((prev) => {
@@ -896,7 +993,7 @@ export default function TransaksiPage() {
                   provider: barang.provider || "",
                   saldoSourceId: barang.saldoSourceId || "",
                   saldoSourceNama: barang.saldoSourceNama || "",
-                  nominalProduk: Number(barang.nominalProduk || 0),
+                  nominalProduk: String(barang.nominalProduk || ""),
                   diskonId: diskon?.id,
                   diskonNama: diskon?.namaPromo,
                   diskonTipe: diskon?.tipeDiskon,
@@ -922,7 +1019,7 @@ export default function TransaksiPage() {
                 provider: barang.provider || "",
                 saldoSourceId: barang.saldoSourceId || "",
                 saldoSourceNama: barang.saldoSourceNama || "",
-                nominalProduk: Number(barang.nominalProduk || 0),
+                nominalProduk: String(barang.nominalProduk || ""),
                 diskonId: diskon?.id,
                 diskonNama: diskon?.namaPromo,
                 diskonTipe: diskon?.tipeDiskon,
@@ -958,7 +1055,7 @@ export default function TransaksiPage() {
           provider: barang.provider || "",
           saldoSourceId: barang.saldoSourceId || "",
           saldoSourceNama: barang.saldoSourceNama || "",
-          nominalProduk: Number(barang.nominalProduk || 0),
+          nominalProduk: String(barang.nominalProduk || ""),
           tujuan: "",
           diskonId: diskon?.id,
           diskonNama: diskon?.namaPromo,
@@ -1327,12 +1424,12 @@ export default function TransaksiPage() {
   );
 
   const digitalSaldoUsage = useMemo<DigitalSaldoUsage[]>(
-    () => buildDigitalSaldoUsage(cartDigital),
+    () => buildDigitalSaldoUsageTransaksi(cartDigital),
     [cartDigital],
   );
 
   const digitalSaldoRingkasan = useMemo(
-    () => buildDigitalSaldoRingkasan(cartDigital),
+    () => buildDigitalSaldoRingkasanTransaksi(cartDigital),
     [cartDigital],
   );
 
@@ -1368,7 +1465,7 @@ export default function TransaksiPage() {
       if (invalidTarget)
         return void setError("Isi nomor tujuan untuk semua barang digital");
 
-      const digitalSaldoError = validateDigitalSaldoUsage(cart);
+      const digitalSaldoError = validateDigitalSaldoUsageTransaksi(cart);
       if (digitalSaldoError) return void setError(digitalSaldoError);
     }
 
@@ -1397,7 +1494,7 @@ export default function TransaksiPage() {
       if (invalidTarget)
         return void setError("Isi nomor tujuan untuk semua barang digital");
 
-      const digitalSaldoError = validateDigitalSaldoUsage(cart);
+      const digitalSaldoError = validateDigitalSaldoUsageTransaksi(cart);
       if (digitalSaldoError) return void setError(digitalSaldoError);
     }
 
@@ -1433,7 +1530,7 @@ export default function TransaksiPage() {
       const totalItemSnapshot = totalItem;
       const totalJenisBarangSnapshot = totalJenisBarang;
       const catatanSnapshot = catatan.trim();
-      const digitalSaldoUsageSnapshot = buildDigitalSaldoUsage(cartSnapshot);
+      const digitalSaldoUsageSnapshot = buildDigitalSaldoUsageTransaksi(cartSnapshot);
 
       let savedTransaksiId = "";
       const itemPayload: any[] = [];
@@ -1620,7 +1717,7 @@ export default function TransaksiPage() {
             provider: item.provider || "",
             saldoSourceId: item.saldoSourceId || "",
             saldoSourceNama: item.saldoSourceNama || "",
-            nominalProduk: Number(item.nominalProduk || 0),
+            nominalProduk: String(item.nominalProduk || ""),
             tujuan: item.tujuan || "",
             diskonId: item.diskonId || "",
             diskonNama: item.diskonNama || "",
@@ -1743,7 +1840,7 @@ export default function TransaksiPage() {
           catatan: catatanSnapshot,
           jenisTransaksi: activeTab,
           digitalSaldoUsage: digitalSaldoUsageSnapshot,
-          digitalSaldoRingkasan: buildDigitalSaldoRingkasan(cartSnapshot),
+          digitalSaldoRingkasan: buildDigitalSaldoRingkasanTransaksi(cartSnapshot),
           items: itemPayload,
           kasirUid: kasirProfile.uid,
           kasirNama: kasirProfile.nama,
@@ -1877,7 +1974,7 @@ export default function TransaksiPage() {
                 provider: item?.provider || "",
                 saldoSourceId: item?.saldoSourceId || "",
                 saldoSourceNama: item?.saldoSourceNama || "",
-                nominalProduk: Number(item?.nominalProduk || 0),
+                nominalProduk: String(item?.nominalProduk || ""),
                 tujuan: item?.tujuan || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
@@ -2232,7 +2329,7 @@ export default function TransaksiPage() {
               const saldoDb = saldoSnap.data() as any;
               const saldoSebelum = Number(saldoDb?.jumlahSaldo || 0);
               const nominalKembali =
-                Number(item?.nominalProduk || 0) * qtyRetur;
+                Number(item?.hargaModal || 0) * qtyRetur;
               const saldoSesudah = saldoSebelum + nominalKembali;
 
               transaction.update(saldoRef, {
@@ -2466,7 +2563,7 @@ export default function TransaksiPage() {
             provider: item?.provider || "",
             saldoSourceId: item?.saldoSourceId || "",
             saldoSourceNama: item?.saldoSourceNama || "",
-            nominalProduk: Number(item?.nominalProduk || 0),
+            nominalProduk: String(item?.nominalProduk || ""),
             tujuan: item?.tujuan || "",
             diskonId: item?.diskonId || "",
             diskonNama: item?.diskonNama || "",
@@ -4064,9 +4161,7 @@ export default function TransaksiPage() {
                                   </span>
                                   <span>{barang.provider || "-"}</span>
                                   {barang.nominalProduk ? (
-                                    <span>
-                                      {formatRupiah(barang.nominalProduk)}
-                                    </span>
+                                    <span>{barang.nominalProduk}</span>
                                   ) : null}
                                   <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700">
                                     {barang.saldoSourceNama || "Tanpa Saldo"}

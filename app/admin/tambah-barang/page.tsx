@@ -9,6 +9,7 @@
   - print barcode hanya untuk barang fisik
   - download template Excel, download data Excel, dan import Excel dengan style border konsisten
   - nominal produk digital dibuat fleksibel: bisa angka atau huruf, misalnya Pulsa 10K / Data 5GB
+  - input harga modal dan harga jual otomatis memakai titik ribuan agar mudah dibaca
 */
 
 "use client"
@@ -212,6 +213,24 @@ function formatRupiah(value: number) {
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(value || 0)
+}
+
+function onlyDigits(value: unknown) {
+  return String(value ?? "").replace(/\D/g, "")
+}
+
+function formatNumberDots(value: unknown) {
+  const digits = onlyDigits(value)
+  if (!digits) return ""
+  return new Intl.NumberFormat("id-ID", {
+    maximumFractionDigits: 0,
+  }).format(Number(digits))
+}
+
+function parseRupiahNumber(value: unknown) {
+  const digits = onlyDigits(value)
+  if (!digits) return 0
+  return Number(digits)
 }
 
 function normalizeBarcode(value: string) {
@@ -1815,8 +1834,8 @@ export default function TambahBarangPage() {
       satuan: d.satuanNama || d.satuan || "",
       satuanId: d.satuanId || "",
       satuanNama: d.satuanNama || d.satuan || "",
-      hargaModal: String(d.hargaModal || ""),
-      hargaJual: String(d.hargaJual || ""),
+      hargaModal: formatNumberDots(d.hargaModal),
+      hargaJual: formatNumberDots(d.hargaJual),
       stok: String(d.stok || ""),
       stokMinimum: String(d.stokMinimum || ""),
       pakaiKodeUnik: Boolean(d.pakaiKodeUnik),
@@ -1876,8 +1895,8 @@ export default function TambahBarangPage() {
       if (duplicateInput) return `${duplicateInput} dobel di input`
     }
 
-    const hargaModal = Number(form.hargaModal)
-    const hargaJual = Number(form.hargaJual)
+    const hargaModal = parseRupiahNumber(form.hargaModal)
+    const hargaJual = parseRupiahNumber(form.hargaJual)
     const stok = Number(form.stok || 0)
     const stokMinimum = Number(form.stokMinimum || 0)
 
@@ -2017,8 +2036,8 @@ export default function TambahBarangPage() {
         satuan: isDigitalForm ? "transaksi" : satuanDipilih?.nama || form.satuanNama || form.satuan || "",
         satuanId: isDigitalForm ? "" : satuanDipilih?.id || "",
         satuanNama: isDigitalForm ? "transaksi" : satuanDipilih?.nama || form.satuanNama || form.satuan || "",
-        hargaModal: Number(form.hargaModal),
-        hargaJual: Number(form.hargaJual),
+        hargaModal: parseRupiahNumber(form.hargaModal),
+        hargaJual: parseRupiahNumber(form.hargaJual),
         stok: isDigitalForm ? 0 : isMultiKodeUnik ? 1 : Number(form.stok),
         stokMinimum: isDigitalForm ? 0 : Number(form.stokMinimum),
         pakaiKodeUnik,
@@ -3940,8 +3959,8 @@ export default function TambahBarangPage() {
                         icon={BadgeDollarSign}
                         inputMode="numeric"
                         value={form.hargaModal}
-                        onChange={(e: any) => setField("hargaModal")(e.target.value.replace(/[^\d]/g, ""))}
-                        placeholder="Contoh: 4500"
+                        onChange={(e: any) => setField("hargaModal")(formatNumberDots(e.target.value))}
+                        placeholder="Contoh: 4.500"
                       />
 
                       <FormInput
@@ -3950,8 +3969,8 @@ export default function TambahBarangPage() {
                         icon={BadgeDollarSign}
                         inputMode="numeric"
                         value={form.hargaJual}
-                        onChange={(e: any) => setField("hargaJual")(e.target.value.replace(/[^\d]/g, ""))}
-                        placeholder="Contoh: 6000"
+                        onChange={(e: any) => setField("hargaJual")(formatNumberDots(e.target.value))}
+                        placeholder="Contoh: 6.000"
                       />
                     </div>
 
