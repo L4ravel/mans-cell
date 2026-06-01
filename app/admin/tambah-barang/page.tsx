@@ -3263,8 +3263,7 @@ export default function TambahBarangPage() {
             )}
             icon={Package}
             tone="sky"
-            active={statValueMode.totalBarang === "modal"}
-            hint={statValueMode.totalBarang === "modal" ? "Klik: jumlah barang" : "Klik: total modal"}
+            active={statValueMode.totalBarang === "modal"}           
             onClick={() => toggleStatValueMode("totalBarang")}
           />
           <BarangStatCard
@@ -3275,8 +3274,7 @@ export default function TambahBarangPage() {
             )}
             icon={Boxes}
             tone="blue"
-            active={statValueMode.totalFisik === "modal"}
-            hint={statValueMode.totalFisik === "modal" ? "Modal × stok fisik" : "Klik: total modal"}
+            active={statValueMode.totalFisik === "modal"}            
             onClick={() => toggleStatValueMode("totalFisik")}
           />
           <BarangStatCard
@@ -3287,8 +3285,7 @@ export default function TambahBarangPage() {
             )}
             icon={Smartphone}
             tone="slate"
-            active={statValueMode.totalDigital === "modal"}
-            hint={statValueMode.totalDigital === "modal" ? "Total harga modal" : "Klik: total modal"}
+            active={statValueMode.totalDigital === "modal"}           
             onClick={() => toggleStatValueMode("totalDigital")}
           />
           <BarangStatCard

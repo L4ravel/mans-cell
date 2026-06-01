@@ -1502,8 +1502,7 @@ export default function TambahBarangTetapPage() {
             value={statModalView.total ? formatRupiah(stats.totalModalAset) : String(stats.totalAset)}
             icon={Boxes}
             tone="sky"
-            active={statModalView.total}
-            hint="Klik untuk lihat modal"
+            active={statModalView.total}            
             onClick={() =>
               setStatModalView((prev) => ({ ...prev, total: !prev.total }))
             }
@@ -1513,8 +1512,7 @@ export default function TambahBarangTetapPage() {
             value={statModalView.aktif ? formatRupiah(stats.totalModalAktif) : String(stats.totalAktif)}
             icon={Building2}
             tone="blue"
-            active={statModalView.aktif}
-            hint="Klik untuk lihat modal"
+            active={statModalView.aktif}           
             onClick={() =>
               setStatModalView((prev) => ({ ...prev, aktif: !prev.aktif }))
             }
@@ -1524,8 +1522,7 @@ export default function TambahBarangTetapPage() {
             value={statModalView.terjual ? formatRupiah(stats.totalModalTerjual) : String(stats.totalTerjual)}
             icon={CheckCircle2}
             tone="slate"
-            active={statModalView.terjual}
-            hint="Klik untuk lihat modal"
+            active={statModalView.terjual}           
             onClick={() =>
               setStatModalView((prev) => ({ ...prev, terjual: !prev.terjual }))
             }
