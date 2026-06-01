@@ -158,6 +158,22 @@ function isBarangTerjual(item?: BarangTetap | null) {
   return Boolean(item?.sudahDijual || item?.statusAset === "terjual")
 }
 
+function getModalBarangTetap(item?: BarangTetap | null) {
+  if (!item) return 0
+
+  if (isBarangTerjual(item)) {
+    return Number(
+      item.hargaAwal ||
+        item.hargaAsetSebelumDijual ||
+        item.hargaAsetSesudahDijual ||
+        item.harga ||
+        0
+    )
+  }
+
+  return Number(item.harga || 0)
+}
+
 function buildKategoriBreakdown(
   existing: any,
   kategoriId: string,
@@ -683,6 +699,11 @@ export default function TambahBarangTetapPage() {
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
+  const [statModalView, setStatModalView] = useState({
+    total: false,
+    aktif: false,
+    terjual: false,
+  })
 
   const isEdit = !!editId
 
@@ -812,12 +833,38 @@ export default function TambahBarangTetapPage() {
   const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
 
   const stats = useMemo(() => {
-    const totalAset = filtered.length
-    const totalAktif = filtered.filter((item) => !isBarangTerjual(item)).length
-    const totalTerjual = filtered.filter((item) => isBarangTerjual(item)).length
-    const totalKeuntungan = filtered.reduce((sum, item) => sum + Number(item.keuntungan || 0), 0)
+    const asetAktif = filtered.filter((item) => !isBarangTerjual(item))
+    const asetTerjual = filtered.filter((item) => isBarangTerjual(item))
 
-    return { totalAset, totalAktif, totalTerjual, totalKeuntungan }
+    const totalAset = filtered.length
+    const totalAktif = asetAktif.length
+    const totalTerjual = asetTerjual.length
+    const totalModalAset = filtered.reduce(
+      (sum, item) => sum + getModalBarangTetap(item),
+      0
+    )
+    const totalModalAktif = asetAktif.reduce(
+      (sum, item) => sum + getModalBarangTetap(item),
+      0
+    )
+    const totalModalTerjual = asetTerjual.reduce(
+      (sum, item) => sum + getModalBarangTetap(item),
+      0
+    )
+    const totalKeuntungan = filtered.reduce(
+      (sum, item) => sum + Number(item.keuntungan || 0),
+      0
+    )
+
+    return {
+      totalAset,
+      totalAktif,
+      totalTerjual,
+      totalModalAset,
+      totalModalAktif,
+      totalModalTerjual,
+      totalKeuntungan,
+    }
   }, [filtered])
 
   useEffect(() => {
@@ -1450,9 +1497,39 @@ export default function TambahBarangTetapPage() {
         </AnimatePresence>
 
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-          <StatCard label="Total Data" value={String(stats.totalAset)} icon={Boxes} tone="sky" />
-          <StatCard label="Aset Tetap" value={String(stats.totalAktif)} icon={Building2} tone="blue" />
-          <StatCard label="Sudah Dijual" value={String(stats.totalTerjual)} icon={CheckCircle2} tone="slate" />
+          <StatCard
+            label={statModalView.total ? "Total Modal" : "Total Data"}
+            value={statModalView.total ? formatRupiah(stats.totalModalAset) : String(stats.totalAset)}
+            icon={Boxes}
+            tone="sky"
+            active={statModalView.total}
+            hint="Klik untuk lihat modal"
+            onClick={() =>
+              setStatModalView((prev) => ({ ...prev, total: !prev.total }))
+            }
+          />
+          <StatCard
+            label={statModalView.aktif ? "Modal Aset" : "Aset Tetap"}
+            value={statModalView.aktif ? formatRupiah(stats.totalModalAktif) : String(stats.totalAktif)}
+            icon={Building2}
+            tone="blue"
+            active={statModalView.aktif}
+            hint="Klik untuk lihat modal"
+            onClick={() =>
+              setStatModalView((prev) => ({ ...prev, aktif: !prev.aktif }))
+            }
+          />
+          <StatCard
+            label={statModalView.terjual ? "Modal Terjual" : "Sudah Dijual"}
+            value={statModalView.terjual ? formatRupiah(stats.totalModalTerjual) : String(stats.totalTerjual)}
+            icon={CheckCircle2}
+            tone="slate"
+            active={statModalView.terjual}
+            hint="Klik untuk lihat modal"
+            onClick={() =>
+              setStatModalView((prev) => ({ ...prev, terjual: !prev.terjual }))
+            }
+          />
           <StatCard label="Selisih Jual" value={formatSignedRupiah(stats.totalKeuntungan)} icon={BadgeDollarSign} tone="rose" />
         </div>
 
@@ -1742,11 +1819,17 @@ function StatCard({
   value,
   icon: Icon,
   tone,
+  onClick,
+  active,
+  hint,
 }: {
   label: string
   value: string
   icon: any
   tone: "slate" | "sky" | "blue" | "rose"
+  onClick?: () => void
+  active?: boolean
+  hint?: string
 }) {
   const cls =
     tone === "sky"
@@ -1757,21 +1840,56 @@ function StatCard({
           ? "bg-rose-50 text-rose-600"
           : "bg-slate-100 text-slate-500"
 
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${cls}`}>
-          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
-        </div>
-        <div className="min-w-0 flex-1">
+  const content = (
+    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${cls}`}>
+        <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+      </div>
+      <div className="min-w-0 flex-1 text-left">
+        <div className="flex min-w-0 items-center gap-1.5">
           <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">
             {label}
           </p>
-          <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">
-            {value}
-          </p>
+          {active && (
+            <span className="hidden rounded-full bg-sky-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-sky-600 sm:inline-flex">
+              Modal
+            </span>
+          )}
         </div>
+        <p className="mt-0.5 truncate text-[13px] font-black leading-tight text-slate-800 sm:text-xl">
+          {value}
+        </p>
+        {onClick && hint && (
+          <p className="mt-0.5 hidden truncate text-[9px] font-bold text-slate-400 sm:block">
+            {active ? "Klik untuk lihat jumlah" : hint}
+          </p>
+        )}
       </div>
+    </div>
+  )
+
+  if (onClick) {
+    return (
+      <motion.button
+        whileTap={{ scale: 0.97 }}
+        transition={{ duration: 0.12, ease: "easeOut" }}
+        onClick={onClick}
+        type="button"
+        className={`w-full rounded-2xl border bg-white p-2.5 shadow-sm transition sm:p-4 ${
+          active
+            ? "border-sky-200 ring-2 ring-sky-100"
+            : "border-slate-200 hover:border-sky-200 hover:bg-sky-50/30"
+        }`}
+        title={active ? "Klik untuk lihat jumlah" : hint}
+      >
+        {content}
+      </motion.button>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+      {content}
     </div>
   )
 }

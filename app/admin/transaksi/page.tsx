@@ -11,6 +11,7 @@
   - Layout riwayat dan modal retur dibuat konsisten hijau sky.
   - Tambah pelanggan opsional agar diskon member masuk transaksi tanpa terlalu menonjol.
   - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
+  - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
 */
 
 "use client";
@@ -87,6 +88,7 @@ import {
   normalizeBarcode,
   hitungHargaSetelahDiskon,
   getBestDiskonForBarang,
+  hitungPromoCartItem,
   getTanggalParts,
   buildLaporanPayload,
   formatJenisBarangLabel,
@@ -371,6 +373,38 @@ const buildDigitalSaldoRingkasanTransaksi = (cart: TransaksiCartItem[]) => {
     .join("");
 };
 
+const getPromoReminderText = (diskon?: Diskon | null) => {
+  if (!diskon) return "";
+
+  const jenisPromo = String(diskon.jenisPromo || "diskon_langsung");
+  const nilaiDiskon = Number(diskon.nilaiDiskon || 0);
+  const minimalQty = Number(diskon.minimalQty || 0);
+  const gratisQty = Number(diskon.gratisQty || 0);
+
+  if (jenisPromo === "beli_x_gratis_y") {
+    if (minimalQty > 0 && gratisQty > 0) {
+      return `Ada promo: beli ${minimalQty} gratis ${gratisQty}`;
+    }
+    return `Ada promo: ${diskon.namaPromo}`;
+  }
+
+  if (jenisPromo === "beli_x_diskon_nominal") {
+    if (minimalQty > 0 && nilaiDiskon > 0) {
+      return `Ada promo: beli ${minimalQty} hemat ${formatRupiah(nilaiDiskon)}`;
+    }
+    return `Ada promo: ${diskon.namaPromo}`;
+  }
+
+  if (nilaiDiskon > 0) {
+    return diskon.tipeDiskon === "persen"
+      ? `Ada promo: diskon ${nilaiDiskon}%`
+      : `Ada promo: diskon ${formatRupiah(nilaiDiskon)}`;
+  }
+
+  return `Ada promo: ${diskon.namaPromo}`;
+};
+
+
 export default function TransaksiPage() {
   const [loading, setLoading] = useState(false);
   const [barangLoading, setBarangLoading] = useState(false);
@@ -629,8 +663,15 @@ export default function TransaksiPage() {
         namaPromo: x?.namaPromo || "",
         tokoId: x?.tokoId || "",
         tokoNama: x?.tokoNama || "",
+        jenisPromo:
+          x?.jenisPromo === "beli_x_gratis_y" ||
+          x?.jenisPromo === "beli_x_diskon_nominal"
+            ? x.jenisPromo
+            : "diskon_langsung",
         tipeDiskon: x?.tipeDiskon === "nominal" ? "nominal" : "persen",
         nilaiDiskon: Number(x?.nilaiDiskon || 0),
+        minimalQty: Number(x?.minimalQty || 0),
+        gratisQty: Number(x?.gratisQty || 0),
         barangIds: Array.isArray(x?.barangIds) ? x.barangIds : [],
         barangRingkas: Array.isArray(x?.barangRingkas)
           ? x.barangRingkas.map((item: any) => ({
@@ -902,8 +943,52 @@ export default function TransaksiPage() {
     return Math.min(100, Math.max(0, diskon));
   }, [selectedPelanggan]);
 
-  const cart = activeTab === "fisik" ? cartFisik : cartDigital;
+  const rawCart = activeTab === "fisik" ? cartFisik : cartDigital;
   const setCart = activeTab === "fisik" ? setCartFisik : setCartDigital;
+
+  const cart = useMemo(() => {
+    const activeDiskon = diskonList.filter(
+      (d) => d.isActive && (!selectedTokoId || d.tokoId === selectedTokoId),
+    );
+
+    return rawCart.map((item) => {
+      const diskon = getBestDiskonForBarang(
+        item.barangId,
+        activeDiskon,
+        item.qty,
+        item.hargaAsli,
+      );
+
+      const promo = hitungPromoCartItem({
+        hargaJual: item.hargaAsli,
+        qty: item.qty,
+        tipeDiskon: diskon?.tipeDiskon,
+        nilaiDiskon: diskon?.nilaiDiskon,
+        jenisPromo: diskon?.jenisPromo,
+        minimalQty: diskon?.minimalQty,
+        gratisQty: diskon?.gratisQty,
+      });
+
+      const adaPromo = Boolean(diskon);
+      const promoAktif = Boolean(diskon && promo.totalDiskon > 0);
+      const reminderPromo = getPromoReminderText(diskon);
+
+      return {
+        ...item,
+        hargaSetelahDiskon: promo.hargaSatuanFinal,
+        diskonId: adaPromo ? diskon?.id || "" : "",
+        diskonNama: adaPromo ? diskon?.namaPromo || "" : "",
+        diskonJenisPromo: adaPromo ? promo.jenisPromo : undefined,
+        diskonTipe: adaPromo ? diskon?.tipeDiskon : undefined,
+        diskonNilai: adaPromo ? Number(diskon?.nilaiDiskon || 0) : 0,
+        diskonMinimalQty: adaPromo ? Number(diskon?.minimalQty || 0) : 0,
+        diskonGratisQty: adaPromo ? Number(diskon?.gratisQty || 0) : 0,
+        diskonQtyGratis: promoAktif ? Number(promo.qtyGratis || 0) : 0,
+        diskonPaketPromo: promoAktif ? Number(promo.paketPromo || 0) : 0,
+        diskonDeskripsi: promoAktif && promo.deskripsiPromo ? promo.deskripsiPromo : reminderPromo,
+      };
+    });
+  }, [rawCart, diskonList, selectedTokoId]);
 
   const barangByToko = useMemo(() => {
     const q = searchBarang.toLowerCase().trim();
@@ -968,12 +1053,19 @@ export default function TransaksiPage() {
       const diskon = getBestDiskonForBarang(
         barang.id,
         diskonList.filter((d) => d.tokoId === barang.tokoId && d.isActive),
-      );
-      const hargaSetelahDiskon = hitungHargaSetelahDiskon(
+        found ? found.qty : 1,
         barang.hargaJual,
-        diskon?.tipeDiskon,
-        diskon?.nilaiDiskon,
       );
+      const promoSatuan = hitungPromoCartItem({
+        hargaJual: barang.hargaJual,
+        qty: found ? found.qty : 1,
+        tipeDiskon: diskon?.tipeDiskon,
+        nilaiDiskon: diskon?.nilaiDiskon,
+        jenisPromo: diskon?.jenisPromo,
+        minimalQty: diskon?.minimalQty,
+        gratisQty: diskon?.gratisQty,
+      });
+      const hargaSetelahDiskon = promoSatuan.hargaSatuanFinal;
 
       if (found) {
         status = "exists";
@@ -996,8 +1088,11 @@ export default function TransaksiPage() {
                   nominalProduk: String(barang.nominalProduk || ""),
                   diskonId: diskon?.id,
                   diskonNama: diskon?.namaPromo,
+                  diskonJenisPromo: diskon?.jenisPromo,
                   diskonTipe: diskon?.tipeDiskon,
                   diskonNilai: diskon?.nilaiDiskon,
+                  diskonMinimalQty: Number(diskon?.minimalQty || 0),
+                  diskonGratisQty: Number(diskon?.gratisQty || 0),
                 }
               : item,
           );
@@ -1022,8 +1117,11 @@ export default function TransaksiPage() {
                 nominalProduk: String(barang.nominalProduk || ""),
                 diskonId: diskon?.id,
                 diskonNama: diskon?.namaPromo,
+                diskonJenisPromo: diskon?.jenisPromo,
                 diskonTipe: diskon?.tipeDiskon,
                 diskonNilai: diskon?.nilaiDiskon,
+                diskonMinimalQty: Number(diskon?.minimalQty || 0),
+                diskonGratisQty: Number(diskon?.gratisQty || 0),
               }
             : item,
         );
@@ -1059,8 +1157,11 @@ export default function TransaksiPage() {
           tujuan: "",
           diskonId: diskon?.id,
           diskonNama: diskon?.namaPromo,
+          diskonJenisPromo: diskon?.jenisPromo,
           diskonTipe: diskon?.tipeDiskon,
           diskonNilai: diskon?.nilaiDiskon,
+          diskonMinimalQty: Number(diskon?.minimalQty || 0),
+          diskonGratisQty: Number(diskon?.gratisQty || 0),
         },
       ];
     });
@@ -1350,7 +1451,18 @@ export default function TransaksiPage() {
   );
   const totalSetelahDiskonBarang = useMemo(
     () =>
-      cart.reduce((acc, item) => acc + item.hargaSetelahDiskon * item.qty, 0),
+      cart.reduce((acc, item) => {
+        const promo = hitungPromoCartItem({
+          hargaJual: item.hargaAsli,
+          qty: item.qty,
+          tipeDiskon: item.diskonTipe,
+          nilaiDiskon: item.diskonNilai,
+          jenisPromo: item.diskonJenisPromo,
+          minimalQty: item.diskonMinimalQty,
+          gratisQty: item.diskonGratisQty,
+        });
+        return acc + promo.subtotalFinal;
+      }, 0),
     [cart],
   );
   const totalDiskonBarang = useMemo(
@@ -1673,9 +1785,17 @@ export default function TransaksiPage() {
         }
 
         for (const item of cartSnapshot) {
-          const subtotalAsliItem = item.hargaAsli * item.qty;
-          const subtotalFinalSebelumPelanggan =
-            item.hargaSetelahDiskon * item.qty;
+          const promoItem = hitungPromoCartItem({
+            hargaJual: item.hargaAsli,
+            qty: item.qty,
+            tipeDiskon: item.diskonTipe,
+            nilaiDiskon: item.diskonNilai,
+            jenisPromo: item.diskonJenisPromo,
+            minimalQty: item.diskonMinimalQty,
+            gratisQty: item.diskonGratisQty,
+          });
+          const subtotalAsliItem = promoItem.subtotalAsli;
+          const subtotalFinalSebelumPelanggan = promoItem.subtotalFinal;
           const proporsiDiskonPelanggan =
             totalSetelahDiskonBarangSnapshot > 0
               ? subtotalFinalSebelumPelanggan / totalSetelahDiskonBarangSnapshot
@@ -1702,7 +1822,7 @@ export default function TransaksiPage() {
             qty: item.qty,
             hargaModal: item.hargaModal,
             hargaAsli: item.hargaAsli,
-            hargaSetelahDiskon: item.hargaSetelahDiskon,
+            hargaSetelahDiskon: promoItem.hargaSatuanFinal,
             subtotalAsli: subtotalAsliItem,
             subtotalFinal: subtotalFinalItem,
             subtotalFinalSebelumPelanggan,
@@ -1721,8 +1841,14 @@ export default function TransaksiPage() {
             tujuan: item.tujuan || "",
             diskonId: item.diskonId || "",
             diskonNama: item.diskonNama || "",
+            diskonJenisPromo: item.diskonJenisPromo || "",
             diskonTipe: item.diskonTipe || "",
             diskonNilai: Number(item.diskonNilai || 0),
+            diskonMinimalQty: Number(item.diskonMinimalQty || 0),
+            diskonGratisQty: Number(item.diskonGratisQty || 0),
+            diskonQtyGratis: Number(item.diskonQtyGratis || 0),
+            diskonPaketPromo: Number(item.diskonPaketPromo || 0),
+            diskonDeskripsi: item.diskonDeskripsi || "",
           };
           itemPayload.push(itemRow);
 
@@ -1978,8 +2104,14 @@ export default function TransaksiPage() {
                 tujuan: item?.tujuan || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
+                diskonJenisPromo: item?.diskonJenisPromo || "",
                 diskonTipe: item?.diskonTipe || "",
                 diskonNilai: Number(item?.diskonNilai || 0),
+                diskonMinimalQty: Number(item?.diskonMinimalQty || 0),
+                diskonGratisQty: Number(item?.diskonGratisQty || 0),
+                diskonQtyGratis: Number(item?.diskonQtyGratis || 0),
+                diskonPaketPromo: Number(item?.diskonPaketPromo || 0),
+                diskonDeskripsi: item?.diskonDeskripsi || "",
               }))
             : itemPayload,
           createdAtMs: Number(x?.createdAtMs || nowMs),
@@ -2567,8 +2699,14 @@ export default function TransaksiPage() {
             tujuan: item?.tujuan || "",
             diskonId: item?.diskonId || "",
             diskonNama: item?.diskonNama || "",
+            diskonJenisPromo: item?.diskonJenisPromo || "",
             diskonTipe: item?.diskonTipe || "",
             diskonNilai: Number(item?.diskonNilai || 0),
+            diskonMinimalQty: Number(item?.diskonMinimalQty || 0),
+            diskonGratisQty: Number(item?.diskonGratisQty || 0),
+            diskonQtyGratis: Number(item?.diskonQtyGratis || 0),
+            diskonPaketPromo: Number(item?.diskonPaketPromo || 0),
+            diskonDeskripsi: item?.diskonDeskripsi || "",
           }))
         : [],
       createdAtMs: Number(trx.createdAtMs || Date.now()),
@@ -2801,6 +2939,11 @@ export default function TransaksiPage() {
                               ? `${item.provider || "-"} · ${item.tujuan || "-"}`
                               : `${item.kodeBarang || "-"} · ${item.kategoriNama || "-"}`}
                           </p>
+                          {item.diskonDeskripsi && (
+                            <p className="mt-1 text-[10px] font-black text-emerald-600">
+                              {item.diskonDeskripsi}
+                            </p>
+                          )}
                         </div>
 
                         <div className="shrink-0 text-right">
@@ -3386,11 +3529,16 @@ export default function TransaksiPage() {
                         (d) => d.tokoId === barang.tokoId && d.isActive,
                       ),
                     );
-                    const hargaPromo = hitungHargaSetelahDiskon(
-                      barang.hargaJual,
-                      diskon?.tipeDiskon,
-                      diskon?.nilaiDiskon,
-                    );
+                    const promoLangsung =
+                      diskon?.jenisPromo === "diskon_langsung";
+                    const hargaPromo = promoLangsung
+                      ? hitungHargaSetelahDiskon(
+                          barang.hargaJual,
+                          diskon?.tipeDiskon,
+                          diskon?.nilaiDiskon,
+                        )
+                      : barang.hargaJual;
+                    const promoReminder = getPromoReminderText(diskon);
                     const isOutStock =
                       (barang.jenisBarang || "fisik") === "fisik" &&
                       barang.stok <= 0;
@@ -3433,7 +3581,12 @@ export default function TransaksiPage() {
                               </div>
                             )}
                             <div className="mt-2">
-                              {diskon ? (
+                              {promoReminder && (
+                                <span className="mb-1.5 inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-700">
+                                  {promoReminder}
+                                </span>
+                              )}
+                              {promoLangsung && hargaPromo < barang.hargaJual ? (
                                 <>
                                   <p className="text-[10px] font-bold text-slate-400 line-through">
                                     {formatRupiah(barang.hargaJual)}
@@ -3533,6 +3686,18 @@ export default function TransaksiPage() {
                           <p className="mt-1 text-xs font-semibold text-slate-500">
                             {item.kodeBarang || item.provider || "-"}
                           </p>
+                          {item.diskonNama && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              <span className="inline-flex rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-black text-sky-700">
+                                {item.diskonNama}
+                              </span>
+                              {item.diskonDeskripsi && (
+                                <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-700">
+                                  {item.diskonDeskripsi}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -4108,11 +4273,16 @@ export default function TransaksiPage() {
                           (d) => d.tokoId === barang.tokoId && d.isActive,
                         ),
                       );
-                      const hargaPromo = hitungHargaSetelahDiskon(
-                        barang.hargaJual,
-                        diskon?.tipeDiskon,
-                        diskon?.nilaiDiskon,
-                      );
+                      const promoLangsung =
+                        diskon?.jenisPromo === "diskon_langsung";
+                      const hargaPromo = promoLangsung
+                        ? hitungHargaSetelahDiskon(
+                            barang.hargaJual,
+                            diskon?.tipeDiskon,
+                            diskon?.nilaiDiskon,
+                          )
+                        : barang.hargaJual;
+                      const promoReminder = getPromoReminderText(diskon);
                       const isOutStock =
                         (barang.jenisBarang || "fisik") === "fisik" &&
                         barang.stok <= 0;
@@ -4180,7 +4350,12 @@ export default function TransaksiPage() {
                           </div>
 
                           <div className="mt-3">
-                            {diskon ? (
+                            {promoReminder && (
+                              <span className="mb-1.5 inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-700">
+                                {promoReminder}
+                              </span>
+                            )}
+                            {promoLangsung && hargaPromo < barang.hargaJual ? (
                               <>
                                 <p className="text-xs font-bold text-slate-400 line-through">
                                   {formatRupiah(barang.hargaJual)}
@@ -4266,9 +4441,16 @@ export default function TransaksiPage() {
                                 </div>
                               )}
                               {item.diskonNama && (
-                                <span className="mt-2 inline-flex rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-black text-sky-700">
-                                  {item.diskonNama}
-                                </span>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  <span className="inline-flex rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-black text-sky-700">
+                                    {item.diskonNama}
+                                  </span>
+                                  {item.diskonDeskripsi && (
+                                    <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+                                      {item.diskonDeskripsi}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
 

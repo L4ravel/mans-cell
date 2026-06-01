@@ -917,7 +917,7 @@ export default function TerimaBarangPage() {
     if (!user || !receiveTarget) return
 
     if (!isAdminUser && (!userTokoId || receiveTarget.tokoTujuanId !== userTokoId)) {
-      setError("Kamu hanya bisa menerima barang untuk toko milikmu sendiri")
+      setError("Anda hanya bisa menerima barang untuk toko milikmu sendiri")
       return
     }
 
@@ -946,7 +946,7 @@ export default function TerimaBarangPage() {
         if (latestStatus !== "DIKIRIM") throw new Error("Transfer belum bisa diterima")
         if (qty <= 0) throw new Error("Qty transfer tidak valid")
         if (!isAdminUser && latestTokoTujuanId !== userTokoId) {
-          throw new Error("Kamu hanya bisa menerima barang untuk toko milikmu sendiri")
+          throw new Error("Anda hanya bisa menerima barang untuk toko milikmu sendiri")
         }
 
         if (targetSnap.exists()) {

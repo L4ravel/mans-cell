@@ -1699,7 +1699,7 @@ function DeleteModal({
 
             <div className="space-y-3 p-5">
               <p className="text-[11px] font-semibold text-slate-600">
-                Kamu yakin mau menghapus karyawan ini?
+                Anda yakin mau menghapus karyawan ini?
               </p>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-black text-slate-800">{target.nama}</p>

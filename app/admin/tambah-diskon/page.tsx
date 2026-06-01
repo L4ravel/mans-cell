@@ -2,6 +2,10 @@
   Halaman admin diskon untuk CRUD data diskon langsung ke Firestore dari client.
   Diskon dibuat sebagai master promo, memilih toko dan barang dari database,
   dengan layout konsisten seperti halaman master data lainnya.
+  Revisi:
+  - Tambah jenis promo diskon langsung, beli X gratis Y, dan beli X diskon nominal.
+  - Field lama tipeDiskon/nilaiDiskon tetap disimpan agar transaksi lama tetap aman.
+  - Input angka nominal/jumlah diformat titik ribuan agar mudah dibaca.
 */
 
 "use client";
@@ -66,13 +70,18 @@ type DiskonBarangRingkas = {
   hargaJual: number;
 };
 
+type JenisPromo = "diskon_langsung" | "beli_x_gratis_y" | "beli_x_diskon_nominal";
+
 type Diskon = {
   id: string;
   namaPromo: string;
   tokoId: string;
   tokoNama: string;
+  jenisPromo: JenisPromo;
   tipeDiskon: "persen" | "nominal";
   nilaiDiskon: number;
+  minimalQty: number;
+  gratisQty: number;
   barangIds: string[];
   barangRingkas: DiskonBarangRingkas[];
   isActive: boolean;
@@ -83,8 +92,11 @@ type Diskon = {
 type DiskonForm = {
   namaPromo: string;
   tokoId: string;
+  jenisPromo: JenisPromo;
   tipeDiskon: "persen" | "nominal";
   nilaiDiskon: string;
+  minimalQty: string;
+  gratisQty: string;
   barangIds: string[];
   isActive: boolean;
 };
@@ -100,11 +112,24 @@ const ITEMS_OPTIONS = [
 const EMPTY_FORM: DiskonForm = {
   namaPromo: "",
   tokoId: "",
+  jenisPromo: "diskon_langsung",
   tipeDiskon: "persen",
   nilaiDiskon: "",
+  minimalQty: "",
+  gratisQty: "",
   barangIds: [],
   isActive: true,
 };
+
+function parseNumberInput(value: string | number | null | undefined) {
+  return Number(String(value || "").replace(/\D/g, "") || 0);
+}
+
+function formatNumberInput(value: string | number | null | undefined) {
+  const angka = String(value || "").replace(/\D/g, "");
+  if (!angka) return "";
+  return Number(angka).toLocaleString("id-ID");
+}
 
 function FormInput({
   label,
@@ -281,8 +306,11 @@ export default function TambahDiskonPage() {
           namaPromo: x?.namaPromo || "",
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || "",
+          jenisPromo: (x?.jenisPromo || "diskon_langsung") as JenisPromo,
           tipeDiskon: x?.tipeDiskon === "nominal" ? "nominal" : "persen",
           nilaiDiskon: Number(x?.nilaiDiskon || 0),
+          minimalQty: Number(x?.minimalQty || 0),
+          gratisQty: Number(x?.gratisQty || 0),
           barangIds: Array.isArray(x?.barangIds) ? x.barangIds : [],
           barangRingkas: Array.isArray(x?.barangRingkas)
             ? x.barangRingkas.map((item: any) => ({
@@ -401,8 +429,11 @@ export default function TambahDiskonPage() {
     setForm({
       namaPromo: d.namaPromo,
       tokoId: d.tokoId,
+      jenisPromo: d.jenisPromo || "diskon_langsung",
       tipeDiskon: d.tipeDiskon,
-      nilaiDiskon: String(d.nilaiDiskon),
+      nilaiDiskon: d.nilaiDiskon ? formatNumberInput(d.nilaiDiskon) : "",
+      minimalQty: d.minimalQty ? formatNumberInput(d.minimalQty) : "",
+      gratisQty: d.gratisQty ? formatNumberInput(d.gratisQty) : "",
       barangIds: d.barangIds || [],
       isActive: d.isActive,
     });
@@ -436,9 +467,27 @@ export default function TambahDiskonPage() {
     return `Rp ${Number(nilai || 0).toLocaleString("id-ID")}`;
   };
 
+  const formatJenisPromoLabel = (jenisPromo?: JenisPromo) => {
+    if (jenisPromo === "beli_x_gratis_y") return "Beli X Gratis Y";
+    if (jenisPromo === "beli_x_diskon_nominal") return "Beli X Diskon";
+    return "Diskon Langsung";
+  };
+
   const formatNilaiDiskon = (tipe: "persen" | "nominal", nilai: number) => {
     if (tipe === "persen") return `${nilai}%`;
     return formatRupiah(nilai);
+  };
+
+  const formatPromoValue = (diskon: Pick<Diskon, "jenisPromo" | "tipeDiskon" | "nilaiDiskon" | "minimalQty" | "gratisQty">) => {
+    if (diskon.jenisPromo === "beli_x_gratis_y") {
+      return `Beli ${Number(diskon.minimalQty || 0)} gratis ${Number(diskon.gratisQty || 0)}`;
+    }
+
+    if (diskon.jenisPromo === "beli_x_diskon_nominal") {
+      return `Beli ${Number(diskon.minimalQty || 0)} diskon ${formatRupiah(diskon.nilaiDiskon || 0)}`;
+    }
+
+    return formatNilaiDiskon(diskon.tipeDiskon, diskon.nilaiDiskon);
   };
 
   const hitungHargaSetelahDiskon = (
@@ -467,19 +516,23 @@ export default function TambahDiskonPage() {
     return `${formatRupiah(min)} - ${formatRupiah(max)}`;
   };
 
-  const getHargaSesudahText = (
-    items: DiskonBarangRingkas[],
-    tipe: "persen" | "nominal",
-    nilaiDiskon: number,
-  ) => {
-    if (!items.length) return "—";
+  const getHargaSesudahText = (diskon: Pick<Diskon, "jenisPromo" | "tipeDiskon" | "nilaiDiskon" | "minimalQty" | "gratisQty" | "barangRingkas">) => {
+    if (!diskon.barangRingkas.length) return "—";
 
-    const hargaList = items
+    if (diskon.jenisPromo === "beli_x_gratis_y") {
+      return `Syarat beli ${Number(diskon.minimalQty || 0)} + gratis ${Number(diskon.gratisQty || 0)}`;
+    }
+
+    if (diskon.jenisPromo === "beli_x_diskon_nominal") {
+      return `Jika beli ≥ ${Number(diskon.minimalQty || 0)}, potong ${formatRupiah(diskon.nilaiDiskon || 0)}`;
+    }
+
+    const hargaList = diskon.barangRingkas
       .map((item) =>
         hitungHargaSetelahDiskon(
           Number(item.hargaJual || 0),
-          tipe,
-          nilaiDiskon,
+          diskon.tipeDiskon,
+          diskon.nilaiDiskon,
         ),
       )
       .sort((a, b) => a - b);
@@ -491,19 +544,65 @@ export default function TambahDiskonPage() {
     return `${formatRupiah(min)} - ${formatRupiah(max)}`;
   };
 
+  const getPreviewHargaSesudah = (harga: number) => {
+    if (form.jenisPromo === "beli_x_gratis_y") {
+      const minimalQty = parseNumberInput(form.minimalQty);
+      const gratisQty = parseNumberInput(form.gratisQty);
+      if (minimalQty > 0 && gratisQty > 0) return `Beli ${minimalQty} gratis ${gratisQty}`;
+      return "Atur syarat promo";
+    }
+
+    if (form.jenisPromo === "beli_x_diskon_nominal") {
+      const minimalQty = parseNumberInput(form.minimalQty);
+      const nilai = parseNumberInput(form.nilaiDiskon);
+      if (minimalQty > 0 && nilai > 0) return `Beli ≥ ${minimalQty}: -${formatRupiah(nilai)}`;
+      return "Atur syarat promo";
+    }
+
+    return formatRupiah(
+      hitungHargaSetelahDiskon(
+        Number(harga || 0),
+        form.tipeDiskon,
+        parseNumberInput(form.nilaiDiskon),
+      ),
+    );
+  };
+
   const validateForm = () => {
     const namaPromo = form.namaPromo.trim();
-    const nilaiDiskon = Number(form.nilaiDiskon);
+    const nilaiDiskon = parseNumberInput(form.nilaiDiskon);
+    const minimalQty = parseNumberInput(form.minimalQty);
+    const gratisQty = parseNumberInput(form.gratisQty);
 
     if (!namaPromo) return "Nama promo wajib diisi";
     if (!form.tokoId) return "Toko wajib dipilih";
-    if (!form.tipeDiskon) return "Tipe diskon wajib dipilih";
-    if (!form.nilaiDiskon.trim()) return "Nilai diskon wajib diisi";
-    if (Number.isNaN(nilaiDiskon) || nilaiDiskon <= 0)
-      return "Nilai diskon tidak valid";
-    if (form.tipeDiskon === "persen" && nilaiDiskon > 100)
-      return "Diskon persen maksimal 100";
+    if (!form.jenisPromo) return "Jenis promo wajib dipilih";
     if (form.barangIds.length === 0) return "Pilih minimal 1 barang";
+
+    if (form.jenisPromo === "diskon_langsung") {
+      if (!form.tipeDiskon) return "Tipe diskon wajib dipilih";
+      if (!form.nilaiDiskon.trim()) return "Nilai diskon wajib diisi";
+      if (Number.isNaN(nilaiDiskon) || nilaiDiskon <= 0) return "Nilai diskon tidak valid";
+      if (form.tipeDiskon === "persen" && nilaiDiskon > 100) return "Diskon persen maksimal 100";
+    }
+
+    if (form.jenisPromo === "beli_x_gratis_y") {
+      if (!form.minimalQty.trim() || Number.isNaN(minimalQty) || minimalQty <= 0) {
+        return "Jumlah beli minimal wajib diisi";
+      }
+      if (!form.gratisQty.trim() || Number.isNaN(gratisQty) || gratisQty <= 0) {
+        return "Jumlah barang gratis wajib diisi";
+      }
+    }
+
+    if (form.jenisPromo === "beli_x_diskon_nominal") {
+      if (!form.minimalQty.trim() || Number.isNaN(minimalQty) || minimalQty <= 0) {
+        return "Jumlah beli minimal wajib diisi";
+      }
+      if (!form.nilaiDiskon.trim() || Number.isNaN(nilaiDiskon) || nilaiDiskon <= 0) {
+        return "Nominal diskon wajib diisi";
+      }
+    }
 
     const duplicate = data.find((item) => {
       const sameName =
@@ -551,8 +650,11 @@ export default function TambahDiskonPage() {
       }
 
       const namaPromo = form.namaPromo.trim();
-      const tipeDiskon = form.tipeDiskon;
-      const nilaiDiskon = Number(form.nilaiDiskon);
+      const jenisPromo = form.jenisPromo;
+      const tipeDiskon = jenisPromo === "diskon_langsung" ? form.tipeDiskon : "nominal";
+      const nilaiDiskon = jenisPromo === "beli_x_gratis_y" ? 0 : parseNumberInput(form.nilaiDiskon);
+      const minimalQty = jenisPromo === "diskon_langsung" ? 0 : parseNumberInput(form.minimalQty);
+      const gratisQty = jenisPromo === "beli_x_gratis_y" ? parseNumberInput(form.gratisQty) : 0;
       const barangIds = barangDipilih.map((item) => item.id);
       const barangRingkas: DiskonBarangRingkas[] = barangDipilih.map(
         (item) => ({
@@ -570,8 +672,11 @@ export default function TambahDiskonPage() {
           namaPromo,
           tokoId: toko.id,
           tokoNama: toko.nama,
+          jenisPromo,
           tipeDiskon,
           nilaiDiskon,
+          minimalQty,
+          gratisQty,
           barangIds,
           barangRingkas,
           isActive,
@@ -588,8 +693,11 @@ export default function TambahDiskonPage() {
                     namaPromo,
                     tokoId: toko.id,
                     tokoNama: toko.nama,
+                    jenisPromo,
                     tipeDiskon,
                     nilaiDiskon,
+                    minimalQty,
+                    gratisQty,
                     barangIds,
                     barangRingkas,
                     isActive,
@@ -608,8 +716,11 @@ export default function TambahDiskonPage() {
           namaPromo,
           tokoId: toko.id,
           tokoNama: toko.nama,
+          jenisPromo,
           tipeDiskon,
           nilaiDiskon,
+          minimalQty,
+          gratisQty,
           barangIds,
           barangRingkas,
           isActive,
@@ -1110,7 +1221,7 @@ export default function TambahDiskonPage() {
                     </p>
                     <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                       {d.tokoNama} ·{" "}
-                      {formatNilaiDiskon(d.tipeDiskon, d.nilaiDiskon)}
+                      {formatPromoValue(d)}
                     </p>
                   </div>
                   <div className="flex flex-shrink-0 gap-1.5">
@@ -1131,7 +1242,7 @@ export default function TambahDiskonPage() {
 
                 <div className="mt-2 flex flex-wrap gap-1">
                   <span className="rounded-lg bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                    {d.tipeDiskon === "persen" ? "Persen" : "Nominal"}
+                    {formatJenisPromoLabel(d.jenisPromo)}
                   </span>
                   <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                     {d.barangIds.length} barang
@@ -1162,11 +1273,7 @@ export default function TambahDiskonPage() {
                       Harga Sesudah
                     </p>
                     <p className="text-xs font-bold text-sky-600">
-                      {getHargaSesudahText(
-                        d.barangRingkas,
-                        d.tipeDiskon,
-                        d.nilaiDiskon,
-                      )}
+                      {getHargaSesudahText(d)}
                     </p>
                   </div>
                 </div>
@@ -1240,21 +1347,17 @@ export default function TambahDiskonPage() {
                       <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
                         {d.tokoNama}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold capitalize text-slate-600">
-                        {d.tipeDiskon}
+                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
+                        {formatJenisPromoLabel(d.jenisPromo)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-700">
-                        {formatNilaiDiskon(d.tipeDiskon, d.nilaiDiskon)}
+                        {formatPromoValue(d)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">
                         {getHargaSebelumText(d.barangRingkas)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 font-black text-sky-600">
-                        {getHargaSesudahText(
-                          d.barangRingkas,
-                          d.tipeDiskon,
-                          d.nilaiDiskon,
-                        )}
+                        {getHargaSesudahText(d)}
                       </td>
                       <td className="px-3 py-2.5 font-semibold text-slate-600">
                         {d.barangIds.length} barang
@@ -1488,44 +1591,108 @@ export default function TambahDiskonPage() {
                       </FormSelect>
 
                       <FormSelect
-                        label="Tipe Diskon"
+                        label="Jenis Promo"
                         required
                         icon={Percent}
-                        value={form.tipeDiskon}
-                        onChange={(e: any) =>
+                        value={form.jenisPromo}
+                        onChange={(e: any) => {
+                          const nextJenis = e.target.value as JenisPromo;
                           setForm((prev) => ({
                             ...prev,
-                            tipeDiskon: e.target.value as "persen" | "nominal",
-                          }))
-                        }
+                            jenisPromo: nextJenis,
+                            tipeDiskon: nextJenis === "diskon_langsung" ? prev.tipeDiskon : "nominal",
+                            nilaiDiskon: nextJenis === "beli_x_gratis_y" ? "" : prev.nilaiDiskon,
+                            minimalQty: nextJenis === "diskon_langsung" ? "" : prev.minimalQty,
+                            gratisQty: nextJenis === "beli_x_gratis_y" ? prev.gratisQty : "",
+                          }));
+                        }}
                       >
-                        <option value="persen">Persen (%)</option>
-                        <option value="nominal">Nominal (Rp)</option>
+                        <option value="diskon_langsung">Diskon Langsung</option>
+                        <option value="beli_x_gratis_y">Beli X Gratis Y</option>
+                        <option value="beli_x_diskon_nominal">Beli X Diskon Nominal</option>
                       </FormSelect>
 
-                      <FormInput
-                        label={
-                          form.tipeDiskon === "persen"
-                            ? "Nilai Diskon (%)"
-                            : "Nilai Diskon (Rp)"
-                        }
-                        required
-                        icon={BadgeDollarSign}
-                        type="number"
-                        min="0"
-                        value={form.nilaiDiskon}
-                        onChange={(e: any) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            nilaiDiskon: e.target.value,
-                          }))
-                        }
-                        placeholder={
-                          form.tipeDiskon === "persen"
-                            ? "Contoh: 10"
-                            : "Contoh: 5000"
-                        }
-                      />
+                      {form.jenisPromo === "diskon_langsung" && (
+                        <FormSelect
+                          label="Tipe Diskon"
+                          required
+                          icon={Percent}
+                          value={form.tipeDiskon}
+                          onChange={(e: any) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              tipeDiskon: e.target.value as "persen" | "nominal",
+                            }))
+                          }
+                        >
+                          <option value="persen">Persen (%)</option>
+                          <option value="nominal">Nominal (Rp)</option>
+                        </FormSelect>
+                      )}
+
+                      {form.jenisPromo !== "diskon_langsung" && (
+                        <FormInput
+                          label="Minimal Beli"
+                          required
+                          icon={Package}
+                          type="text"
+                          inputMode="numeric"
+                          value={form.minimalQty}
+                          onChange={(e: any) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              minimalQty: formatNumberInput(e.target.value),
+                            }))
+                          }
+                          placeholder="Contoh: 4"
+                        />
+                      )}
+
+                      {form.jenisPromo !== "beli_x_gratis_y" && (
+                        <FormInput
+                          label={
+                            form.jenisPromo === "diskon_langsung"
+                              ? form.tipeDiskon === "persen"
+                                ? "Nilai Diskon (%)"
+                                : "Nilai Diskon (Rp)"
+                              : "Nominal Diskon (Rp)"
+                          }
+                          required
+                          icon={BadgeDollarSign}
+                          type="text"
+                          inputMode="numeric"
+                          value={form.nilaiDiskon}
+                          onChange={(e: any) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              nilaiDiskon: formatNumberInput(e.target.value),
+                            }))
+                          }
+                          placeholder={
+                            form.jenisPromo === "diskon_langsung" && form.tipeDiskon === "persen"
+                              ? "Contoh: 10"
+                              : "Contoh: 5.000"
+                          }
+                        />
+                      )}
+
+                      {form.jenisPromo === "beli_x_gratis_y" && (
+                        <FormInput
+                          label="Jumlah Gratis"
+                          required
+                          icon={Package}
+                          type="text"
+                          inputMode="numeric"
+                          value={form.gratisQty}
+                          onChange={(e: any) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              gratisQty: formatNumberInput(e.target.value),
+                            }))
+                          }
+                          placeholder="Contoh: 1"
+                        />
+                      )}
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
@@ -1576,11 +1743,7 @@ export default function TambahDiskonPage() {
                           <div className="divide-y divide-slate-100">
                             {barangBySelectedToko.map((item) => {
                               const checked = form.barangIds.includes(item.id);
-                              const hargaSetelah = hitungHargaSetelahDiskon(
-                                Number(item.hargaJual || 0),
-                                form.tipeDiskon,
-                                Number(form.nilaiDiskon || 0),
-                              );
+                              const hargaSetelah = getPreviewHargaSesudah(Number(item.hargaJual || 0));
 
                               return (
                                 <label
@@ -1606,7 +1769,7 @@ export default function TambahDiskonPage() {
                                         Sebelum: {formatRupiah(item.hargaJual)}
                                       </span>
                                       <span className="text-sky-600">
-                                        Sesudah: {formatRupiah(hargaSetelah)}
+                                        Promo: {hargaSetelah}
                                       </span>
                                     </div>
                                   </div>

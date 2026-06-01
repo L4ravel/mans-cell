@@ -2,7 +2,7 @@
 
 /*
   Halaman beranda karyawan Mans-Cell.
-  Isi: tombol cepat Panel Transaksi, Jadwal, Ganti Password,
+  Isi: tombol cepat Panel Transaksi, Jadwal, SOP, Ganti Password,
   tab Laporan Kehadiran dan Rekapan Kehadiran, serta rekap yang konsisten
   dengan pengaturan_jam_absensi: default sistem -> toko -> karyawan.
 */
@@ -11,6 +11,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
+  BookOpenText,
   Calendar,
   CalendarClock,
   Check,
@@ -1218,7 +1219,7 @@ export default function KaryawanPage() {
           </div>
         </section>
 
-        <section className="grid grid-cols-3 gap-2 rounded-[1.5rem] bg-white p-2.5 shadow-sm shadow-sky-500/5 ring-1 ring-sky-100/70 sm:p-3">
+        <section className="grid grid-cols-4 gap-2 rounded-[1.5rem] bg-white p-2.5 shadow-sm shadow-sky-500/5 ring-1 ring-sky-100/70 sm:p-3">
           <QuickActionCard
             href="/admin/transaksi"
             icon={ShoppingCart}
@@ -1230,6 +1231,12 @@ export default function KaryawanPage() {
             icon={CalendarClock}
             label="Jadwal"
             desc="Kehadiran"
+          />
+          <QuickActionCard
+            href="/karyawan/aturan"
+            icon={BookOpenText}
+            label="SOP"
+            desc="Aturan"
           />
           <button
             type="button"

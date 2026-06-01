@@ -206,6 +206,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-provider", icon: Wifi, label: "Provider Digital" },
           { href: "/admin/tambah-barang", icon: Package, label: "Data Barang" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Aset Tetap" },
+          { href: "/admin/aturan", icon: ClipboardList, label: "Standar Operasional Prosedur" },
         ],
       },
       {
@@ -388,7 +389,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-kategori") ||
       currentPath.startsWith("/admin/tambah-satuan") ||
       currentPath.startsWith("/admin/tambah-supplier") ||
-      currentPath.startsWith("/admin/tambah-barang-tetap")
+      currentPath.startsWith("/admin/tambah-barang-tetap") ||
+      currentPath.startsWith("/admin/aturan")
     ) {
       nextOpenGroup.push("Data Master")
     }
@@ -589,6 +591,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (href === "/admin/tambah-kategori") return pathname === "/admin/tambah-kategori"
     if (href === "/admin/tambah-satuan") return pathname === "/admin/tambah-satuan"
     if (href === "/admin/tambah-supplier") return pathname === "/admin/tambah-supplier"
+    if (href === "/admin/aturan") return pathname === "/admin/aturan"
 
     if (href === "/admin/dashboard-absensi") return pathname === "/admin/dashboard-absensi"
     if (href === "/admin/transaksi") return pathname === "/admin/transaksi"

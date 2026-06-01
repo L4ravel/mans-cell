@@ -19,6 +19,7 @@
   - Saat mode susun aktif, icon bergerak ringan.
   - Urutan menu tersimpan di localStorage.
   - Logic restock dari dashboard lama tetap dipertahankan.
+  - Menu SOP ditambahkan di paling bawah grup Data Master dan mengarah ke /admin/aturan.
 */
 
 import Link from "next/link";
@@ -30,6 +31,7 @@ import {
   ArrowRightLeft,
   BadgePercent,
   Banknote,
+  BookOpenText,
   BarChart3,
   Boxes,
   BriefcaseBusiness,
@@ -130,6 +132,7 @@ const DEFAULT_MENU_GROUPS: MenuGroup[] = [
       { href: "/admin/tambah-provider", icon: Wifi, label: "Provider" },
       { href: "/admin/tambah-barang", icon: Package, label: "Barang" },
       { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Aset" },
+      { href: "/admin/aturan", icon: BookOpenText, label: "SOP" },
     ],
   },
   {

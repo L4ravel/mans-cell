@@ -11,6 +11,7 @@
   - auth gate memakai cache localStorage agar refresh tidak memuat role terus
   - logo brand sidebar/header mengambil dari public/logo-icon.png dengan tag img agar stabil di mobile
   - fallback auth/hydration dibuat putih penuh agar tidak muncul blank hitam
+  - menu SOP ditambahkan dan mengarah ke /karyawan/aturan
 */
 
 import Link from "next/link"
@@ -26,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar,
+  BookOpenText,
   Cpu,
   User,
   ShieldCheck,
@@ -522,6 +524,26 @@ export default function KaryawanLayout({
         )}
       </Link>
 
+      <Link
+        href="/karyawan/aturan"
+        className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors duration-200 ${
+          isActive("/karyawan/aturan")
+            ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+            : "text-slate-600 hover:bg-sky-50 hover:text-sky-800"
+        }`}
+      >
+        <div
+          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl transition-colors duration-200 ${
+            isActive("/karyawan/aturan")
+              ? "bg-white/20"
+              : "bg-sky-50 text-sky-700 group-hover:bg-sky-100"
+          }`}
+        >
+          <BookOpenText size={15} strokeWidth={2.5} />
+        </div>
+        {!sidebarCollapsed && <span className="text-sm font-black">Standar Operasional Prosedur</span>}
+      </Link>
+
       <button
         type="button"
         onClick={() => setShowModal(true)}
@@ -590,6 +612,27 @@ export default function KaryawanLayout({
           <Calendar size={15} strokeWidth={2.5} />
         </div>
         <span className="text-sm font-black">Jadwal Kehadiran</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => handleMobileNavigate("/karyawan/aturan")}
+        className={`group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors duration-200 ${
+          isActive("/karyawan/aturan")
+            ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+            : "text-slate-600 hover:bg-sky-50 hover:text-sky-800"
+        }`}
+      >
+        <div
+          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl ${
+            isActive("/karyawan/aturan")
+              ? "bg-white/20"
+              : "bg-sky-50 text-sky-700 group-hover:bg-sky-100"
+          }`}
+        >
+          <BookOpenText size={15} strokeWidth={2.5} />
+        </div>
+        <span className="text-sm font-black">SOP</span>
       </button>
 
       <button

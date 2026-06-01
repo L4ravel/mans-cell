@@ -1136,7 +1136,7 @@ function DeleteModal({
 
             <div className="space-y-3 p-5">
               <p className="text-[11px] font-semibold text-slate-600">
-                Kamu yakin mau menghapus satuan ini?
+                Anda yakin mau menghapus satuan ini?
               </p>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-black text-slate-800">

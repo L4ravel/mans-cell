@@ -1334,7 +1334,7 @@ export default function TambahTokoPage() {
               {!selectedLokasiToko ? (
                 <EmptyState
                   title="Pilih Toko Dulu"
-                  description="Setelah toko dipilih, kamu bisa mengatur titik lokasi absensi dan radius yang diperbolehkan."
+                  description="Setelah toko dipilih, anda bisa mengatur titik lokasi absensi dan radius yang diperbolehkan."
                 />
               ) : (
                 <LokasiAbsensiForm
@@ -1392,7 +1392,7 @@ export default function TambahTokoPage() {
 
                 <div className="space-y-3 p-5">
                   <p className="text-[11px] font-semibold text-slate-600">
-                    Kamu yakin mau menghapus toko ini?
+                    Anda yakin mau menghapus toko ini?
                   </p>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-black text-slate-800">{openDelete.nama}</p>

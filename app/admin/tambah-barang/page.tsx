@@ -10,6 +10,7 @@
   - download template Excel, download data Excel, dan import Excel dengan style border konsisten
   - nominal produk digital dibuat fleksibel: bisa angka atau huruf, misalnya Pulsa 10K / Data 5GB
   - input harga modal dan harga jual otomatis memakai titik ribuan agar mudah dibaca
+  - card Total Barang, Barang Fisik, dan Barang Digital bisa diklik untuk toggle jumlah/modal
 */
 
 "use client"
@@ -172,6 +173,10 @@ type BarangImportProgress = {
   total: number
   message: string
 }
+
+type StatValueMode = "jumlah" | "modal"
+
+type StatValueKey = "totalBarang" | "totalFisik" | "totalDigital"
 
 const ITEMS_OPTIONS = [
   { value: 10, label: "10" },
@@ -948,11 +953,17 @@ function BarangStatCard({
   value,
   icon: Icon,
   tone,
+  onClick,
+  active,
+  hint,
 }: {
   label: string
   value: string
   icon: any
   tone: "slate" | "sky" | "blue" | "rose"
+  onClick?: () => void
+  active?: boolean
+  hint?: string
 }) {
   const toneClass =
     tone === "sky"
@@ -963,6 +974,54 @@ function BarangStatCard({
           ? "bg-rose-50 text-rose-600"
           : "bg-slate-100 text-slate-500"
 
+  const content = (
+    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${toneClass}`}>
+        <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">
+            {label}
+          </p>
+          {active && (
+            <span className="hidden rounded-full bg-sky-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-sky-600 sm:inline-flex">
+              Modal
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 truncate text-lg font-black leading-tight text-slate-800 sm:text-2xl">
+          {value}
+        </p>
+        {hint && (
+          <p className="mt-1 truncate text-[8px] font-bold text-slate-400 sm:text-[10px]">
+            {hint}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+
+  if (onClick) {
+    return (
+      <motion.button
+        type="button"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ duration: 0.28 }}
+        onClick={onClick}
+        className={`rounded-2xl border bg-white p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-400/20 sm:p-4 ${
+          active ? "border-sky-300 ring-2 ring-sky-400/10" : "border-slate-200"
+        }`}
+        title={active ? "Klik untuk kembali ke jumlah barang" : "Klik untuk melihat total modal"}
+      >
+        {content}
+      </motion.button>
+    )
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -970,23 +1029,11 @@ function BarangStatCard({
       transition={{ duration: 0.28 }}
       className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4"
     >
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <div className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl sm:flex sm:h-11 sm:w-11 ${toneClass}`}>
-          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[7px] font-black uppercase tracking-[0.05em] text-slate-400 sm:text-[10px] sm:tracking-widest">
-            {label}
-          </p>
-          <p className="mt-0.5 truncate text-lg font-black leading-tight text-slate-800 sm:text-2xl">
-            {value}
-          </p>
-        </div>
-      </div>
+      {content}
     </motion.div>
   )
 }
+
 
 function BarcodeSvg({ value, className }: { value: string; className?: string }) {
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -1440,6 +1487,23 @@ export default function TambahBarangPage() {
   const isEdit = !!editId
   const isDigitalForm = form.jenisBarang === "digital"
   const isFisikForm = form.jenisBarang === "fisik"
+  const [statValueMode, setStatValueMode] = useState<Record<StatValueKey, StatValueMode>>({
+    totalBarang: "jumlah",
+    totalFisik: "jumlah",
+    totalDigital: "jumlah",
+  })
+
+  const toggleStatValueMode = (key: StatValueKey) => {
+    setStatValueMode((prev) => ({
+      ...prev,
+      [key]: prev[key] === "jumlah" ? "modal" : "jumlah",
+    }))
+  }
+
+  const formatStatValue = (value: number, mode: StatValueMode) => {
+    if (mode === "modal") return formatRupiah(value)
+    return String(value)
+  }
 
   const fetchKategori = async () => {
     try {
@@ -1660,19 +1724,36 @@ export default function TambahBarangPage() {
   }, [data, search, filterKategori, filterToko, filterJenisBarang])
 
   const barangStats = useMemo(() => {
+    const fisikItems = filtered.filter((item) => (item.jenisBarang || "fisik") === "fisik")
+    const digitalItems = filtered.filter((item) => item.jenisBarang === "digital")
+
+    const getModalBarang = (item: Barang) => {
+      const hargaModal = Number(item.hargaModal || 0)
+
+      if ((item.jenisBarang || "fisik") === "fisik") {
+        return hargaModal * Math.max(0, Number(item.stok || 0))
+      }
+
+      return hargaModal
+    }
+
     const totalBarang = filtered.length
-    const totalFisik = filtered.filter((item) => (item.jenisBarang || "fisik") === "fisik").length
-    const totalDigital = filtered.filter((item) => item.jenisBarang === "digital").length
-    const stokRendah = filtered.filter(
-      (item) =>
-        (item.jenisBarang || "fisik") === "fisik" &&
-        Number(item.stok || 0) <= Number(item.stokMinimum || 0)
+    const totalFisik = fisikItems.length
+    const totalDigital = digitalItems.length
+    const totalModal = filtered.reduce((sum, item) => sum + getModalBarang(item), 0)
+    const totalModalFisik = fisikItems.reduce((sum, item) => sum + getModalBarang(item), 0)
+    const totalModalDigital = digitalItems.reduce((sum, item) => sum + getModalBarang(item), 0)
+    const stokRendah = fisikItems.filter(
+      (item) => Number(item.stok || 0) <= Number(item.stokMinimum || 0)
     ).length
 
     return {
       totalBarang,
       totalFisik,
       totalDigital,
+      totalModal,
+      totalModalFisik,
+      totalModalDigital,
       stokRendah,
     }
   }, [filtered])
@@ -3176,21 +3257,39 @@ export default function TambahBarangPage() {
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           <BarangStatCard
             label="Total Barang"
-            value={String(barangStats.totalBarang)}
+            value={formatStatValue(
+              statValueMode.totalBarang === "modal" ? barangStats.totalModal : barangStats.totalBarang,
+              statValueMode.totalBarang
+            )}
             icon={Package}
             tone="sky"
+            active={statValueMode.totalBarang === "modal"}
+            hint={statValueMode.totalBarang === "modal" ? "Klik: jumlah barang" : "Klik: total modal"}
+            onClick={() => toggleStatValueMode("totalBarang")}
           />
           <BarangStatCard
             label="Barang Fisik"
-            value={String(barangStats.totalFisik)}
+            value={formatStatValue(
+              statValueMode.totalFisik === "modal" ? barangStats.totalModalFisik : barangStats.totalFisik,
+              statValueMode.totalFisik
+            )}
             icon={Boxes}
             tone="blue"
+            active={statValueMode.totalFisik === "modal"}
+            hint={statValueMode.totalFisik === "modal" ? "Modal × stok fisik" : "Klik: total modal"}
+            onClick={() => toggleStatValueMode("totalFisik")}
           />
           <BarangStatCard
             label="Barang Digital"
-            value={String(barangStats.totalDigital)}
+            value={formatStatValue(
+              statValueMode.totalDigital === "modal" ? barangStats.totalModalDigital : barangStats.totalDigital,
+              statValueMode.totalDigital
+            )}
             icon={Smartphone}
             tone="slate"
+            active={statValueMode.totalDigital === "modal"}
+            hint={statValueMode.totalDigital === "modal" ? "Total harga modal" : "Klik: total modal"}
+            onClick={() => toggleStatValueMode("totalDigital")}
           />
           <BarangStatCard
             label="Stok Rendah"

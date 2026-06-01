@@ -78,13 +78,32 @@ export type DiskonBarangRingkas = {
   hargaJual: number
 }
 
+export type JenisPromo =
+  | "diskon_langsung"
+  | "beli_x_gratis_y"
+  | "beli_x_diskon_nominal"
+
+export type PromoHitungResult = {
+  subtotalAsli: number
+  subtotalFinal: number
+  totalDiskon: number
+  hargaSatuanFinal: number
+  qtyGratis: number
+  paketPromo: number
+  deskripsiPromo: string
+  jenisPromo: JenisPromo
+}
+
 export type Diskon = {
   id: string
   namaPromo: string
   tokoId: string
   tokoNama: string
+  jenisPromo?: JenisPromo
   tipeDiskon: "persen" | "nominal"
   nilaiDiskon: number
+  minimalQty?: number
+  gratisQty?: number
   barangIds: string[]
   barangRingkas: DiskonBarangRingkas[]
   isActive: boolean
@@ -135,8 +154,14 @@ export type CartItem = {
   tujuan?: string
   diskonId?: string
   diskonNama?: string
+  diskonJenisPromo?: JenisPromo
   diskonTipe?: "persen" | "nominal"
   diskonNilai?: number
+  diskonMinimalQty?: number
+  diskonGratisQty?: number
+  diskonQtyGratis?: number
+  diskonPaketPromo?: number
+  diskonDeskripsi?: string
 }
 
 export type StrukItem = {
@@ -169,8 +194,14 @@ export type StrukItem = {
   tujuan?: string
   diskonId: string
   diskonNama: string
+  diskonJenisPromo?: JenisPromo | string
   diskonTipe: string
   diskonNilai: number
+  diskonMinimalQty?: number
+  diskonGratisQty?: number
+  diskonQtyGratis?: number
+  diskonPaketPromo?: number
+  diskonDeskripsi?: string
 }
 
 export type StrukData = {
@@ -301,6 +332,12 @@ export function normalizeBarcode(value: string) {
   return String(value || "").trim().replace(/\s+/g, "").toUpperCase()
 }
 
+export function normalizeJenisPromo(value?: string): JenisPromo {
+  if (value === "beli_x_gratis_y") return "beli_x_gratis_y"
+  if (value === "beli_x_diskon_nominal") return "beli_x_diskon_nominal"
+  return "diskon_langsung"
+}
+
 export function hitungHargaSetelahDiskon(
   hargaJual: number,
   tipeDiskon?: "persen" | "nominal",
@@ -319,16 +356,165 @@ export function hitungHargaSetelahDiskon(
   return Math.max(0, harga - nilai)
 }
 
-export function getBestDiskonForBarang(barangId: string, diskonList: Diskon[]) {
+export function hitungPromoCartItem({
+  hargaJual,
+  qty,
+  tipeDiskon,
+  nilaiDiskon,
+  jenisPromo,
+  minimalQty,
+  gratisQty,
+}: {
+  hargaJual: number
+  qty: number
+  tipeDiskon?: "persen" | "nominal"
+  nilaiDiskon?: number
+  jenisPromo?: JenisPromo | string
+  minimalQty?: number
+  gratisQty?: number
+}): PromoHitungResult {
+  const harga = Math.max(0, Number(hargaJual || 0))
+  const jumlah = Math.max(0, Number(qty || 0))
+  const nilai = Math.max(0, Number(nilaiDiskon || 0))
+  const promo = normalizeJenisPromo(String(jenisPromo || "diskon_langsung"))
+  const minQty = Math.max(0, Number(minimalQty || 0))
+  const freeQty = Math.max(0, Number(gratisQty || 0))
+  const subtotalAsli = harga * jumlah
+
+  if (jumlah <= 0 || harga <= 0) {
+    return {
+      subtotalAsli: 0,
+      subtotalFinal: 0,
+      totalDiskon: 0,
+      hargaSatuanFinal: harga,
+      qtyGratis: 0,
+      paketPromo: 0,
+      deskripsiPromo: "",
+      jenisPromo: promo,
+    }
+  }
+
+  if (promo === "beli_x_gratis_y") {
+    const paketSize = minQty + freeQty
+    if (minQty <= 0 || freeQty <= 0 || paketSize <= 0 || jumlah < paketSize) {
+      return {
+        subtotalAsli,
+        subtotalFinal: subtotalAsli,
+        totalDiskon: 0,
+        hargaSatuanFinal: harga,
+        qtyGratis: 0,
+        paketPromo: 0,
+        deskripsiPromo: "",
+        jenisPromo: promo,
+      }
+    }
+
+    const paketPromo = Math.floor(jumlah / paketSize)
+    const qtyGratis = paketPromo * freeQty
+    const totalDiskon = Math.min(subtotalAsli, qtyGratis * harga)
+    const subtotalFinal = Math.max(0, subtotalAsli - totalDiskon)
+    const hargaSatuanFinal = jumlah > 0 ? Math.round(subtotalFinal / jumlah) : harga
+
+    return {
+      subtotalAsli,
+      subtotalFinal,
+      totalDiskon,
+      hargaSatuanFinal,
+      qtyGratis,
+      paketPromo,
+      deskripsiPromo: `Beli ${minQty} gratis ${freeQty}`,
+      jenisPromo: promo,
+    }
+  }
+
+  if (promo === "beli_x_diskon_nominal") {
+    if (minQty <= 0 || nilai <= 0 || jumlah < minQty) {
+      return {
+        subtotalAsli,
+        subtotalFinal: subtotalAsli,
+        totalDiskon: 0,
+        hargaSatuanFinal: harga,
+        qtyGratis: 0,
+        paketPromo: 0,
+        deskripsiPromo: "",
+        jenisPromo: promo,
+      }
+    }
+
+    const paketPromo = Math.floor(jumlah / minQty)
+    const totalDiskon = Math.min(subtotalAsli, paketPromo * nilai)
+    const subtotalFinal = Math.max(0, subtotalAsli - totalDiskon)
+    const hargaSatuanFinal = jumlah > 0 ? Math.round(subtotalFinal / jumlah) : harga
+
+    return {
+      subtotalAsli,
+      subtotalFinal,
+      totalDiskon,
+      hargaSatuanFinal,
+      qtyGratis: 0,
+      paketPromo,
+      deskripsiPromo: `Beli ${minQty} hemat ${formatRupiah(nilai)}`,
+      jenisPromo: promo,
+    }
+  }
+
+  const hargaSetelahDiskon = hitungHargaSetelahDiskon(harga, tipeDiskon, nilai)
+  const subtotalFinal = hargaSetelahDiskon * jumlah
+  const totalDiskon = Math.max(0, subtotalAsli - subtotalFinal)
+
+  return {
+    subtotalAsli,
+    subtotalFinal,
+    totalDiskon,
+    hargaSatuanFinal: hargaSetelahDiskon,
+    qtyGratis: 0,
+    paketPromo: totalDiskon > 0 ? 1 : 0,
+    deskripsiPromo:
+      totalDiskon > 0
+        ? tipeDiskon === "persen"
+          ? `Diskon ${nilai}%`
+          : `Diskon ${formatRupiah(nilai)}`
+        : "",
+    jenisPromo: promo,
+  }
+}
+
+export function getBestDiskonForBarang(
+  barangId: string,
+  diskonList: Diskon[],
+  qty = 1,
+  hargaJual = 0
+) {
   const cocok = diskonList.filter(
     (d) => d.isActive && Array.isArray(d.barangIds) && d.barangIds.includes(barangId)
   )
 
   if (!cocok.length) return null
 
-  return cocok.sort(
-    (a, b) => Number(b.nilaiDiskon || 0) - Number(a.nilaiDiskon || 0)
-  )[0]
+  return cocok.sort((a, b) => {
+    const diskonA = hitungPromoCartItem({
+      hargaJual,
+      qty,
+      tipeDiskon: a.tipeDiskon,
+      nilaiDiskon: a.nilaiDiskon,
+      jenisPromo: a.jenisPromo,
+      minimalQty: a.minimalQty,
+      gratisQty: a.gratisQty,
+    }).totalDiskon
+
+    const diskonB = hitungPromoCartItem({
+      hargaJual,
+      qty,
+      tipeDiskon: b.tipeDiskon,
+      nilaiDiskon: b.nilaiDiskon,
+      jenisPromo: b.jenisPromo,
+      minimalQty: b.minimalQty,
+      gratisQty: b.gratisQty,
+    }).totalDiskon
+
+    if (diskonB !== diskonA) return diskonB - diskonA
+    return Number(b.nilaiDiskon || 0) - Number(a.nilaiDiskon || 0)
+  })[0]
 }
 
 export function getTanggalParts(nowMs: number) {
@@ -772,7 +958,9 @@ export function cetakStruk(struk: StrukData) {
       ${
         item.diskonNama
           ? `<div class="diskon-badge">🏷 ${item.diskonNama}${
-              item.diskonTipe === "persen"
+              item.diskonDeskripsi
+                ? ` · ${item.diskonDeskripsi}`
+                : item.diskonTipe === "persen"
                 ? ` (${item.diskonNilai}%)`
                 : ` (-${new Intl.NumberFormat("id-ID").format(item.diskonNilai)})`
             }</div>`
@@ -1002,7 +1190,7 @@ export function ModalStruk({
 
                         {item.diskonNama && (
                           <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">
-                            🏷 {item.diskonNama}
+                            🏷 {item.diskonNama}{item.diskonDeskripsi ? ` · ${item.diskonDeskripsi}` : ""}
                           </span>
                         )}
                       </div>
@@ -1185,12 +1373,18 @@ export function RiwayatTransaksiPanel() {
                 provider: item?.provider || "",
                 saldoSourceId: item?.saldoSourceId || "",
                 saldoSourceNama: item?.saldoSourceNama || "",
-                nominalProduk: Number(item?.nominalProduk || 0),
+                nominalProduk: String(item?.nominalProduk || ""),
                 tujuan: item?.tujuan || "",
                 diskonId: item?.diskonId || "",
                 diskonNama: item?.diskonNama || "",
+                diskonJenisPromo: item?.diskonJenisPromo || "diskon_langsung",
                 diskonTipe: item?.diskonTipe || "",
                 diskonNilai: Number(item?.diskonNilai || 0),
+                diskonMinimalQty: Number(item?.diskonMinimalQty || 0),
+                diskonGratisQty: Number(item?.diskonGratisQty || 0),
+                diskonQtyGratis: Number(item?.diskonQtyGratis || 0),
+                diskonPaketPromo: Number(item?.diskonPaketPromo || 0),
+                diskonDeskripsi: String(item?.diskonDeskripsi || ""),
               }))
             : [],
           createdAtMs: Number(x?.createdAtMs || 0),
