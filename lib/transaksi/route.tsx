@@ -884,31 +884,44 @@ export function cetakStruk(struk: StrukData) {
   <meta charset="UTF-8" />
   <title>Struk ${struk.nomorTransaksi}</title>
   <style>
+    @page { size: 58mm auto; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 12px;
-      width: 80mm;
-      max-width: 80mm;
-      padding: 8px 6px;
-      color: #000;
+    html, body {
+      width: 58mm;
+      max-width: 58mm;
+      margin: 0;
+      padding: 0;
       background: #fff;
     }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.28;
+      color: #000;
+      padding: 2mm;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
     .center { text-align: center; }
-    .divider { border-top: 1px dashed #000; margin: 6px 0; }
-    .divider-solid { border-top: 1px solid #000; margin: 6px 0; }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-    .row .label { flex: 1; }
-    .row .value { text-align: right; white-space: nowrap; margin-left: 8px; }
-    .item-nama { font-weight: bold; margin-bottom: 2px; }
-    .item-detail { color: #444; font-size: 11px; margin-top: 1px; }
-    .diskon-badge { font-size: 10px; color: #444; }
-    .grand-total { font-size: 15px; font-weight: bold; }
-    .footer { text-align: center; margin-top: 6px; font-size: 10px; color: #555; }
-    .logo { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
-    .nomor { font-size: 10px; color: #555; margin-top: 2px; }
-    .kembalian-row { font-size: 13px; font-weight: bold; color: #000; }
-    .section-title { font-size: 10px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
+    .divider { border-top: 1px dashed #000; margin: 5px 0; }
+    .divider-solid { border-top: 1px solid #000; margin: 5px 0; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; width: 100%; }
+    .row .label { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+    .row .value { flex: 0 0 auto; max-width: 28mm; text-align: right; white-space: nowrap; margin-left: 4px; }
+    .item-nama { font-size: 10.5px; font-weight: 800; margin-bottom: 2px; word-break: break-word; }
+    .item-detail { color: #000; font-size: 9px; font-weight: 600; margin-top: 1px; word-break: break-word; }
+    .diskon-badge { font-size: 8.5px; color: #000; font-weight: 600; word-break: break-word; }
+    .grand-total { font-size: 12px; font-weight: 900; }
+    .footer { text-align: center; margin-top: 6px; font-size: 8.5px; color: #000; font-weight: 600; }
+    .logo { font-size: 14px; font-weight: 900; letter-spacing: 0.2px; margin-bottom: 2px; word-break: break-word; }
+    .nomor { font-size: 8.5px; color: #000; margin-top: 2px; word-break: break-word; }
+    .kembalian-row { font-size: 11px; font-weight: 900; color: #000; }
+    .section-title { font-size: 8.5px; font-weight: 900; margin-bottom: 3px; text-transform: uppercase; }
+    @media print {
+      html, body { width: 58mm; max-width: 58mm; margin: 0; padding: 0; }
+      body { padding: 2mm; }
+    }
   </style>
 </head>
 <body>
@@ -1015,7 +1028,7 @@ export function cetakStruk(struk: StrukData) {
 </html>
 `
 
-  const win = window.open("", "_blank", "width=400,height=600,scrollbars=yes")
+ const win = window.open("", "_blank", "width=1000,height=800,scrollbars=yes,resizable=yes")
   if (!win) {
     alert("Popup diblokir browser. Izinkan popup untuk mencetak struk.")
     return
