@@ -1,16 +1,12 @@
 /*
   Halaman admin laporan harian.
   Membaca koleksi laporan_harian, menampilkan ringkasan omzet, transaksi, diskon,
-  admin, laba kotor, breakdown metode bayar, ranking toko, dan daftar rekap harian.
+  admin, keuntungan bersih, breakdown metode bayar, ranking toko, dan daftar rekap harian.
 
-  Revisi layout:
-  - Konsisten dengan layout master data biru terbaru.
-  - Header gradient biru, mobile header bersih, tombol desktop disembunyikan di mobile.
-  - Filter mobile collapse.
-  - Stat card mobile 2 kolom + desktop 4 kolom.
-  - Card mobile satu lapis, tabel desktop untuk rekap harian.
-  - Pagination lokal 10/25/50/100/ALL.
-  - Toast error fixed top-right.
+  Revisi:
+  - Keuntungan bersih hanya terlihat untuk role admin dan owner.
+  - Role karyawan atau role lain menampilkan tanda strip "-".
+  - Logika laporan, filter, pagination, dan akses toko tetap dipertahankan.
 */
 
 "use client"
@@ -141,8 +137,19 @@ function normalizeRoles(value: unknown): string[] {
 function isAdminProfile(profile: UserProfile | null) {
   if (!profile) return false
   const role = String(profile.role || "").trim().toLowerCase()
-  if (role === "admin" || role === "superadmin") return true
-  return profile.roles.includes("admin") || profile.roles.includes("superadmin")
+  if (role === "admin" || role === "owner") return true
+  return profile.roles.includes("admin") || profile.roles.includes("owner")
+}
+
+function canViewProfitProfile(profile: UserProfile | null) {
+  if (!profile) return false
+  const role = String(profile.role || "").trim().toLowerCase()
+  if (role === "admin" || role === "owner") return true
+  return profile.roles.includes("admin") || profile.roles.includes("owner")
+}
+
+function formatProfit(value: number, canViewProfit: boolean) {
+  return canViewProfit ? formatRupiah(value) : "-"
 }
 
 export default function LaporanHarianPage() {
@@ -162,6 +169,7 @@ export default function LaporanHarianPage() {
   const [page, setPage] = useState(1)
 
   const isAdminUser = useMemo(() => isAdminProfile(currentUserProfile), [currentUserProfile])
+  const canViewProfit = useMemo(() => canViewProfitProfile(currentUserProfile), [currentUserProfile])
 
   const effectiveTokoId = useMemo(
     () => (isAdminUser ? filterToko : String(currentUserProfile?.tokoId || "").trim()),
@@ -416,7 +424,6 @@ export default function LaporanHarianPage() {
   return (
     <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
       <main className="relative w-full space-y-4 pb-28">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
@@ -434,7 +441,7 @@ export default function LaporanHarianPage() {
                   Laporan Harian
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Rekap harian omzet, metode pembayaran, toko, dan laba kotor.
+                  Rekap harian omzet, metode pembayaran, toko, dan keuntungan bersih.
                 </p>
               </div>
             </div>
@@ -458,7 +465,6 @@ export default function LaporanHarianPage() {
           </div>
         </motion.div>
 
-        {/* Toast */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -473,7 +479,6 @@ export default function LaporanHarianPage() {
           )}
         </AnimatePresence>
 
-        {/* Search & Filter */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -596,7 +601,6 @@ export default function LaporanHarianPage() {
           </AnimatePresence>
         </motion.div>
 
-        {/* Stats */}
         <div className="space-y-2 sm:space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <StatCard
@@ -622,9 +626,9 @@ export default function LaporanHarianPage() {
             />
             <StatCard
               icon={BadgeDollarSign}
-              label="Laba Kotor"
-              value={formatRupiah(totalLabaKotor)}
-              subValue="Akumulasi"
+              label="Keuntungan Bersih"
+              value={formatProfit(totalLabaKotor, canViewProfit)}
+              subValue={canViewProfit ? "Akumulasi" : "Disembunyikan"}
               tone="rose"
             />
           </div>
@@ -649,6 +653,7 @@ export default function LaporanHarianPage() {
           page={page}
           totalPages={totalPages}
           goPage={goPage}
+          canViewProfit={canViewProfit}
         />
       </main>
     </div>
@@ -801,6 +806,7 @@ function LaporanContent({
   page,
   totalPages,
   goPage,
+  canViewProfit,
 }: {
   loading: boolean
   filteredLaporan: LaporanHarian[]
@@ -813,6 +819,7 @@ function LaporanContent({
   page: number
   totalPages: number
   goPage: (page: number) => void
+  canViewProfit: boolean
 }) {
   if (loading) {
     return (
@@ -880,7 +887,7 @@ function LaporanContent({
           )}
         </div>
 
-        <div className="rounded-2xl   p-4 shadow-sm">
+        <div className="rounded-2xl p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <HeaderTitle title="Rekap Harian" subtitle="Daftar dokumen laporan_harian" />
 
@@ -935,7 +942,7 @@ function LaporanContent({
 
                         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
                           <MiniInfo label="Omzet" value={formatRupiah(item.omzet)} />
-                          <MiniInfo label="Laba" value={formatRupiah(item.totalLabaKotor)} />
+                          <MiniInfo label="Untung" value={formatProfit(item.totalLabaKotor, canViewProfit)} />
                           <MiniInfo label="Diskon" value={formatRupiah(item.totalDiskon)} />
                           <MiniInfo label="Item" value={String(item.totalItemTerjual)} />
                         </div>
@@ -955,7 +962,7 @@ function LaporanContent({
                   <table className="w-full text-xs">
                     <thead className="border-b border-slate-100 bg-slate-50/70">
                       <tr>
-                        {["No", "Tanggal", "Toko", "Transaksi", "Omzet", "Diskon", "Admin", "Laba", "Update"].map((head) => (
+                        {["No", "Tanggal", "Toko", "Transaksi", "Omzet", "Diskon", "Admin", "Untung", "Update"].map((head) => (
                           <th
                             key={head}
                             className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
@@ -992,7 +999,7 @@ function LaporanContent({
                             {formatRupiah(item.totalBiayaAdmin)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 font-black text-sky-700">
-                            {formatRupiah(item.totalLabaKotor)}
+                            {formatProfit(item.totalLabaKotor, canViewProfit)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
                             {formatDateTime(item.updatedAtMs)}
