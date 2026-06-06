@@ -57,9 +57,13 @@ type Barang = {
   merk: string
   supplier: string
   satuan: string
+  hargaModal: number
+  hargaJual: number
   stok: number
   stokMinimum: number
   jenisBarang?: "fisik" | "digital"
+  parentBarangId?: string
+  varianKe?: number
   updatedAt?: number
 }
 
@@ -83,6 +87,11 @@ type Toko = {
   nama: string
 }
 
+type Supplier = {
+  id: string
+  nama: string
+}
+
 type PembelianItem = {
   type: "barang" | "saldo"
   id: string
@@ -92,13 +101,18 @@ type PembelianItem = {
   tokoNama: string
   kategoriId: string
   kategoriNama: string
+  merk: string
   supplier: string
   kodeRef: string
+  hargaModal: number
+  hargaJual: number
   stokSekarang: number
   stokMinimum: number
   kekurangan: number
   satuanLabel: string
   badgeLabel: string
+  parentBarangId?: string
+  varianKe?: number
 }
 
 type RiwayatPembelianRow = {
@@ -110,6 +124,9 @@ type RiwayatPembelianRow = {
   jumlahTambah: number
   stokSesudah: number
   catatan: string
+  hargaModalBaru?: number
+  hargaJualBaru?: number
+  modeRestok?: "tambah_stok" | "buat_varian"
   createdAt?: number
 }
 
@@ -129,6 +146,9 @@ const FETCH_LIMIT_OPTIONS = [
 
 const EMPTY_PEMBELIAN_FORM = {
   jumlahTambah: "",
+  hargaModalBaru: "",
+  hargaJualBaru: "",
+  supplier: "",
   catatan: "",
 }
 
@@ -138,6 +158,50 @@ function formatRupiah(value: number) {
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(value || 0)
+}
+
+function onlyDigits(value: unknown) {
+  return String(value ?? "").replace(/\D/g, "")
+}
+
+function formatNumberDots(value: unknown) {
+  const digits = onlyDigits(value)
+  if (!digits) return ""
+  return new Intl.NumberFormat("id-ID", {
+    maximumFractionDigits: 0,
+  }).format(Number(digits))
+}
+
+function parseRupiahNumber(value: unknown) {
+  const digits = onlyDigits(value)
+  if (!digits) return 0
+  return Number(digits)
+}
+
+function normalizeBarangCode(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase()
+}
+
+function buildAutoVariantName(baseName: string, _nextNumber: number) {
+  return String(baseName || "Barang").replace(/\s+-\s+Varian\s+\d+$/i, "").trim() || "Barang"
+}
+
+function buildAutoVariantCode(baseCode: string, existingItems: Barang[]) {
+  const cleanBase = normalizeBarangCode(String(baseCode || "BRG").replace(/-\d{2}$/g, ""))
+  const usedCodes = new Set(existingItems.map((item) => normalizeBarangCode(item.kodeBarang)).filter(Boolean))
+
+  let counter = 2
+  let code = `${cleanBase}-${String(counter).padStart(2, "0")}`
+
+  while (usedCodes.has(code)) {
+    counter += 1
+    code = `${cleanBase}-${String(counter).padStart(2, "0")}`
+  }
+
+  return { code, counter }
 }
 
 function formatDateTime(value?: number) {
@@ -246,6 +310,7 @@ export default function PembelianBarangPage() {
   const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([])
   const [kategoriList, setKategoriList] = useState<KategoriBarang[]>([])
   const [tokoList, setTokoList] = useState<Toko[]>([])
+  const [supplierList, setSupplierList] = useState<Supplier[]>([])
   const [riwayatList, setRiwayatList] = useState<RiwayatPembelianRow[]>([])
 
   const [loading, setLoading] = useState(false)
@@ -324,6 +389,28 @@ export default function PembelianBarangPage() {
     }
   }
 
+  const fetchSupplier = async () => {
+    try {
+      const qRef = query(collection(db, "supplier"), orderBy("nama"))
+      const snap = await getDocs(qRef)
+
+      setSupplierList(
+        snap.docs
+          .map((item) => {
+            const x = item.data() as any
+            return {
+              id: item.id,
+              nama: x?.nama || "",
+            }
+          })
+          .filter((item) => item.nama)
+      )
+    } catch (error) {
+      console.error(error)
+      setSupplierList([])
+    }
+  }
+
   const fetchBarang = async () => {
     const qRef = query(collection(db, "barang"), orderBy("nama"), limit(dataLimit))
     const snap = await getDocs(qRef)
@@ -341,9 +428,13 @@ export default function PembelianBarangPage() {
         merk: x?.merk || "",
         supplier: x?.supplier || "",
         satuan: x?.satuan || "",
+        hargaModal: Number(x?.hargaModal || 0),
+        hargaJual: Number(x?.hargaJual || 0),
         stok: Number(x?.stok || 0),
         stokMinimum: Number(x?.stokMinimum || 0),
         jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
+        parentBarangId: x?.parentBarangId || "",
+        varianKe: Number(x?.varianKe || 0),
         updatedAt:
           typeof x?.updatedAt?.toMillis === "function"
             ? x.updatedAt.toMillis()
@@ -395,6 +486,9 @@ export default function PembelianBarangPage() {
           jumlahTambah: Number(x?.jumlahBeli || x?.jumlahTambah || 0),
           stokSesudah: Number(x?.stokSesudah || 0),
           catatan: x?.catatan || "",
+          hargaModalBaru: Number(x?.hargaModalBaru || 0),
+          hargaJualBaru: Number(x?.hargaJualBaru || 0),
+          modeRestok: x?.modeRestok || "tambah_stok",
           createdAt:
             typeof x?.createdAt?.toMillis === "function"
               ? x.createdAt.toMillis()
@@ -434,7 +528,7 @@ export default function PembelianBarangPage() {
     setError(null)
 
     try {
-      await Promise.all([fetchKategori(), fetchToko(), fetchBarang(), fetchSaldo(), fetchRiwayat()])
+      await Promise.all([fetchKategori(), fetchToko(), fetchSupplier(), fetchBarang(), fetchSaldo(), fetchRiwayat()])
     } catch (error) {
       console.error(error)
       showError("Gagal memuat data pembelian")
@@ -472,13 +566,18 @@ export default function PembelianBarangPage() {
         tokoNama: item.tokoNama || "-",
         kategoriId: item.kategoriId || "",
         kategoriNama: item.kategoriNama || "",
+        merk: item.merk || "",
         supplier: item.supplier || "-",
         kodeRef: item.kodeBarang || "-",
+        hargaModal: Number(item.hargaModal || 0),
+        hargaJual: Number(item.hargaJual || 0),
         stokSekarang: Number(item.stok || 0),
         stokMinimum: Number(item.stokMinimum || 0),
         kekurangan: Math.max(0, Number(item.stokMinimum || 0) - Number(item.stok || 0)),
         satuanLabel: item.satuan || "pcs",
         badgeLabel: "Barang",
+        parentBarangId: item.parentBarangId || "",
+        varianKe: Number(item.varianKe || 0),
       }))
 
     const saldoNeedPembelian: PembelianItem[] = saldoList
@@ -493,8 +592,11 @@ export default function PembelianBarangPage() {
         tokoNama: "-",
         kategoriId: "saldo-digital",
         kategoriNama: "Saldo Digital",
+        merk: "",
         supplier: "Saldo Digital",
         kodeRef: item.id,
+        hargaModal: 0,
+        hargaJual: 0,
         stokSekarang: Number(item.jumlahSaldo || 0),
         stokMinimum: Number(item.jumlahMinimum || 0),
         kekurangan: Math.max(0, Number(item.jumlahMinimum || 0) - Number(item.jumlahSaldo || 0)),
@@ -553,7 +655,13 @@ export default function PembelianBarangPage() {
 
   const openPembelianModal = (item: PembelianItem) => {
     setSelectedItem(item)
-    setPembelianForm(EMPTY_PEMBELIAN_FORM)
+    setPembelianForm({
+      jumlahTambah: "",
+      hargaModalBaru: item.type === "barang" ? formatNumberDots(item.hargaModal) : "",
+      hargaJualBaru: item.type === "barang" ? formatNumberDots(item.hargaJual) : "",
+      supplier: item.type === "barang" ? item.supplier || "" : "",
+      catatan: "",
+    })
     setError(null)
     setShowModal(true)
   }
@@ -578,33 +686,130 @@ export default function PembelianBarangPage() {
       return
     }
 
+    const hargaModalBaru = parseRupiahNumber(pembelianForm.hargaModalBaru)
+    const hargaJualBaru = parseRupiahNumber(pembelianForm.hargaJualBaru)
+    const supplierBaru = pembelianForm.supplier.trim() || selectedItem.supplier || "-"
+
+    if (selectedItem.type === "barang") {
+      if (hargaModalBaru <= 0) {
+        setError("Harga modal baru harus diisi")
+        return
+      }
+
+      if (hargaJualBaru <= 0) {
+        setError("Harga jual baru harus diisi")
+        return
+      }
+    }
+
     setSubmitLoading(true)
     setError(null)
 
     try {
       if (selectedItem.type === "barang") {
-        const stokSebelum = Number(selectedItem.stokSekarang || 0)
-        const stokSesudah = stokSebelum + jumlahTambah
-
-        await updateDoc(doc(db, "barang", selectedItem.id), {
-          stok: stokSesudah,
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-        })
-
+        const hargaModalLama = Number(selectedItem.hargaModal || 0)
+        const hargaJualLama = Number(selectedItem.hargaJual || 0)
+        const hargaBerubah = hargaModalBaru !== hargaModalLama || hargaJualBaru !== hargaJualLama
+        const totalModalRestok = hargaModalBaru * jumlahTambah
         const { tanggal, tahun, bulan, bulanKey } = getLocalTanggalMeta()
+
+        let targetItem = selectedItem
+        let targetBarangId = selectedItem.id
+        let targetNamaBarang = selectedItem.nama
+        let targetKodeBarang = selectedItem.kodeRef
+        let stokSebelum = Number(selectedItem.stokSekarang || 0)
+        let stokSesudah = stokSebelum + jumlahTambah
+        let modeRestok: "tambah_stok" | "buat_varian" = "tambah_stok"
+
+        if (hargaBerubah) {
+          const variantCode = buildAutoVariantCode(selectedItem.kodeRef, barangList)
+          const variantName = buildAutoVariantName(selectedItem.nama, variantCode.counter)
+          const newBarangRef = doc(collection(db, "barang"))
+
+          targetBarangId = newBarangRef.id
+          targetNamaBarang = variantName
+          targetKodeBarang = variantCode.code
+          stokSebelum = 0
+          stokSesudah = jumlahTambah
+          modeRestok = "buat_varian"
+
+          await setDoc(newBarangRef, {
+            nama: variantName,
+            kodeBarang: variantCode.code,
+            kategoriId: selectedItem.kategoriId,
+            kategoriNama: selectedItem.kategoriNama,
+            tokoId: selectedItem.tokoId,
+            tokoNama: selectedItem.tokoNama,
+            merk: selectedItem.merk || "",
+            supplier: supplierBaru,
+            satuan: selectedItem.satuanLabel,
+            hargaModal: hargaModalBaru,
+            hargaJual: hargaJualBaru,
+            stok: jumlahTambah,
+            stokMinimum: selectedItem.stokMinimum,
+            jenisBarang: "fisik",
+            parentBarangId: selectedItem.parentBarangId || selectedItem.id,
+            sourceBarangId: selectedItem.id,
+            varianKe: variantCode.counter,
+            createdAt: Date.now(),
+            createdBy: user.uid,
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          })
+
+          targetItem = {
+            ...selectedItem,
+            id: targetBarangId,
+            nama: targetNamaBarang,
+            supplier: supplierBaru,
+            kodeRef: targetKodeBarang,
+            hargaModal: hargaModalBaru,
+            hargaJual: hargaJualBaru,
+            stokSekarang: stokSesudah,
+            parentBarangId: selectedItem.parentBarangId || selectedItem.id,
+            varianKe: variantCode.counter,
+          }
+        } else {
+          await updateDoc(doc(db, "barang", selectedItem.id), {
+            stok: stokSesudah,
+            supplier: supplierBaru,
+            hargaModal: hargaModalBaru,
+            hargaJual: hargaJualBaru,
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          })
+
+          targetItem = {
+            ...selectedItem,
+            supplier: supplierBaru,
+            hargaModal: hargaModalBaru,
+            hargaJual: hargaJualBaru,
+            stokSekarang: stokSesudah,
+          }
+        }
 
         await addDoc(collection(db, "riwayat_pembelian_barang"), {
           jenis: "barang",
-          barangId: selectedItem.id,
-          namaBarang: selectedItem.nama,
-          kodeBarang: selectedItem.kodeRef,
+          modeRestok,
+          barangId: targetBarangId,
+          sourceBarangId: selectedItem.id,
+          parentBarangId: selectedItem.parentBarangId || selectedItem.id,
+          namaBarang: targetNamaBarang,
+          namaBarangAsal: selectedItem.nama,
+          kodeBarang: targetKodeBarang,
+          kodeBarangAsal: selectedItem.kodeRef,
           kategoriId: selectedItem.kategoriId,
           kategoriNama: selectedItem.kategoriNama,
           tokoId: selectedItem.tokoId,
           tokoNama: selectedItem.tokoNama,
-          supplier: selectedItem.supplier,
+          supplier: supplierBaru,
+          supplierLama: selectedItem.supplier || "-",
           satuan: selectedItem.satuanLabel,
+          hargaModalLama,
+          hargaJualLama,
+          hargaModalBaru,
+          hargaJualBaru,
+          totalModalRestok,
           stokSebelum,
           jumlahBeli: jumlahTambah,
           jumlahTambah,
@@ -620,7 +825,7 @@ export default function PembelianBarangPage() {
 
         await updateLaporanPembelianAggregate({
           jenis: "barang",
-          item: selectedItem,
+          item: targetItem,
           jumlahTambah,
         })
       } else {
@@ -952,6 +1157,8 @@ export default function PembelianBarangPage() {
           selectedItem={selectedItem}
           form={pembelianForm}
           setForm={setPembelianForm}
+          supplierList={supplierList}
+          barangList={barangList}
           error={error}
           submitLoading={submitLoading}
           closeModal={closePembelianModal}
@@ -1436,6 +1643,44 @@ function FormInput({
   )
 }
 
+function FormSelect({
+  label,
+  required,
+  icon: Icon,
+  children,
+  ...props
+}: {
+  label: string
+  required?: boolean
+  icon?: any
+  children: React.ReactNode
+  [key: string]: any
+}) {
+  return (
+    <div>
+      <label className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+        {Icon && <Icon size={11} strokeWidth={2.5} />}
+        {label}
+        {required && <span className="ml-0.5 text-red-400">*</span>}
+      </label>
+
+      <div className="relative">
+        <select
+          {...props}
+          className="w-full appearance-none rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-3 pr-9 text-sm font-semibold text-slate-700 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {children}
+        </select>
+        <ChevronDown
+          size={14}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+          strokeWidth={2.5}
+        />
+      </div>
+    </div>
+  )
+}
+
 function FormTextarea({
   label,
   icon: Icon,
@@ -1466,6 +1711,8 @@ function PembelianModal({
   selectedItem,
   form,
   setForm,
+  supplierList,
+  barangList,
   error,
   submitLoading,
   closeModal,
@@ -1475,11 +1722,26 @@ function PembelianModal({
   selectedItem: PembelianItem | null
   form: typeof EMPTY_PEMBELIAN_FORM
   setForm: React.Dispatch<React.SetStateAction<typeof EMPTY_PEMBELIAN_FORM>>
+  supplierList: Supplier[]
+  barangList: Barang[]
   error: string | null
   submitLoading: boolean
   closeModal: () => void
   handleSubmit: (e: React.FormEvent) => void
 }) {
+  const hargaModalBaru = parseRupiahNumber(form.hargaModalBaru)
+  const hargaJualBaru = parseRupiahNumber(form.hargaJualBaru)
+  const hargaBerubah =
+    !!selectedItem &&
+    selectedItem.type === "barang" &&
+    (hargaModalBaru !== Number(selectedItem.hargaModal || 0) ||
+      hargaJualBaru !== Number(selectedItem.hargaJual || 0))
+  const previewVariant = selectedItem && selectedItem.type === "barang" && hargaBerubah
+    ? buildAutoVariantCode(selectedItem.kodeRef, barangList)
+    : null
+  const previewVariantName =
+    selectedItem && previewVariant ? buildAutoVariantName(selectedItem.nama, previewVariant.counter) : ""
+
   return (
     <AnimatePresence>
       {show && selectedItem && (
@@ -1488,9 +1750,6 @@ function PembelianModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !submitLoading) closeModal()
-          }}
         >
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.96 }}
@@ -1575,6 +1834,91 @@ function PembelianModal({
                       {formatNilai(selectedItem, Number(selectedItem.stokSekarang || 0) + Number(form.jumlahTambah || 0))}
                     </p>
                   </div>
+
+                  {selectedItem.type === "barang" && (
+                    <>
+                      <FormInput
+                        label="Harga Modal Baru"
+                        required
+                        icon={Coins}
+                        inputMode="numeric"
+                        value={form.hargaModalBaru}
+                        onChange={(e: any) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            hargaModalBaru: formatNumberDots(e.target.value),
+                          }))
+                        }
+                        placeholder="Contoh: 50.000"
+                        rightSlot={
+                          <span className="rounded-lg bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-600">
+                            Lama {formatRupiah(selectedItem.hargaModal || 0)}
+                          </span>
+                        }
+                      />
+
+                      <FormInput
+                        label="Harga Jual Baru"
+                        required
+                        icon={Tag}
+                        inputMode="numeric"
+                        value={form.hargaJualBaru}
+                        onChange={(e: any) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            hargaJualBaru: formatNumberDots(e.target.value),
+                          }))
+                        }
+                        placeholder="Contoh: 60.000"
+                        rightSlot={
+                          <span className="rounded-lg bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-600">
+                            Lama {formatRupiah(selectedItem.hargaJual || 0)}
+                          </span>
+                        }
+                      />
+
+                      <div className="sm:col-span-2">
+                        <FormSelect
+                          label="Supplier"
+                          icon={Truck}
+                          value={form.supplier}
+                          onChange={(e: any) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              supplier: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Pilih supplier</option>
+                          {form.supplier && !supplierList.some((item) => item.nama === form.supplier) && (
+                            <option value={form.supplier}>{form.supplier}</option>
+                          )}
+                          {supplierList.map((item) => (
+                            <option key={item.id} value={item.nama}>
+                              {item.nama}
+                            </option>
+                          ))}
+                        </FormSelect>
+                      </div>
+
+                      <div className={`sm:col-span-2 rounded-2xl border px-3 py-2.5 ${
+                        hargaBerubah ? "border-amber-200 bg-amber-50" : "border-sky-100 bg-sky-50/70"
+                      }`}>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${
+                          hargaBerubah ? "text-amber-700" : "text-sky-600"
+                        }`}>
+                          {hargaBerubah ? "Sistem Akan Membuat Varian Baru" : "Sistem Akan Menambah Stok Barang Ini"}
+                        </p>
+                        <p className={`mt-1 text-xs font-black ${
+                          hargaBerubah ? "text-amber-800" : "text-sky-700"
+                        }`}>
+                          {hargaBerubah
+                            ? `${previewVariantName} · ${previewVariant?.code || "-"}`
+                            : `${selectedItem.nama} · ${selectedItem.kodeRef}`}
+                        </p>
+                      </div>
+                    </>
+                  )}
 
                   <div className="sm:col-span-2">
                     <FormTextarea
