@@ -11,6 +11,9 @@
   - nominal produk digital dibuat fleksibel: bisa angka atau huruf, misalnya Pulsa 10K / Data 5GB
   - input harga modal dan harga jual otomatis memakai titik ribuan agar mudah dibaca
   - card Total Barang, Barang Fisik, dan Barang Digital bisa diklik untuk toggle jumlah/modal
+  - kode barang dibuat otomatis dari kode toko + nama barang, contoh TOKO-CP-D-LVS-25
+  - import Excel tidak menerima kodeBarang manual; sistem membuat kode saat import
+  - label barcode menampilkan nama barang di atas barcode dan kode barang di bawahnya
 */
 
 "use client"
@@ -791,7 +794,7 @@ function makeBarangDataSheet(XLSX: any, rows: Partial<Barang>[], title: string, 
   aoa.push([title])
   aoa.push([
     templateMode
-      ? "Isi data mulai baris ke-5. Oranye wajib. id boleh kosong untuk tambah data baru."
+      ? "Isi data mulai baris ke-5. Oranye wajib. Kode barang dibuat otomatis oleh sistem."
       : `Total data: ${rows.length}`,
   ])
   aoa.push(["Kolom master memakai dropdown. Pilih nama data, sistem akan membaca ID otomatis saat import."])
@@ -892,7 +895,7 @@ function makeBarangPetunjukSheet(XLSX: any) {
     ["Aturan", "Keterangan"],
     ["jenisBarang", "Isi fisik atau digital."],
     ["id", "Boleh kosong untuk tambah data baru. Jika diisi dan cocok dengan database, data akan diperbarui."],
-    ["kodeBarang", "Barang fisik boleh dikosongkan, sistem membuat otomatis. Digital boleh kosong."],
+    ["kodeBarang", "Tidak diisi dari Excel. Sistem membuat otomatis dari kode toko + nama barang saat import."],
     ["kategoriNama/tokoNama", "Pilih dari dropdown. Sistem otomatis membaca ID dari sheet referensi saat import."],
     ["satuanNama", "Pilih dari dropdown untuk barang fisik. Digital otomatis transaksi."],
     ["supplier", "Pilih dari dropdown untuk barang fisik."],
@@ -1044,13 +1047,10 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
     try {
       JsBarcode(svgRef.current, value, {
         format: "CODE128",
-        displayValue: true,
+        displayValue: false,
         margin: 0,
-        width: 1.7,
-        height: 42,
-        fontSize: 18,
-        textMargin: 0,
-        fontOptions: "bold",
+        width: 1.65,
+        height: 34,
       })
     } catch (error) {
       console.error("Gagal generate barcode:", error)
@@ -1065,7 +1065,9 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
 
 
 function getVisibleBarangImportColumns() {
-  return BARANG_IMPORT_COLUMNS.filter((item) => item.label !== "id" && item.key !== "id")
+  return BARANG_IMPORT_COLUMNS.filter(
+    (item) => item.label !== "id" && item.key !== "id" && item.label !== "kodeBarang" && item.key !== "kodeBarang"
+  )
 }
 
 
@@ -1105,6 +1107,198 @@ function sortBarangRefRows<T extends { nama?: string; namaSaldo?: string }>(rows
       { numeric: true, sensitivity: "base" }
     )
   )
+}
+
+const BARANG_NAME_PHRASE_CODES: Array<{ words: string[]; code: string }> = [
+  { words: ["celana", "pendek"], code: "CP" },
+  { words: ["celana", "panjang"], code: "CL" },
+  { words: ["paket", "data"], code: "DATA" },
+  { words: ["token", "listrik"], code: "PLN" },
+  { words: ["top", "up"], code: "TPU" },
+  { words: ["pulsa"], code: "PLS" },
+  { words: ["voucher"], code: "VCR" },
+  { words: ["kuota"], code: "DATA" },
+  { words: ["baju"], code: "BJ" },
+  { words: ["kaos"], code: "KS" },
+  { words: ["kemeja"], code: "KMJ" },
+  { words: ["jaket"], code: "JKT" },
+  { words: ["sandal"], code: "SDL" },
+  { words: ["sepatu"], code: "SPT" },
+  { words: ["charger"], code: "CHG" },
+  { words: ["cas"], code: "CHG" },
+  { words: ["kabel"], code: "KBL" },
+  { words: ["headset"], code: "HDS" },
+  { words: ["earphone"], code: "ERP" },
+  { words: ["speaker"], code: "SPK" },
+  { words: ["powerbank"], code: "PWB" },
+  { words: ["hp"], code: "HP" },
+  { words: ["handphone"], code: "HP" },
+]
+
+const BARANG_WORD_CODES: Record<string, string> = {
+  dewasa: "D",
+  anak: "A",
+  pria: "P",
+  laki: "L",
+  cowok: "CWK",
+  wanita: "W",
+  perempuan: "PR",
+  cewek: "CWK",
+  levis: "LVS",
+  levi: "LVS",
+  jeans: "JNS",
+  denim: "DNM",
+  katun: "KTN",
+  cotton: "KTN",
+  polo: "PLO",
+  original: "ORI",
+  ori: "ORI",
+  premium: "PRM",
+  android: "AND",
+  iphone: "IPH",
+  samsung: "SMS",
+  vivo: "VIV",
+  oppo: "OPP",
+  xiaomi: "XIA",
+  redmi: "RDM",
+  realme: "RLM",
+  infinix: "IFX",
+  telkomsel: "TSEL",
+  simpati: "TSEL",
+  byu: "BYU",
+  xl: "XL",
+  axis: "AXIS",
+  indosat: "ISAT",
+  im3: "ISAT",
+  tri: "TRI",
+  three: "TRI",
+  smartfren: "SMF",
+  pln: "PLN",
+  dana: "DANA",
+  ovo: "OVO",
+  gopay: "GPY",
+  shopeepay: "SPY",
+  linkaja: "LJA",
+  bluetooth: "BT",
+  type: "TC",
+  typec: "TC",
+  usb: "USB",
+  micro: "MC",
+}
+
+const BARANG_CODE_STOP_WORDS = new Set([
+  "ukuran",
+  "size",
+  "nomor",
+  "no",
+  "untuk",
+  "dan",
+  "atau",
+  "warna",
+  "model",
+  "tipe",
+  "jenis",
+  "barang",
+  "produk",
+  "isi",
+])
+
+function normalizeBarangCodePrefix(value: string, fallback = "TOKO") {
+  const clean = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "")
+
+  return clean || fallback
+}
+
+function tokenizeBarangNameForCode(value: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/([0-9]+)\s*(rb|ribu|k)\b/g, "$1K")
+    .replace(/([0-9]+)\s*(gb|mb|w|mah|m)\b/g, "$1$2")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function makeBarangTokenCode(word: string) {
+  const lower = String(word || "").toLowerCase().trim()
+  if (!lower || BARANG_CODE_STOP_WORDS.has(lower)) return ""
+
+  const mapped = BARANG_WORD_CODES[lower]
+  if (mapped) return mapped
+
+  const upper = lower.toUpperCase()
+  if (/^[0-9]+K$/.test(upper)) return upper
+  if (/^[0-9]+(GB|MB|W|MAH|M)$/.test(upper)) return upper
+  if (/^[0-9]+$/.test(upper)) return upper
+  if (/^[A-Z]+[0-9]+[A-Z0-9]*$/.test(upper)) return upper.slice(0, 8)
+  if (upper.length <= 4) return upper
+
+  const consonants = upper.replace(/[AIUEO]/g, "")
+  return (consonants.length >= 3 ? consonants.slice(0, 3) : upper.slice(0, 3)).toUpperCase()
+}
+
+function buildBarangNameCodeSegment(nama: string) {
+  const words = tokenizeBarangNameForCode(nama)
+  const used = new Set<number>()
+  const segments: string[] = []
+
+  BARANG_NAME_PHRASE_CODES.forEach((phrase) => {
+    for (let index = 0; index <= words.length - phrase.words.length; index += 1) {
+      const matched = phrase.words.every((word, offset) => words[index + offset] === word)
+      if (!matched) continue
+
+      if (!segments.includes(phrase.code)) segments.push(phrase.code)
+      phrase.words.forEach((_, offset) => used.add(index + offset))
+      break
+    }
+  })
+
+  words.forEach((word, index) => {
+    if (used.has(index)) return
+
+    const code = makeBarangTokenCode(word)
+    if (!code) return
+    if (segments.includes(code)) return
+
+    segments.push(code)
+  })
+
+  return (segments.length > 0 ? segments : ["BRG"]).join("-").slice(0, 48)
+}
+
+function buildKodeBarangFromName(params: {
+  nama: string
+  toko?: Toko | null
+  tokoId?: string
+  existingItems?: Barang[]
+  currentId?: string | null
+}) {
+  const tokoId = params.toko?.id || params.tokoId || ""
+  const tokoKode = normalizeBarangCodePrefix(params.toko?.kode || params.tokoId || "TOKO")
+  const nameCode = buildBarangNameCodeSegment(params.nama)
+  const baseCode = normalizeBarcode(`${tokoKode}-${nameCode}`)
+  const existingItems = params.existingItems || []
+  const usedCodes = new Set(
+    existingItems
+      .filter((item) => item.tokoId === tokoId && item.id !== params.currentId)
+      .map((item) => normalizeBarcode(item.kodeBarang))
+      .filter(Boolean)
+  )
+
+  if (!usedCodes.has(baseCode)) return baseCode
+
+  let counter = 2
+  while (usedCodes.has(`${baseCode}-${String(counter).padStart(2, "0")}`)) {
+    counter += 1
+  }
+
+  return `${baseCode}-${String(counter).padStart(2, "0")}`
 }
 
 
@@ -1362,6 +1556,7 @@ async function downloadBarangTemplateWithExcelJS(params: {
   const petunjuk = workbook.addWorksheet("petunjuk")
   petunjuk.addRow(["Field", "Keterangan"])
   petunjuk.addRow(["jenisBarang", "Pilih fisik atau digital dari dropdown."])
+  petunjuk.addRow(["kodeBarang", "Tidak perlu dan tidak boleh diisi di Excel. Sistem otomatis membuat dari kode toko + nama barang."])
   petunjuk.addRow(["kategoriNama/tokoNama", "Pilih dari dropdown. Jika daftar panjang, buka sheet ref lalu pakai filter/search pada kolom Kata Kunci."])
   petunjuk.addRow(["satuanNama/supplier", "Pilih dari dropdown untuk barang fisik."])
   petunjuk.addRow(["provider/saldoSourceNama", "Pilih dari dropdown untuk barang digital."])
@@ -1813,28 +2008,57 @@ export default function TambahBarangPage() {
     (val: any) =>
       setForm((f) => ({ ...f, [key]: val }))
 
-  const generateKodeBarang = (tokoId: string) => {
-    const toko = tokoList.find((item) => item.id === tokoId)
-    const tokoKodeRaw = toko?.kode?.trim() || tokoId.trim()
-    const tokoKode = tokoKodeRaw.replace(/\s+/g, "").toUpperCase()
-    const time = Date.now().toString().slice(-6)
-    return `${tokoKode}-${time}`
+  const getTokoById = (tokoId: string) => tokoList.find((item) => item.id === tokoId) || null
+
+  const generateKodeBarang = (tokoId: string, nama = form.nama, currentId = editId) => {
+    const toko = getTokoById(tokoId)
+    return buildKodeBarangFromName({
+      nama,
+      toko,
+      tokoId,
+      existingItems: data,
+      currentId,
+    })
   }
 
-  const generateKodeBarangForCopy = (tokoId: string, index: number) => {
-    const toko = tokoList.find((item) => item.id === tokoId)
-    const tokoKodeRaw = toko?.kode?.trim() || tokoId.trim()
-    const tokoKode = tokoKodeRaw.replace(/\s+/g, "").toUpperCase()
-    const time = Date.now().toString().slice(-6)
-    return `${tokoKode}-${time}-${String(index + 1).padStart(3, "0")}`
+  const generateKodeBarangForCopy = (tokoId: string, nama: string, currentItems: Barang[] = data) => {
+    const toko = getTokoById(tokoId)
+    return buildKodeBarangFromName({
+      nama,
+      toko,
+      tokoId,
+      existingItems: currentItems,
+      currentId: null,
+    })
   }
 
-  const generateKodeBarangForMultiImei = (tokoId: string, index: number) => {
-    const toko = tokoList.find((item) => item.id === tokoId)
-    const tokoKodeRaw = toko?.kode?.trim() || tokoId.trim()
-    const tokoKode = tokoKodeRaw.replace(/\s+/g, "").toUpperCase()
-    const time = Date.now().toString().slice(-6)
-    return `${tokoKode}-${time}-${String(index + 1).padStart(3, "0")}`
+  const generateKodeBarangForMultiImei = (tokoId: string, nama: string, index: number) => {
+    const toko = getTokoById(tokoId)
+    const baseCode = buildKodeBarangFromName({
+      nama,
+      toko,
+      tokoId,
+      existingItems: data,
+      currentId: editId,
+    })
+
+    return `${baseCode}-${String(index + 1).padStart(3, "0")}`
+  }
+
+  const syncKodeBarangFromName = (next: Partial<typeof EMPTY_FORM>) => {
+    const nextNama = typeof next.nama === "string" ? next.nama : form.nama
+    const nextTokoId = typeof next.tokoId === "string" ? next.tokoId : form.tokoId
+
+    if (!nextNama.trim() || !nextTokoId) {
+      setForm((prev) => ({ ...prev, ...next }))
+      return
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      ...next,
+      kodeBarang: generateKodeBarang(nextTokoId, nextNama, editId),
+    }))
   }
 
   const getKodeUnikList = () => {
@@ -1846,36 +2070,36 @@ export default function TambahBarangPage() {
       .filter(Boolean)
   }
 
-  const fillAutoBarcode = (tokoId: string) => {
-    if (!tokoId) {
-      setError("Pilih toko dulu sebelum membuat barcode otomatis")
-      return
-    }
-    setForm((prev) => ({ ...prev, kodeBarang: generateKodeBarang(tokoId) }))
-    setError(null)
-  }
-
     const handleChangeJenisBarang = (nextJenis: JenisBarang) => {
-    setForm((prev) => ({
-      ...prev,
-      jenisBarang: nextJenis,
-      kodeBarang: nextJenis === "digital" ? "" : prev.kodeBarang,
-      merk: nextJenis === "digital" ? "" : prev.merk,
-      satuan: nextJenis === "digital" ? "transaksi" : prev.satuan || prev.satuanNama || "",
-      satuanId: nextJenis === "digital" ? "" : prev.satuanId || "",
-      satuanNama: nextJenis === "digital" ? "transaksi" : prev.satuanNama || prev.satuan || "",
-      stok: nextJenis === "digital" ? "0" : prev.stok,
-      stokMinimum: nextJenis === "digital" ? "0" : prev.stokMinimum,
-      pakaiKodeUnik: nextJenis === "fisik" ? prev.pakaiKodeUnik : false,
-      jenisKodeUnik: nextJenis === "fisik" ? prev.jenisKodeUnik : "imei",
-      kodeUnik: nextJenis === "fisik" ? prev.kodeUnik : "",
-      providerId: nextJenis === "digital" ? prev.providerId : "",
-      provider: nextJenis === "digital" ? prev.provider : "",
-      saldoSourceId: nextJenis === "digital" ? prev.saldoSourceId : "",
-      supplier: prev.supplier,
-      nominalProduk: nextJenis === "digital" ? prev.nominalProduk : "",
-      aktif: nextJenis === "digital" ? prev.aktif : true,
-    }))
+    setForm((prev) => {
+      const nextForm = {
+        ...prev,
+        jenisBarang: nextJenis,
+        merk: nextJenis === "digital" ? "" : prev.merk,
+        satuan: nextJenis === "digital" ? "transaksi" : prev.satuan || prev.satuanNama || "",
+        satuanId: nextJenis === "digital" ? "" : prev.satuanId || "",
+        satuanNama: nextJenis === "digital" ? "transaksi" : prev.satuanNama || prev.satuan || "",
+        stok: nextJenis === "digital" ? "0" : prev.stok,
+        stokMinimum: nextJenis === "digital" ? "0" : prev.stokMinimum,
+        pakaiKodeUnik: nextJenis === "fisik" ? prev.pakaiKodeUnik : false,
+        jenisKodeUnik: nextJenis === "fisik" ? prev.jenisKodeUnik : "imei",
+        kodeUnik: nextJenis === "fisik" ? prev.kodeUnik : "",
+        providerId: nextJenis === "digital" ? prev.providerId : "",
+        provider: nextJenis === "digital" ? prev.provider : "",
+        saldoSourceId: nextJenis === "digital" ? prev.saldoSourceId : "",
+        supplier: prev.supplier,
+        nominalProduk: nextJenis === "digital" ? prev.nominalProduk : "",
+        aktif: nextJenis === "digital" ? prev.aktif : true,
+      }
+
+      return {
+        ...nextForm,
+        kodeBarang:
+          nextForm.nama.trim() && nextForm.tokoId
+            ? generateKodeBarang(nextForm.tokoId, nextForm.nama, editId)
+            : prev.kodeBarang,
+      }
+    })
   }
 
   const closeModal = () => {
@@ -1943,10 +2167,8 @@ export default function TambahBarangPage() {
     if (!form.hargaModal.trim()) return "Harga modal wajib diisi"
     if (!form.hargaJual.trim()) return "Harga jual wajib diisi"
 
-    if (isFisikForm) {
-      const kodeBarangFinal = normalizeBarcode(form.kodeBarang || generateKodeBarang(form.tokoId))
-      if (!kodeBarangFinal) return "Barcode / kode barang wajib diisi"
-    }
+    const kodeBarangFinalUmum = normalizeBarcode(generateKodeBarang(form.tokoId, form.nama, editId))
+    if (!kodeBarangFinalUmum) return "Kode barang wajib dibuat otomatis dari nama barang dan toko"
 
     if (isFisikForm) {
       if (!form.supplier.trim()) return "Supplier wajib dipilih"
@@ -1996,9 +2218,9 @@ export default function TambahBarangPage() {
       if (!saldoDipilih.aktif) return "Sumber saldo sedang nonaktif"
     }
 
-    if (isFisikForm) {
-      const multiKodeUnik = form.pakaiKodeUnik && kodeUnikList.length > 1
-      const kodeBarangFinal = normalizeBarcode(form.kodeBarang || generateKodeBarang(form.tokoId))
+    {
+      const multiKodeUnik = isFisikForm && form.pakaiKodeUnik && kodeUnikList.length > 1
+      const kodeBarangFinal = normalizeBarcode(generateKodeBarang(form.tokoId, form.nama, editId))
 
       if (!multiKodeUnik) {
         const duplicateBarcode = data.find((item) => {
@@ -2008,7 +2230,7 @@ export default function TambahBarangPage() {
           return sameCode && sameStore && notSelf
         })
 
-        if (duplicateBarcode) return "Barcode / kode barang sudah dipakai di toko ini"
+        if (duplicateBarcode) return "Kode barang sudah dipakai di toko ini"
       }
     }
 
@@ -2095,11 +2317,9 @@ export default function TambahBarangPage() {
       const kodeUnikList = getKodeUnikList()
       const isMultiKodeUnik = isFisikForm && form.pakaiKodeUnik && kodeUnikList.length > 1
 
-      const kodeBarang = isFisikForm
-        ? normalizeBarcode(
-            isMultiKodeUnik ? generateKodeBarangForMultiImei(form.tokoId, 0) : form.kodeBarang || generateKodeBarang(form.tokoId)
-          )
-        : ""
+      const kodeBarang = normalizeBarcode(
+        isMultiKodeUnik ? generateKodeBarangForMultiImei(form.tokoId, form.nama, 0) : generateKodeBarang(form.tokoId, form.nama, editId)
+      )
 
       const pakaiKodeUnik = isFisikForm ? Boolean(form.pakaiKodeUnik) : false
       const jenisKodeUnik = form.jenisKodeUnik
@@ -2174,7 +2394,7 @@ export default function TambahBarangPage() {
           const kodeItem = kodeUnikList[index]
           const newRef = doc(collection(db, "barang"))
           const createdAt = now + index
-          const itemKodeBarang = normalizeBarcode(generateKodeBarangForMultiImei(form.tokoId, index))
+          const itemKodeBarang = normalizeBarcode(generateKodeBarangForMultiImei(form.tokoId, form.nama, index))
           const newItem: Barang = {
             id: newRef.id,
             ...basePayload,
@@ -2340,9 +2560,7 @@ export default function TambahBarangPage() {
           const isDigital = jenisBarang === "digital"
           const newRef = doc(collection(db, "barang"))
           const createdAt = now + copyIndex
-          const kodeBarang = isDigital
-            ? ""
-            : normalizeBarcode(generateKodeBarangForCopy(targetToko.id, copyIndex))
+          const kodeBarang = normalizeBarcode(generateKodeBarangForCopy(targetToko.id, item.nama, [...data, ...newItems]))
           const pakaiKodeUnik = !isDigital && Boolean(item.pakaiKodeUnik && item.kodeUnik)
 
           const copiedItem: Barang = {
@@ -2636,6 +2854,10 @@ export default function TambahBarangPage() {
         const rawId = normalizeText(row.id)
         const jenisBarang = normalizeExcelKey(row.jenisBarang || "fisik") === "digital" ? "digital" : "fisik"
         const nama = normalizeText(row.nama)
+        if (normalizeText(row.kodeBarang)) {
+          throw new Error("kodeBarang tidak boleh diisi dari Excel. Hapus isi kolom kodeBarang atau download template terbaru.")
+        }
+
         const kategori = resolveKategoriByName(row.kategoriNama)
         const toko = resolveTokoByName(row.tokoNama)
         const hargaModal = parseExcelNumber(row.hargaModal)
@@ -2675,7 +2897,15 @@ export default function TambahBarangPage() {
         const finalId = editingExisting?.id || rawId || doc(collection(db, "barang")).id
         const stok = jenisBarang === "digital" ? 0 : Math.max(0, parseExcelNumber(row.stok))
         const stokMinimum = jenisBarang === "digital" ? 0 : Math.max(0, parseExcelNumber(row.stokMinimum))
-        const kodeBarang = jenisBarang === "digital" ? "" : normalizeBarcode(row.kodeBarang || generateKodeBarang(toko.id))
+        const kodeBarang = normalizeBarcode(
+          buildKodeBarangFromName({
+            nama,
+            toko,
+            tokoId: toko.id,
+            existingItems: nextData,
+            currentId: finalId,
+          })
+        )
 
         if (jenisBarang === "fisik") {
           const duplicateBarcode = nextData.find((item) => {
@@ -2983,7 +3213,196 @@ export default function TambahBarangPage() {
     setShowPrintPreview(true)
   }
 
-  const handlePrint = () => window.print()
+  const escapePrintText = (value: unknown) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;")
+
+  const makePrintBarcodeSvg = (value: string) => {
+    const cleanValue = normalizeBarcode(value)
+    if (!cleanValue) return ""
+
+    try {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+      JsBarcode(svg, cleanValue, {
+        format: "CODE128",
+        displayValue: false,
+        margin: 0,
+        width: 1.65,
+        height: 34,
+      })
+      return svg.outerHTML
+    } catch (error) {
+      console.error("Gagal generate barcode print:", error)
+      return `<div class="barcode-fallback">${escapePrintText(cleanValue)}</div>`
+    }
+  }
+
+  const handlePrint = () => {
+    if (flatPrintItems.length === 0) {
+      setSuccessMsg("Pilih minimal 1 barang fisik untuk dicetak")
+      setTimeout(() => setSuccessMsg(null), 2500)
+      return
+    }
+
+    const itemsHtml = flatPrintItems
+      .map((item) => {
+        const code = normalizeBarcode(item.kodeBarang)
+        const barcodeSvg = makePrintBarcodeSvg(code)
+
+        return `
+          <div class="barcode-card">
+            <div class="barcode-inner">
+              <div class="barcode-name">${escapePrintText(item.nama || "Tanpa Nama")}</div>
+              <div class="barcode-svg">${barcodeSvg}</div>
+              <div class="barcode-code">${escapePrintText(code)}</div>
+            </div>
+          </div>
+        `
+      })
+      .join("")
+
+    const iframe = document.createElement("iframe")
+    iframe.setAttribute("title", "Print Barcode Barang")
+    iframe.style.position = "fixed"
+    iframe.style.right = "0"
+    iframe.style.bottom = "0"
+    iframe.style.width = "0"
+    iframe.style.height = "0"
+    iframe.style.border = "0"
+    iframe.style.opacity = "0"
+    iframe.style.pointerEvents = "none"
+    document.body.appendChild(iframe)
+
+    const printDocument = iframe.contentWindow?.document
+    if (!printDocument) {
+      iframe.remove()
+      setError("Gagal membuka area print barcode")
+      return
+    }
+
+    printDocument.open()
+    printDocument.write(`<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Print Barcode Barang</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 4mm;
+            }
+
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            html,
+            body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+            }
+
+            .barcode-grid {
+              display: grid;
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              gap: 1.5mm;
+              width: 100%;
+              align-items: start;
+            }
+
+            .barcode-card {
+              width: 100%;
+              aspect-ratio: 2 / 1;
+              break-inside: avoid;
+              page-break-inside: avoid;
+              overflow: hidden;
+              border: 1px solid #dbe3ea;
+              border-radius: 2px;
+              background: #ffffff;
+              padding: 1mm;
+            }
+
+            .barcode-inner {
+              width: 100%;
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+              align-items: stretch;
+              justify-content: center;
+              overflow: hidden;
+            }
+
+            .barcode-name {
+              margin-bottom: 0.45mm;
+              font-size: 6.5px;
+              line-height: 1;
+              font-weight: 900;
+              text-align: center;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+
+            .barcode-svg {
+              width: 100%;
+              height: 9.5mm;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            .barcode-svg svg {
+              width: auto;
+              max-width: 100%;
+              height: 9.5mm;
+              display: block;
+              margin: 0 auto;
+            }
+
+            .barcode-code,
+            .barcode-fallback {
+              margin-top: 0.45mm;
+              font-size: 6.5px;
+              line-height: 1;
+              font-weight: 900;
+              letter-spacing: 0;
+              text-align: center;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+          </style>
+        </head>
+        <body>
+          <main class="barcode-grid">${itemsHtml}</main>
+        </body>
+      </html>`)
+    printDocument.close()
+
+    const cleanUpPrintFrame = () => {
+      setTimeout(() => iframe.remove(), 300)
+    }
+
+    iframe.contentWindow?.addEventListener("afterprint", cleanUpPrintFrame, { once: true })
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      setTimeout(() => {
+        if (document.body.contains(iframe)) iframe.remove()
+      }, 2500)
+    }, 250)
+  }
 
   return (
     <>
@@ -3056,31 +3475,40 @@ export default function TambahBarangPage() {
             display: flex !important;
             flex-direction: column !important;
             justify-content: center !important;
+            align-items: center !important;
             padding: 0.5mm !important;
             overflow: hidden !important;
             margin-top: -1mm !important;
             border-radius: 0 !important;
           }
 
-          .barcode-svg-print {
-            width: 100% !important;
-            height: 11mm !important;
-            min-height: 11mm !important;
-            display: block !important;
+          .barcode-name {
+            margin-bottom: 0.45mm !important;
+            font-size: 6.5px !important;
+            line-height: 1 !important;
+            font-weight: 900 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            text-align: center !important;
           }
 
-          .barcode-svg-print svg,
-          .barcode-svg-print > svg {
-            width: 100% !important;
-            height: 11mm !important;
+          .barcode-svg-print {
+            width: auto !important;
+            max-width: 100% !important;
+            height: 9.5mm !important;
+            min-height: 9.5mm !important;
+            display: block !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
           }
 
           .barcode-code {
-            font-size: 7px !important;
+            font-size: 6.5px !important;
             line-height: 1 !important;
-            margin-top: 0.8mm !important;
-            letter-spacing: 0.04em !important;
-            font-weight: 800 !important;
+            margin-top: 0.45mm !important;
+            letter-spacing: 0 !important;
+            font-weight: 900 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
@@ -3887,41 +4315,21 @@ export default function TambahBarangPage() {
                     </div>
 
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      {isFisikForm ? (
-                        <FormInput
-                          label="Barcode / Kode Barang"
-                          required
-                          icon={Barcode}
-                          value={form.kodeBarang}
-                          onChange={(e: any) => setField("kodeBarang")(normalizeBarcode(e.target.value))}
-                          placeholder="Contoh: BRG-0001"
-                          rightSlot={
-                            <button
-                              type="button"
-                              onClick={() => fillAutoBarcode(form.tokoId)}
-                              className="rounded-lg bg-slate-900 px-2.5 py-1 text-[10px] font-black text-white transition-colors hover:bg-slate-700"
-                            >
-                              Otomatis
-                            </button>
-                          }
-                        />
-                      ) : (
-                        <div className="rounded-xl border-2 border-sky-100 bg-sky-50 px-4 py-3 sm:col-span-2">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
-                            Produk Digital
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-sky-700">
-                            Produk digital tidak memakai barcode fisik. Sumber saldo akan dipilih dari master saldo.
-                          </p>
-                        </div>
-                      )}
+                      <FormInput
+                        label="Kode Barang"
+                        required
+                        icon={Barcode}
+                        value={form.kodeBarang}
+                        readOnly
+                        placeholder="Otomatis dari toko + nama barang"
+                      />
 
                       <FormInput
                         label="Nama Barang"
                         required
                         icon={Package}
                         value={form.nama}
-                        onChange={(e: any) => setField("nama")(e.target.value)}
+                        onChange={(e: any) => syncKodeBarangFromName({ nama: e.target.value })}
                         placeholder={isDigitalForm ? "Contoh: Pulsa XL 5K" : "Contoh: Oppo A58"}
                       />
 
@@ -3945,7 +4353,7 @@ export default function TambahBarangPage() {
                         required
                         icon={Store}
                         value={form.tokoId}
-                        onChange={(e: any) => setField("tokoId")(e.target.value)}
+                        onChange={(e: any) => syncKodeBarangFromName({ tokoId: e.target.value })}
                       >
                         <option value="">Pilih toko</option>
                         {tokoList.map((t) => (
@@ -4902,9 +5310,16 @@ export default function TambahBarangPage() {
                           key={item.key}
                           className="barcode-card aspect-[2/1] rounded-md border border-slate-200 bg-white p-2"
                         >
-                          <div className="barcode-svg-wrap mt-2 overflow-hidden">
-                            <BarcodeSvg value={item.kodeBarang} className="barcode-svg-print" />
-                            <p className="barcode-code">{item.kodeBarang}</p>
+                          <div className="barcode-svg-wrap mt-1 overflow-hidden">
+                            <p className="barcode-name text-center text-[9px] font-black leading-none text-slate-900 truncate">
+                              {item.nama}
+                            </p>
+                            <div className="flex justify-center">
+                              <BarcodeSvg value={item.kodeBarang} className="barcode-svg-print" />
+                            </div>
+                            <p className="barcode-code truncate text-center text-[9px] font-black leading-none tracking-normal text-slate-900">
+                              {item.kodeBarang}
+                            </p>
                           </div>
                         </div>
                       ))}

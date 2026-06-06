@@ -1,8 +1,8 @@
 /*
   Halaman admin pembelian barang gabungan.
-  Menampilkan barang fisik yang stoknya <= stok minimum dan saldo digital yang jumlahSaldo <= jumlahMinimum.
+  Menampilkan barang/saldo yang perlu restock, dengan opsi centang untuk menampilkan semua item agar tetap bisa dibeli manual.
   Layout dibuat konsisten dengan Laporan Harian: header biru, filter collapse mobile, stat card 2 kolom,
-  tabel desktop, card mobile satu lapis, pagination lokal, toast fixed, dan modal pembelian rapi.
+  tabel desktop, card mobile satu lapis, riwayat di bawah tabel, fetch database memakai limit, pagination 50/100/250/500, toast fixed, dan modal pembelian rapi.
 */
 
 "use client"
@@ -114,11 +114,17 @@ type RiwayatPembelianRow = {
 }
 
 const ITEMS_OPTIONS = [
-  { value: 10, label: "10" },
-  { value: 25, label: "25" },
   { value: 50, label: "50" },
   { value: 100, label: "100" },
-  { value: 0, label: "ALL" },
+  { value: 250, label: "250" },
+  { value: 500, label: "500" },
+]
+
+const FETCH_LIMIT_OPTIONS = [
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 250, label: "250" },
+  { value: 500, label: "500" },
 ]
 
 const EMPTY_PEMBELIAN_FORM = {
@@ -250,7 +256,9 @@ export default function PembelianBarangPage() {
   const [filterToko, setFilterToko] = useState("")
   const [filterJenis, setFilterJenis] = useState("")
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
-  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
+  const [dataLimit, setDataLimit] = useState(50)
+  const [showAllItems, setShowAllItems] = useState(false)
   const [page, setPage] = useState(1)
 
   const [showModal, setShowModal] = useState(false)
@@ -317,7 +325,7 @@ export default function PembelianBarangPage() {
   }
 
   const fetchBarang = async () => {
-    const qRef = query(collection(db, "barang"), orderBy("nama"))
+    const qRef = query(collection(db, "barang"), orderBy("nama"), limit(dataLimit))
     const snap = await getDocs(qRef)
 
     const list: Barang[] = snap.docs.map((item) => {
@@ -347,7 +355,7 @@ export default function PembelianBarangPage() {
   }
 
   const fetchSaldo = async () => {
-    const qRef = query(collection(db, "master_saldo_digital"), orderBy("namaSaldo"))
+    const qRef = query(collection(db, "master_saldo_digital"), orderBy("namaSaldo"), limit(dataLimit))
     const snap = await getDocs(qRef)
 
     const list: MasterSaldoDigital[] = snap.docs.map((item) => {
@@ -371,8 +379,8 @@ export default function PembelianBarangPage() {
 
   const fetchRiwayat = async () => {
     try {
-      const qBarang = query(collection(db, "riwayat_pembelian_barang"), orderBy("createdAt", "desc"), limit(10))
-      const qSaldo = query(collection(db, "riwayat_pembelian_saldo_digital"), orderBy("createdAt", "desc"), limit(10))
+      const qBarang = query(collection(db, "riwayat_pembelian_barang"), orderBy("createdAt", "desc"), limit(dataLimit))
+      const qSaldo = query(collection(db, "riwayat_pembelian_saldo_digital"), orderBy("createdAt", "desc"), limit(dataLimit))
 
       const [snapBarang, snapSaldo] = await Promise.all([getDocs(qBarang), getDocs(qSaldo)])
 
@@ -445,10 +453,16 @@ export default function PembelianBarangPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (!auth.currentUser) return
+    fetchAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataLimit])
+
   const pembelianItems = useMemo<PembelianItem[]>(() => {
     const barangNeedPembelian: PembelianItem[] = barangList
       .filter((item) => item.jenisBarang === "fisik")
-      .filter((item) => item.stok <= item.stokMinimum)
+      .filter((item) => showAllItems || item.stok <= item.stokMinimum)
       .map((item) => ({
         type: "barang",
         id: item.id,
@@ -469,7 +483,7 @@ export default function PembelianBarangPage() {
 
     const saldoNeedPembelian: PembelianItem[] = saldoList
       .filter((item) => item.aktif)
-      .filter((item) => item.jumlahSaldo <= item.jumlahMinimum)
+      .filter((item) => showAllItems || item.jumlahSaldo <= item.jumlahMinimum)
       .map((item) => ({
         type: "saldo",
         id: item.id,
@@ -489,7 +503,7 @@ export default function PembelianBarangPage() {
       }))
 
     return [...barangNeedPembelian, ...saldoNeedPembelian]
-  }, [barangList, saldoList])
+  }, [barangList, saldoList, showAllItems])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -531,7 +545,7 @@ export default function PembelianBarangPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, filterKategori, filterToko, filterJenis, itemsPerPage])
+  }, [search, filterKategori, filterToko, filterJenis, itemsPerPage, dataLimit, showAllItems])
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
@@ -734,7 +748,7 @@ export default function PembelianBarangPage() {
           transition={{ duration: 0.35, delay: 0.05 }}
           className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <div className="lg:col-span-2">
               <FieldBox label="Cari Item Pembelian">
                 <div className="relative">
@@ -754,6 +768,14 @@ export default function PembelianBarangPage() {
             </div>
 
             <div className="hidden sm:contents">
+              <FilterSelect label="Limit Data" value={String(dataLimit)} onChange={(value) => setDataLimit(Number(value))} icon={Boxes}>
+                {FETCH_LIMIT_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </FilterSelect>
+
               <FilterSelect label="Jenis" value={filterJenis} onChange={setFilterJenis} icon={AlertTriangle}>
                 <option value="">Semua Jenis</option>
                 <option value="barang">Barang</option>
@@ -778,6 +800,20 @@ export default function PembelianBarangPage() {
                 ))}
               </FilterSelect>
             </div>
+          </div>
+
+          <div className="mt-3 hidden sm:flex">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <input
+                type="checkbox"
+                checked={showAllItems}
+                onChange={(e) => setShowAllItems(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-600">
+                Tampilkan semua item agar bisa pembelian manual meski stok belum minimum
+              </span>
+            </label>
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2 sm:hidden">
@@ -847,6 +883,19 @@ export default function PembelianBarangPage() {
                   </FilterSelect>
 
                   <FilterSelect
+                    label="Limit Data"
+                    value={String(dataLimit)}
+                    onChange={(value) => setDataLimit(Number(value))}
+                    icon={Boxes}
+                  >
+                    {FETCH_LIMIT_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </FilterSelect>
+
+                  <FilterSelect
                     label="Tampilkan"
                     value={String(itemsPerPage)}
                     onChange={(value) => setItemsPerPage(Number(value))}
@@ -857,6 +906,18 @@ export default function PembelianBarangPage() {
                       </option>
                     ))}
                   </FilterSelect>
+
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={showAllItems}
+                      onChange={(e) => setShowAllItems(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-600">
+                      Tampilkan semua item
+                    </span>
+                  </label>
                 </div>
               </motion.div>
             )}
@@ -879,7 +940,7 @@ export default function PembelianBarangPage() {
           paged={paged}
           riwayatList={riwayatList}
           itemsPerPage={itemsPerPage}
-          setItemsPerPage={setItemsPerPage}
+          showAllItems={showAllItems}
           page={page}
           totalPages={totalPages}
           goPage={goPage}
@@ -1057,7 +1118,7 @@ function PembelianContent({
   paged,
   riwayatList,
   itemsPerPage,
-  setItemsPerPage,
+  showAllItems,
   page,
   totalPages,
   goPage,
@@ -1068,7 +1129,7 @@ function PembelianContent({
   paged: PembelianItem[]
   riwayatList: RiwayatPembelianRow[]
   itemsPerPage: number
-  setItemsPerPage: (value: number) => void
+  showAllItems: boolean
   page: number
   totalPages: number
   goPage: (page: number) => void
@@ -1092,29 +1153,17 @@ function PembelianContent({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-      <div className="space-y-4 xl:col-span-7">
+    <div className="space-y-4">
+      <div className="space-y-4">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <HeaderTitle title="Item Pembelian" subtitle="Barang dan saldo yang melewati batas minimum" />
+            <HeaderTitle title="Item Pembelian" subtitle={showAllItems ? "Semua barang dan saldo yang bisa dibeli manual" : "Barang dan saldo yang melewati batas minimum"} />
 
-            <div className="hidden w-full sm:block sm:max-w-[120px]">
-              <FilterSelect
-                label="Tampilkan"
-                value={String(itemsPerPage)}
-                onChange={(value) => setItemsPerPage(Number(value))}
-              >
-                {ITEMS_OPTIONS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </FilterSelect>
-            </div>
+
           </div>
 
           {filtered.length === 0 ? (
-            <EmptyBox label="Tidak ada item yang perlu dibeli" icon={ShieldAlert} />
+            <EmptyBox label={showAllItems ? "Data barang/saldo tidak ditemukan" : "Tidak ada item yang perlu dibeli"} icon={ShieldAlert} />
           ) : (
             <>
               <div className="space-y-2 sm:hidden">
@@ -1257,7 +1306,7 @@ function PembelianContent({
         </div>
       </div>
 
-      <div className="space-y-4 xl:col-span-5">
+      <div className="space-y-4">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <HeaderTitle title="Riwayat Terbaru" subtitle="Pembelian barang fisik dan saldo digital" />
 
