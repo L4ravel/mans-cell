@@ -12,6 +12,7 @@
   - Tambah pelanggan opsional agar diskon member masuk transaksi tanpa terlalu menonjol.
   - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
   - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
+  - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
 */
 
 "use client";
@@ -267,6 +268,77 @@ const formatTanggalJam = (value: number) => {
   }).format(new Date(value));
 };
 
+type RiwayatRangeFilter = "today" | "yesterday" | "7d" | "30d" | "90d" | "custom";
+
+const RIWAYAT_TRANSAKSI_LIMIT = 200;
+
+const padDatePart = (value: number) => String(value).padStart(2, "0");
+
+const toDateInputValue = (date = new Date()) => {
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(
+    date.getDate(),
+  )}`;
+};
+
+const parseDateInput = (value: string) => {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+};
+
+const startOfDayMs = (date: Date) => {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next.getTime();
+};
+
+const endOfDayMs = (date: Date) => {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next.getTime();
+};
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const buildRiwayatDateRangeMs = (
+  range: RiwayatRangeFilter,
+  customStartDate: string,
+  customEndDate: string,
+) => {
+  const now = new Date();
+
+  if (range === "today") {
+    return { startMs: startOfDayMs(now), endMs: endOfDayMs(now) };
+  }
+
+  if (range === "yesterday") {
+    const yesterday = addDays(now, -1);
+    return { startMs: startOfDayMs(yesterday), endMs: endOfDayMs(yesterday) };
+  }
+
+  if (range === "custom") {
+    const startDate = parseDateInput(customStartDate) || now;
+    const endDate = parseDateInput(customEndDate) || startDate;
+    const startMs = startOfDayMs(startDate);
+    const endMs = endOfDayMs(endDate);
+
+    return startMs <= endMs
+      ? { startMs, endMs }
+      : { startMs: startOfDayMs(endDate), endMs: endOfDayMs(startDate) };
+  }
+
+  const days = range === "90d" ? 90 : range === "30d" ? 30 : 7;
+  return {
+    startMs: startOfDayMs(addDays(now, -(days - 1))),
+    endMs: endOfDayMs(now),
+  };
+};
+
 const normalizeRoles = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value
@@ -450,6 +522,13 @@ export default function TransaksiPage() {
     RiwayatTransaksiItem[]
   >([]);
   const [riwayatLoading, setRiwayatLoading] = useState(false);
+  const [riwayatRange, setRiwayatRange] = useState<RiwayatRangeFilter>("7d");
+  const [riwayatStartDate, setRiwayatStartDate] = useState(() =>
+    toDateInputValue(addDays(new Date(), -6)),
+  );
+  const [riwayatEndDate, setRiwayatEndDate] = useState(() =>
+    toDateInputValue(new Date()),
+  );
   const [returModal, setReturModal] = useState<RiwayatTransaksiItem | null>(
     null,
   );
@@ -750,23 +829,41 @@ export default function TransaksiPage() {
     setRiwayatLoading(true);
 
     try {
-      const snap = await getDocs(
-        query(collection(db, "transaksi"), orderBy("createdAtMs", "desc")),
+      const { startMs, endMs } = buildRiwayatDateRangeMs(
+        riwayatRange,
+        riwayatStartDate,
+        riwayatEndDate,
       );
+
+      const snap = await getDocs(
+        query(
+          collection(db, "transaksi"),
+          where("createdAtMs", ">=", startMs),
+          where("createdAtMs", "<=", endMs),
+          orderBy("createdAtMs", "desc"),
+        ),
+      );
+
+      const tokoFilterId = String(selectedTokoId || "").trim();
+      const tokoIdUser = String(currentUserProfile?.tokoId || "").trim();
+      const admin = isAdminProfile(currentUserProfile);
+
       const rows = snap.docs
         .map((d) => normalizeTransaksiHistory(d.id, d.data()))
         .filter((item) => item.status === "selesai")
         .filter((item) => {
-          if (isAdminProfile(currentUserProfile)) return true;
-          const tokoIdUser = String(currentUserProfile?.tokoId || "").trim();
-          return !tokoIdUser || item.tokoId === tokoIdUser;
+          if (!admin) return !tokoIdUser || item.tokoId === tokoIdUser;
+          return !tokoFilterId || item.tokoId === tokoFilterId;
         })
-        .slice(0, 30);
+        .slice(0, RIWAYAT_TRANSAKSI_LIMIT);
 
       setRiwayatTransaksi(rows);
     } catch (e) {
       console.error("Gagal memuat riwayat transaksi:", e);
       setRiwayatTransaksi([]);
+      setError(
+        "Gagal memuat riwayat transaksi. Pastikan index Firestore untuk createdAtMs sudah tersedia.",
+      );
     } finally {
       setRiwayatLoading(false);
     }
@@ -883,7 +980,14 @@ export default function TransaksiPage() {
     if (!currentUserProfile) return;
     void fetchRiwayatTransaksi();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserProfile?.uid, currentUserProfile?.tokoId]);
+  }, [
+    currentUserProfile?.uid,
+    currentUserProfile?.tokoId,
+    selectedTokoId,
+    riwayatRange,
+    riwayatStartDate,
+    riwayatEndDate,
+  ]);
 
   useEffect(() => {
     if (!isAdminUser) {
@@ -3963,6 +4067,12 @@ export default function TransaksiPage() {
             <RiwayatTransaksiReturPanel
               rows={riwayatTransaksi}
               loading={riwayatLoading}
+              range={riwayatRange}
+              startDate={riwayatStartDate}
+              endDate={riwayatEndDate}
+              onChangeRange={setRiwayatRange}
+              onChangeStartDate={setRiwayatStartDate}
+              onChangeEndDate={setRiwayatEndDate}
               onRefresh={fetchRiwayatTransaksi}
               onPrint={openPrintStrukFromRiwayat}
               onRetur={openReturTransaksi}
@@ -4732,6 +4842,12 @@ export default function TransaksiPage() {
               <RiwayatTransaksiReturPanel
                 rows={riwayatTransaksi}
                 loading={riwayatLoading}
+                range={riwayatRange}
+                startDate={riwayatStartDate}
+                endDate={riwayatEndDate}
+                onChangeRange={setRiwayatRange}
+                onChangeStartDate={setRiwayatStartDate}
+                onChangeEndDate={setRiwayatEndDate}
                 onRefresh={fetchRiwayatTransaksi}
                 onPrint={openPrintStrukFromRiwayat}
                 onRetur={openReturTransaksi}
@@ -4870,16 +4986,37 @@ function TransaksiStatCard({
 function RiwayatTransaksiReturPanel({
   rows,
   loading,
+  range,
+  startDate,
+  endDate,
+  onChangeRange,
+  onChangeStartDate,
+  onChangeEndDate,
   onRefresh,
   onPrint,
   onRetur,
 }: {
   rows: RiwayatTransaksiItem[];
   loading: boolean;
+  range: RiwayatRangeFilter;
+  startDate: string;
+  endDate: string;
+  onChangeRange: (value: RiwayatRangeFilter) => void;
+  onChangeStartDate: (value: string) => void;
+  onChangeEndDate: (value: string) => void;
   onRefresh: () => void;
   onPrint: (trx: RiwayatTransaksiItem) => void;
   onRetur: (trx: RiwayatTransaksiItem) => void;
 }) {
+  const rangeOptions: Array<{ value: RiwayatRangeFilter; label: string }> = [
+    { value: "today", label: "Hari Ini" },
+    { value: "yesterday", label: "Kemarin" },
+    { value: "7d", label: "7 Hari" },
+    { value: "30d", label: "30 Hari" },
+    { value: "90d", label: "90 Hari" },
+    { value: "custom", label: "Tanggal" },
+  ];
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -4891,23 +5028,70 @@ function RiwayatTransaksiReturPanel({
             Retur akan mengembalikan stok/saldo dan membalik laporan.
           </p>
         </div>
+      </div>
 
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="flex h-9 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black uppercase tracking-wide text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <motion.span
-            animate={loading ? { rotate: 360 } : {}}
-            transition={
-              loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}
-            }
+      <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div>
+            <FieldLabel icon={Clock} label="Filter Riwayat" />
+            <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap">
+              {rangeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => onChangeRange(option.value)}
+                  className={`h-9 rounded-xl px-2 text-[10px] font-black uppercase tracking-wide transition-all ${
+                    range === option.value
+                      ? "bg-sky-600 text-white shadow-sm shadow-sky-500/20"
+                      : "border border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="flex h-9 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-3 text-xs font-black uppercase tracking-wide text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <RefreshCw size={14} strokeWidth={2.5} />
-          </motion.span>
-          Refresh
-        </button>
+            <motion.span
+              animate={loading ? { rotate: 360 } : {}}
+              transition={
+                loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}
+              }
+            >
+              <RefreshCw size={14} strokeWidth={2.5} />
+            </motion.span>
+            Refresh
+          </button>
+        </div>
+
+        {range === "custom" && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div>
+              <FieldLabel icon={Clock} label="Dari Tanggal" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => onChangeStartDate(e.target.value)}
+                className="h-10 w-full rounded-xl border-2 border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition-all focus:border-sky-500"
+              />
+            </div>
+            <div>
+              <FieldLabel icon={Clock} label="Sampai Tanggal" />
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => onChangeEndDate(e.target.value)}
+                className="h-10 w-full rounded-xl border-2 border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition-all focus:border-sky-500"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {loading ? (
