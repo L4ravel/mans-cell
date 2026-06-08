@@ -15,6 +15,7 @@
   - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
   - Scanner fisik sekarang membaca kodeBarang dan kodeUnik/IMEI dari data barang.
   - Scanner aktif otomatis setelah toko dipilih dan berjalan tersembunyi di belakang layar.
+  - Buffer scanner dibuat lebih sabar agar IMEI panjang tidak terpotong.
 */
 
 "use client";
@@ -370,6 +371,19 @@ const splitKodeUnikScanValues = (value: unknown) => {
     .filter(Boolean);
 };
 
+const SCANNER_MIN_LENGTH = 3;
+const SCANNER_IDLE_COMMIT_MS = 950;
+const SCANNER_RESET_GAP_MS = 1500;
+const SCANNER_DUPLICATE_LOCK_MS = 900;
+
+const normalizeScannerValue = (value: unknown) => {
+  return normalizeBarcode(
+    String(value || "")
+      .replace(/[\t\n\r]/g, "")
+      .trim(),
+  );
+};
+
 const getDigitalNominalPotong = (
   item: Pick<TransaksiCartItem, "jenisBarang" | "hargaModal" | "qty">,
 ) => {
@@ -555,8 +569,11 @@ export default function TransaksiPage() {
   const [lastCameraResult, setLastCameraResult] = useState("");
 
   const scanBufferRef = useRef("");
+  const scanStartedAtRef = useRef(0);
   const scanLastTimeRef = useRef(0);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanLastCommittedRef = useRef("");
+  const scanLastCommittedAtRef = useRef(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -1313,8 +1330,16 @@ export default function TransaksiPage() {
     rawValue: string,
     source: "scanner" | "camera",
   ) => {
-    const kode = normalizeBarcode(rawValue);
+    const kode = normalizeScannerValue(rawValue);
     if (!kode || !selectedTokoId) return { ok: false };
+
+    const now = Date.now();
+    if (
+      scanLastCommittedRef.current === kode &&
+      now - scanLastCommittedAtRef.current < SCANNER_DUPLICATE_LOCK_MS
+    ) {
+      return { ok: false };
+    }
 
     const foundEntry = barangBarcodeMap.get(kode);
     if (!foundEntry) {
@@ -1335,6 +1360,9 @@ export default function TransaksiPage() {
 
     const result = addToCart(barangScan, "scan");
     if (!result.ok) return { ok: false };
+
+    scanLastCommittedRef.current = kode;
+    scanLastCommittedAtRef.current = Date.now();
 
     playSuccessBeep();
     setActiveTab("fisik");
@@ -1358,6 +1386,7 @@ export default function TransaksiPage() {
   useEffect(() => {
     const resetScanBuffer = () => {
       scanBufferRef.current = "";
+      scanStartedAtRef.current = 0;
       scanLastTimeRef.current = 0;
       if (scanTimeoutRef.current) {
         clearTimeout(scanTimeoutRef.current);
@@ -1368,7 +1397,34 @@ export default function TransaksiPage() {
     const commitScan = () => {
       const raw = scanBufferRef.current;
       resetScanBuffer();
-      commitBarcodeValue(raw, "scanner");
+
+      const cleanRaw = normalizeScannerValue(raw);
+      if (cleanRaw.length < SCANNER_MIN_LENGTH) return;
+
+      commitBarcodeValue(cleanRaw, "scanner");
+    };
+
+    const scheduleCommit = () => {
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = setTimeout(() => {
+        const cleanRaw = normalizeScannerValue(scanBufferRef.current);
+        if (cleanRaw.length >= 6) commitScan();
+        else resetScanBuffer();
+      }, SCANNER_IDLE_COMMIT_MS);
+    };
+
+    const onPaste = (e: ClipboardEvent) => {
+      if (!selectedTokoId) return;
+      if (showCheckoutConfirm || strukModal || returModal) return;
+
+      const pasted = normalizeScannerValue(e.clipboardData?.getData("text") || "");
+      if (pasted.length < SCANNER_MIN_LENGTH) return;
+
+      if (barangBarcodeMap.has(pasted)) {
+        e.preventDefault();
+        resetScanBuffer();
+        commitBarcodeValue(pasted, "scanner");
+      }
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1385,18 +1441,27 @@ export default function TransaksiPage() {
         "ArrowDown",
         "ArrowLeft",
         "ArrowRight",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
       ];
       if (ignoredKeys.includes(e.key)) return;
 
       const now = Date.now();
       const diff = now - scanLastTimeRef.current;
 
-      if (diff > 280) scanBufferRef.current = "";
+      if (!scanBufferRef.current || diff > SCANNER_RESET_GAP_MS) {
+        scanBufferRef.current = "";
+        scanStartedAtRef.current = now;
+      }
+
       scanLastTimeRef.current = now;
 
       if (e.key === "Enter") {
-        if (scanBufferRef.current.length >= 3) {
+        if (scanBufferRef.current.length >= SCANNER_MIN_LENGTH) {
           e.preventDefault();
+          e.stopPropagation();
           commitScan();
         } else {
           resetScanBuffer();
@@ -1406,6 +1471,7 @@ export default function TransaksiPage() {
 
       if (e.key === "Backspace") {
         scanBufferRef.current = scanBufferRef.current.slice(0, -1);
+        scheduleCommit();
         return;
       }
 
@@ -1413,20 +1479,33 @@ export default function TransaksiPage() {
 
       scanBufferRef.current += e.key;
 
-      if (scanBufferRef.current.length >= 4 && diff <= 80) {
+      const durasiScan = now - scanStartedAtRef.current;
+      const isLikelyScanner =
+        scanBufferRef.current.length >= 4 &&
+        (durasiScan <= 1800 || diff <= 180);
+
+      if (isLikelyScanner) {
         e.preventDefault();
+        e.stopPropagation();
       }
 
-      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
-      scanTimeoutRef.current = setTimeout(() => {
-        if (scanBufferRef.current.length >= 6) commitScan();
-        else resetScanBuffer();
-      }, 320);
+      const currentClean = normalizeScannerValue(scanBufferRef.current);
+      if (barangBarcodeMap.has(currentClean)) {
+        e.preventDefault();
+        e.stopPropagation();
+        commitScan();
+        return;
+      }
+
+      scheduleCommit();
     };
 
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("paste", onPaste, true);
+
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("paste", onPaste, true);
       resetScanBuffer();
     };
   }, [barangBarcodeMap, selectedTokoId, showCheckoutConfirm, strukModal, returModal]);
