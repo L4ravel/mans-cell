@@ -14,6 +14,7 @@
   - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
   - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
   - Scanner fisik sekarang membaca kodeBarang dan kodeUnik/IMEI dari data barang.
+  - Scanner aktif otomatis setelah toko dipilih dan berjalan tersembunyi di belakang layar.
 */
 
 "use client";
@@ -1313,13 +1314,7 @@ export default function TransaksiPage() {
     source: "scanner" | "camera",
   ) => {
     const kode = normalizeBarcode(rawValue);
-    if (!kode) return { ok: false };
-
-    if (!selectedTokoId) {
-      setError("Pilih toko terlebih dahulu sebelum scan barcode");
-      setTimeout(() => setError(null), 1800);
-      return { ok: false };
-    }
+    if (!kode || !selectedTokoId) return { ok: false };
 
     const foundEntry = barangBarcodeMap.get(kode);
     if (!foundEntry) {
@@ -1342,17 +1337,22 @@ export default function TransaksiPage() {
     if (!result.ok) return { ok: false };
 
     playSuccessBeep();
-    const status = result.status ?? "added";
     setActiveTab("fisik");
-    setSuccessMsg(
-      `${source === "camera" ? "Scan kamera" : "Scan"} berhasil: ${
-        status === "exists"
-          ? `${found.nama} sudah ada di keranjang`
-          : found.nama
-      }`,
-    );
-    setTimeout(() => setSuccessMsg(null), 1400);
-    return { ok: true, status };
+    setMobileKasirStep((prev) => (prev === "riwayat" ? "barang" : prev));
+
+    if (source === "camera") {
+      const status = result.status ?? "added";
+      setSuccessMsg(
+        `Scan kamera berhasil: ${
+          status === "exists"
+            ? `${found.nama} sudah ada di keranjang`
+            : found.nama
+        }`,
+      );
+      setTimeout(() => setSuccessMsg(null), 1400);
+    }
+
+    return { ok: true, status: result.status ?? "added" };
   };
 
   useEffect(() => {
@@ -1372,12 +1372,26 @@ export default function TransaksiPage() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!selectedTokoId) return;
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (activeTab !== "fisik") return;
+      if (showCheckoutConfirm || strukModal || returModal) return;
+
+      const ignoredKeys = [
+        "Shift",
+        "CapsLock",
+        "Tab",
+        "Escape",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+      ];
+      if (ignoredKeys.includes(e.key)) return;
 
       const now = Date.now();
       const diff = now - scanLastTimeRef.current;
-      if (diff > 120) scanBufferRef.current = "";
+
+      if (diff > 280) scanBufferRef.current = "";
       scanLastTimeRef.current = now;
 
       if (e.key === "Enter") {
@@ -1390,29 +1404,32 @@ export default function TransaksiPage() {
         return;
       }
 
-      if (e.key === "Shift" || e.key === "CapsLock" || e.key === "Tab") return;
-
       if (e.key === "Backspace") {
         scanBufferRef.current = scanBufferRef.current.slice(0, -1);
         return;
       }
 
-      if (e.key.length === 1) {
-        scanBufferRef.current += e.key;
-        if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
-        scanTimeoutRef.current = setTimeout(() => {
-          if (scanBufferRef.current.length >= 6) commitScan();
-          else resetScanBuffer();
-        }, 80);
+      if (e.key.length !== 1) return;
+
+      scanBufferRef.current += e.key;
+
+      if (scanBufferRef.current.length >= 4 && diff <= 80) {
+        e.preventDefault();
       }
+
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = setTimeout(() => {
+        if (scanBufferRef.current.length >= 6) commitScan();
+        else resetScanBuffer();
+      }, 320);
     };
 
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
       resetScanBuffer();
     };
-  }, [barangBarcodeMap, selectedTokoId, activeTab]);
+  }, [barangBarcodeMap, selectedTokoId, showCheckoutConfirm, strukModal, returModal]);
 
   const stopCameraScanner = () => {
     if (cameraRafRef.current) {
