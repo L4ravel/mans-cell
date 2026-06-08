@@ -14,6 +14,7 @@
   - kode barang dibuat otomatis dari kode toko + nama barang, contoh TOKO-CP-D-LVS-25
   - import Excel tidak menerima kodeBarang manual; sistem membuat kode saat import
   - label barcode menampilkan nama barang di atas barcode dan kode barang di bawahnya
+  - saat tambah barang dibuka, mode IMEI otomatis aktif dan cursor langsung fokus ke kolom scan
 */
 
 "use client"
@@ -1670,6 +1671,7 @@ export default function TambahBarangPage() {
   const [copyLoading, setCopyLoading] = useState(false)
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const kodeUnikInputRef = useRef<HTMLTextAreaElement | null>(null)
   const [importLoading, setImportLoading] = useState(false)
   const [importPreview, setImportPreview] = useState<BarangImportPreview | null>(null)
   const [importProgress, setImportProgress] = useState<BarangImportProgress>({
@@ -2008,6 +2010,21 @@ export default function TambahBarangPage() {
     (val: any) =>
       setForm((f) => ({ ...f, [key]: val }))
 
+  const focusKodeUnikScanner = () => {
+    window.setTimeout(() => {
+      kodeUnikInputRef.current?.focus()
+      kodeUnikInputRef.current?.setSelectionRange(
+        kodeUnikInputRef.current.value.length,
+        kodeUnikInputRef.current.value.length
+      )
+    }, 80)
+  }
+
+  useEffect(() => {
+    if (!showModal || isEdit || form.jenisBarang !== "fisik" || !form.pakaiKodeUnik) return
+    focusKodeUnikScanner()
+  }, [showModal, isEdit, form.jenisBarang, form.pakaiKodeUnik])
+
   const getTokoById = (tokoId: string) => tokoList.find((item) => item.id === tokoId) || null
 
   const generateKodeBarang = (tokoId: string, nama = form.nama, currentId = editId) => {
@@ -2118,6 +2135,11 @@ export default function TambahBarangPage() {
       satuan: defaultSatuan?.nama || "pcs",
       satuanId: defaultSatuan?.id || "",
       satuanNama: defaultSatuan?.nama || "pcs",
+      stok: "1",
+      stokMinimum: "1",
+      pakaiKodeUnik: true,
+      jenisKodeUnik: "imei" as JenisKodeUnik,
+      kodeUnik: "",
       providerId: providerList[0]?.id || "",
       provider: providerList[0]?.nama || "",
       saldoSourceId: saldoList.find((item) => item.aktif)?.id || saldoList[0]?.id || "",
@@ -2126,6 +2148,7 @@ export default function TambahBarangPage() {
     setEditId(null)
     setError(null)
     setShowModal(true)
+    focusKodeUnikScanner()
   }
 
     const openEdit = (d: Barang) => {
@@ -4519,7 +4542,11 @@ export default function TambahBarangPage() {
 
                               <button
                                 type="button"
-                                onClick={() => setField("pakaiKodeUnik")(!form.pakaiKodeUnik)}
+                                onClick={() => {
+                                  const nextValue = !form.pakaiKodeUnik
+                                  setField("pakaiKodeUnik")(nextValue)
+                                  if (nextValue) focusKodeUnikScanner()
+                                }}
                                 className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all ${
                                   form.pakaiKodeUnik ? "bg-sky-500" : "bg-slate-300"
                                 }`}
@@ -4561,6 +4588,7 @@ export default function TambahBarangPage() {
                                 </label>
 
                                 <textarea
+                                  ref={kodeUnikInputRef}
                                   rows={4}
                                   value={form.kodeUnik}
                                   onChange={(e: any) => {
