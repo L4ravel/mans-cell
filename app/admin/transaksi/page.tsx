@@ -1,6 +1,6 @@
 /* 
   Halaman admin transaksi kasir.
-  Menangani transaksi fisik dan digital, scanner barcode/kamera,
+  Menangani transaksi fisik dan digital, scanner barcode/IMEI/kamera,
   sinkron saldo digital, simpan kasir dari koleksi users, pelanggan opsional, preview struk, dan retur transaksi.
 
   Revisi:
@@ -13,6 +13,7 @@
   - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
   - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
   - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
+  - Scanner fisik sekarang membaca kodeBarang dan kodeUnik/IMEI dari data barang.
 */
 
 "use client";
@@ -359,6 +360,13 @@ const isAdminProfile = (profile: UserProfile | null) => {
   return (
     profile.roles.includes("admin") || profile.roles.includes("superadmin")
   );
+};
+
+const splitKodeUnikScanValues = (value: unknown) => {
+  return String(value || "")
+    .split(/[\n\r,;|/]+/g)
+    .map((item) => normalizeBarcode(item))
+    .filter(Boolean);
 };
 
 const getDigitalNominalPotong = (
@@ -1096,9 +1104,12 @@ export default function TransaksiPage() {
 
   const barangByToko = useMemo(() => {
     const q = searchBarang.toLowerCase().trim();
+    const qScan = normalizeBarcode(searchBarang);
+
     return barangList.filter((item) => {
       const sameToko = !selectedTokoId || item.tokoId === selectedTokoId;
       const sameJenis = (item.jenisBarang || "fisik") === activeTab;
+      const kodeUnikList = splitKodeUnikScanValues(item.kodeUnik);
       const matchSearch =
         !q ||
         item.nama.toLowerCase().includes(q) ||
@@ -1107,7 +1118,11 @@ export default function TransaksiPage() {
         item.kategoriNama.toLowerCase().includes(q) ||
         String(item.provider || "")
           .toLowerCase()
-          .includes(q);
+          .includes(q) ||
+        String(item.kodeUnik || "")
+          .toLowerCase()
+          .includes(q) ||
+        (!!qScan && kodeUnikList.some((kodeUnik) => kodeUnik.includes(qScan)));
 
       if (!sameToko || !sameJenis || !matchSearch) return false;
       if (activeTab === "digital") return item.aktif !== false;
@@ -1116,13 +1131,33 @@ export default function TransaksiPage() {
   }, [barangList, selectedTokoId, searchBarang, activeTab]);
 
   const barangBarcodeMap = useMemo(() => {
-    const map = new Map<string, TransaksiBarang>();
+    const map = new Map<
+      string,
+      { barang: TransaksiBarang; scanType: "kodeBarang" | "kodeUnik" }
+    >();
+
+    const registerScanKey = (
+      key: string,
+      barang: TransaksiBarang,
+      scanType: "kodeBarang" | "kodeUnik",
+    ) => {
+      const cleanKey = normalizeBarcode(key);
+      if (!cleanKey || map.has(cleanKey)) return;
+      map.set(cleanKey, { barang, scanType });
+    };
+
     for (const item of barangList) {
-      if (!item?.id || !item?.kodeBarang) continue;
+      if (!item?.id) continue;
       if ((item.jenisBarang || "fisik") !== "fisik") continue;
       if (selectedTokoId && item.tokoId !== selectedTokoId) continue;
-      map.set(normalizeBarcode(item.kodeBarang), item);
+
+      registerScanKey(item.kodeBarang, item, "kodeBarang");
+
+      for (const kodeUnik of splitKodeUnikScanValues(item.kodeUnik)) {
+        registerScanKey(kodeUnik, item, "kodeUnik");
+      }
     }
+
     return map;
   }, [barangList, selectedTokoId]);
 
@@ -1286,12 +1321,16 @@ export default function TransaksiPage() {
       return { ok: false };
     }
 
-    const found = barangBarcodeMap.get(kode);
-    if (!found) {
-      setError(`Barcode ${kode} tidak ditemukan di toko ini`);
+    const foundEntry = barangBarcodeMap.get(kode);
+    if (!foundEntry) {
+      setError(`Barcode/IMEI ${kode} tidak ditemukan di toko ini`);
       setTimeout(() => setError(null), 1800);
       return { ok: false };
     }
+
+    const found = foundEntry.barang;
+    const barangScan =
+      foundEntry.scanType === "kodeUnik" ? { ...found, kodeUnik: kode } : found;
 
     if (Number(found.stok || 0) <= 0) {
       setError(`Stok ${found.nama} habis`);
@@ -1299,7 +1338,7 @@ export default function TransaksiPage() {
       return { ok: false };
     }
 
-    const result = addToCart(found, "scan");
+    const result = addToCart(barangScan, "scan");
     if (!result.ok) return { ok: false };
 
     playSuccessBeep();
