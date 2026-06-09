@@ -1,8 +1,7 @@
 /*
+  app/admin/pembelian-barang/page.tsx
   Halaman admin pembelian barang gabungan.
-  Menampilkan barang/saldo yang perlu restock, dengan opsi centang untuk menampilkan semua item agar tetap bisa dibeli manual.
-  Layout dibuat konsisten dengan Laporan Harian: header biru, filter collapse mobile, stat card 2 kolom,
-  tabel desktop, card mobile satu lapis, riwayat di bawah tabel, fetch database memakai limit, pagination 50/100/250/500, toast fixed, dan modal pembelian rapi.
+  Barang hanya tampil setelah toko dipilih, lalu semua barang fisik pada toko tersebut ditampilkan tanpa batas stok minimum.
 */
 
 "use client"
@@ -16,6 +15,7 @@ import {
   getDocs,
   increment,
   limit,
+  where,
   orderBy,
   query,
   serverTimestamp,
@@ -323,7 +323,6 @@ export default function PembelianBarangPage() {
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [dataLimit, setDataLimit] = useState(50)
-  const [showAllItems, setShowAllItems] = useState(false)
   const [page, setPage] = useState(1)
 
   const [showModal, setShowModal] = useState(false)
@@ -411,36 +410,43 @@ export default function PembelianBarangPage() {
     }
   }
 
-  const fetchBarang = async () => {
-    const qRef = query(collection(db, "barang"), orderBy("nama"), limit(dataLimit))
+  const fetchBarang = async (targetTokoId = filterToko) => {
+    if (!targetTokoId) {
+      setBarangList([])
+      return
+    }
+
+    const qRef = query(collection(db, "barang"), where("tokoId", "==", targetTokoId))
     const snap = await getDocs(qRef)
 
-    const list: Barang[] = snap.docs.map((item) => {
-      const x = item.data() as any
-      return {
-        id: item.id,
-        nama: x?.nama || "",
-        kodeBarang: x?.kodeBarang || "",
-        kategoriId: x?.kategoriId || "",
-        kategoriNama: x?.kategoriNama || "",
-        tokoId: x?.tokoId || "",
-        tokoNama: x?.tokoNama || "",
-        merk: x?.merk || "",
-        supplier: x?.supplier || "",
-        satuan: x?.satuan || "",
-        hargaModal: Number(x?.hargaModal || 0),
-        hargaJual: Number(x?.hargaJual || 0),
-        stok: Number(x?.stok || 0),
-        stokMinimum: Number(x?.stokMinimum || 0),
-        jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
-        parentBarangId: x?.parentBarangId || "",
-        varianKe: Number(x?.varianKe || 0),
-        updatedAt:
-          typeof x?.updatedAt?.toMillis === "function"
-            ? x.updatedAt.toMillis()
-            : Number(x?.updatedAt || 0),
-      }
-    })
+    const list: Barang[] = snap.docs
+      .map((item) => {
+        const x = item.data() as any
+        return {
+          id: item.id,
+          nama: x?.nama || "",
+          kodeBarang: x?.kodeBarang || "",
+          kategoriId: x?.kategoriId || "",
+          kategoriNama: x?.kategoriNama || "",
+          tokoId: x?.tokoId || "",
+          tokoNama: x?.tokoNama || "",
+          merk: x?.merk || "",
+          supplier: x?.supplier || "",
+          satuan: x?.satuan || "",
+          hargaModal: Number(x?.hargaModal || 0),
+          hargaJual: Number(x?.hargaJual || 0),
+          stok: Number(x?.stok || 0),
+          stokMinimum: Number(x?.stokMinimum || 0),
+          jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
+          parentBarangId: x?.parentBarangId || "",
+          varianKe: Number(x?.varianKe || 0),
+          updatedAt:
+            typeof x?.updatedAt?.toMillis === "function"
+              ? x.updatedAt.toMillis()
+              : Number(x?.updatedAt || 0),
+        }
+      })
+      .sort((a, b) => a.nama.localeCompare(b.nama, "id"))
 
     setBarangList(list)
   }
@@ -549,14 +555,22 @@ export default function PembelianBarangPage() {
 
   useEffect(() => {
     if (!auth.currentUser) return
-    fetchAll()
+    fetchSaldo()
+    fetchRiwayat()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataLimit])
 
+  useEffect(() => {
+    if (!auth.currentUser) return
+    fetchBarang(filterToko)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterToko])
+
   const pembelianItems = useMemo<PembelianItem[]>(() => {
+    if (!filterToko) return []
+
     const barangNeedPembelian: PembelianItem[] = barangList
       .filter((item) => item.jenisBarang === "fisik")
-      .filter((item) => showAllItems || item.stok <= item.stokMinimum)
       .map((item) => ({
         type: "barang",
         id: item.id,
@@ -580,32 +594,8 @@ export default function PembelianBarangPage() {
         varianKe: Number(item.varianKe || 0),
       }))
 
-    const saldoNeedPembelian: PembelianItem[] = saldoList
-      .filter((item) => item.aktif)
-      .filter((item) => showAllItems || item.jumlahSaldo <= item.jumlahMinimum)
-      .map((item) => ({
-        type: "saldo",
-        id: item.id,
-        nama: item.namaSaldo,
-        subtitle: item.keterangan || "Sumber saldo digital",
-        tokoId: "",
-        tokoNama: "-",
-        kategoriId: "saldo-digital",
-        kategoriNama: "Saldo Digital",
-        merk: "",
-        supplier: "Saldo Digital",
-        kodeRef: item.id,
-        hargaModal: 0,
-        hargaJual: 0,
-        stokSekarang: Number(item.jumlahSaldo || 0),
-        stokMinimum: Number(item.jumlahMinimum || 0),
-        kekurangan: Math.max(0, Number(item.jumlahMinimum || 0) - Number(item.jumlahSaldo || 0)),
-        satuanLabel: "rupiah",
-        badgeLabel: "Saldo",
-      }))
-
-    return [...barangNeedPembelian, ...saldoNeedPembelian]
-  }, [barangList, saldoList, showAllItems])
+    return barangNeedPembelian
+  }, [barangList, filterToko])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -647,7 +637,7 @@ export default function PembelianBarangPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, filterKategori, filterToko, filterJenis, itemsPerPage, dataLimit, showAllItems])
+  }, [search, filterKategori, filterToko, filterJenis, itemsPerPage, dataLimit])
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
@@ -897,7 +887,7 @@ export default function PembelianBarangPage() {
                   Pembelian Barang
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Barang fisik dan saldo digital yang perlu ditambah stoknya.
+                  Pilih toko terlebih dahulu untuk melihat semua barang fisik yang bisa dibeli.
                 </p>
               </div>
             </div>
@@ -973,7 +963,7 @@ export default function PembelianBarangPage() {
             </div>
 
             <div className="hidden sm:contents">
-              <FilterSelect label="Limit Data" value={String(dataLimit)} onChange={(value) => setDataLimit(Number(value))} icon={Boxes}>
+              <FilterSelect label="Limit Riwayat" value={String(dataLimit)} onChange={(value) => setDataLimit(Number(value))} icon={Boxes}>
                 {FETCH_LIMIT_OPTIONS.map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
@@ -997,7 +987,7 @@ export default function PembelianBarangPage() {
               </FilterSelect>
 
               <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
-                <option value="">Semua Toko</option>
+                <option value="">Pilih Toko</option>
                 {tokoList.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nama}
@@ -1007,19 +997,6 @@ export default function PembelianBarangPage() {
             </div>
           </div>
 
-          <div className="mt-3 hidden sm:flex">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <input
-                type="checkbox"
-                checked={showAllItems}
-                onChange={(e) => setShowAllItems(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-600">
-                Tampilkan semua item agar bisa pembelian manual meski stok belum minimum
-              </span>
-            </label>
-          </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2 sm:hidden">
             <button
@@ -1079,7 +1056,7 @@ export default function PembelianBarangPage() {
                   </FilterSelect>
 
                   <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
-                    <option value="">Semua Toko</option>
+                    <option value="">Pilih Toko</option>
                     {tokoList.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.nama}
@@ -1088,7 +1065,7 @@ export default function PembelianBarangPage() {
                   </FilterSelect>
 
                   <FilterSelect
-                    label="Limit Data"
+                    label="Limit Riwayat"
                     value={String(dataLimit)}
                     onChange={(value) => setDataLimit(Number(value))}
                     icon={Boxes}
@@ -1112,17 +1089,6 @@ export default function PembelianBarangPage() {
                     ))}
                   </FilterSelect>
 
-                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                    <input
-                      type="checkbox"
-                      checked={showAllItems}
-                      onChange={(e) => setShowAllItems(e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                    />
-                    <span className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-600">
-                      Tampilkan semua item
-                    </span>
-                  </label>
                 </div>
               </motion.div>
             )}
@@ -1132,10 +1098,10 @@ export default function PembelianBarangPage() {
         {/* Stats */}
         <div className="space-y-2 sm:space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-            <StatCard icon={Package} label="Barang" value={String(totalBarangPembelian)} subValue="Perlu dibeli" tone="sky" />
-            <StatCard icon={Boxes} label="Kurang Barang" value={String(totalKekuranganBarang)} subValue="Akumulasi" tone="blue" />
-            <StatCard icon={Wallet} label="Saldo" value={String(totalSaldoPembelian)} subValue="Perlu topup" tone="slate" />
-            <StatCard icon={Coins} label="Kurang Saldo" value={formatRupiah(totalKekuranganSaldo)} subValue="Nominal" tone="rose" />
+            <StatCard icon={Package} label="Barang" value={String(totalBarangPembelian)} subValue="Toko dipilih" tone="sky" />
+            <StatCard icon={Boxes} label="Kurang Barang" value={String(totalKekuranganBarang)} subValue="Di bawah minimum" tone="blue" />
+            <StatCard icon={Wallet} label="Saldo" value={String(totalSaldoPembelian)} subValue="Riwayat tetap ada" tone="slate" />
+            <StatCard icon={Coins} label="Kurang Saldo" value={formatRupiah(totalKekuranganSaldo)} subValue="Di bawah minimum" tone="rose" />
           </div>
         </div>
 
@@ -1145,7 +1111,6 @@ export default function PembelianBarangPage() {
           paged={paged}
           riwayatList={riwayatList}
           itemsPerPage={itemsPerPage}
-          showAllItems={showAllItems}
           page={page}
           totalPages={totalPages}
           goPage={goPage}
@@ -1325,7 +1290,6 @@ function PembelianContent({
   paged,
   riwayatList,
   itemsPerPage,
-  showAllItems,
   page,
   totalPages,
   goPage,
@@ -1336,7 +1300,6 @@ function PembelianContent({
   paged: PembelianItem[]
   riwayatList: RiwayatPembelianRow[]
   itemsPerPage: number
-  showAllItems: boolean
   page: number
   totalPages: number
   goPage: (page: number) => void
@@ -1364,13 +1327,13 @@ function PembelianContent({
       <div className="space-y-4">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <HeaderTitle title="Item Pembelian" subtitle={showAllItems ? "Semua barang dan saldo yang bisa dibeli manual" : "Barang dan saldo yang melewati batas minimum"} />
+            <HeaderTitle title="Item Pembelian" subtitle="Pilih toko terlebih dahulu, lalu semua barang fisik toko tersebut akan tampil" />
 
 
           </div>
 
           {filtered.length === 0 ? (
-            <EmptyBox label={showAllItems ? "Data barang/saldo tidak ditemukan" : "Tidak ada item yang perlu dibeli"} icon={ShieldAlert} />
+            <EmptyBox label="Pilih toko terlebih dahulu atau data barang toko ini belum tersedia" icon={ShieldAlert} />
           ) : (
             <>
               <div className="space-y-2 sm:hidden">
