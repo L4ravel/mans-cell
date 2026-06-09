@@ -2,11 +2,12 @@
   app/admin/pembelian-barang/page.tsx
   Halaman admin pembelian barang gabungan.
   Barang hanya tampil setelah toko dipilih, lalu semua barang fisik pada toko tersebut ditampilkan tanpa batas stok minimum.
+  Restok barang IMEI mendukung scan tersembunyi dan banyak IMEI sekaligus; 1 IMEI disimpan sebagai 1 unit barang baru.
 */
 
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { auth, db } from "@/lib/firebase"
 import {
   addDoc,
@@ -21,6 +22,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import {
@@ -61,6 +63,10 @@ type Barang = {
   hargaJual: number
   stok: number
   stokMinimum: number
+  pakaiKodeUnik?: boolean
+  jenisKodeUnik?: "imei" | "serial" | "custom"
+  kodeUnik?: string
+  statusUnit?: "tersedia" | "terjual" | "retur" | "rusak" | string
   jenisBarang?: "fisik" | "digital"
   parentBarangId?: string
   varianKe?: number
@@ -113,6 +119,10 @@ type PembelianItem = {
   badgeLabel: string
   parentBarangId?: string
   varianKe?: number
+  pakaiKodeUnik?: boolean
+  jenisKodeUnik?: "imei" | "serial" | "custom"
+  kodeUnik?: string
+  statusUnit?: string
 }
 
 type RiwayatPembelianRow = {
@@ -150,6 +160,7 @@ const EMPTY_PEMBELIAN_FORM = {
   hargaJualBaru: "",
   supplier: "",
   catatan: "",
+  kodeUnik: "",
 }
 
 function formatRupiah(value: number) {
@@ -183,6 +194,38 @@ function normalizeBarangCode(value: string) {
     .trim()
     .replace(/\s+/g, "")
     .toUpperCase()
+}
+
+function normalizeKodeUnik(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase()
+}
+
+function getKodeUnikListFromText(value: string) {
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((item) => normalizeKodeUnik(item))
+    .filter(Boolean)
+}
+
+function buildAutoImeiUnitCodes(baseCode: string, existingItems: Barang[], count: number) {
+  const cleanBase = normalizeBarangCode(String(baseCode || "BRG").replace(/-\d{2}$/g, ""))
+  const usedCodes = new Set(existingItems.map((item) => normalizeBarangCode(item.kodeBarang)).filter(Boolean))
+  const codes: string[] = []
+  let counter = 2
+
+  while (codes.length < count) {
+    const code = `${cleanBase}-${String(counter).padStart(2, "0")}`
+    if (!usedCodes.has(code)) {
+      usedCodes.add(code)
+      codes.push(code)
+    }
+    counter += 1
+  }
+
+  return codes
 }
 
 function buildAutoVariantName(baseName: string, _nextNumber: number) {
@@ -437,6 +480,10 @@ export default function PembelianBarangPage() {
           hargaJual: Number(x?.hargaJual || 0),
           stok: Number(x?.stok || 0),
           stokMinimum: Number(x?.stokMinimum || 0),
+          pakaiKodeUnik: Boolean(x?.pakaiKodeUnik || x?.kodeUnik),
+          jenisKodeUnik: (x?.jenisKodeUnik || "imei") as "imei" | "serial" | "custom",
+          kodeUnik: x?.kodeUnik || "",
+          statusUnit: x?.statusUnit || "tersedia",
           jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
           parentBarangId: x?.parentBarangId || "",
           varianKe: Number(x?.varianKe || 0),
@@ -592,6 +639,10 @@ export default function PembelianBarangPage() {
         badgeLabel: "Barang",
         parentBarangId: item.parentBarangId || "",
         varianKe: Number(item.varianKe || 0),
+        pakaiKodeUnik: Boolean(item.pakaiKodeUnik || item.kodeUnik),
+        jenisKodeUnik: (item.jenisKodeUnik || "imei") as "imei" | "serial" | "custom",
+        kodeUnik: item.kodeUnik || "",
+        statusUnit: item.statusUnit || "tersedia",
       }))
 
     return barangNeedPembelian
@@ -651,6 +702,7 @@ export default function PembelianBarangPage() {
       hargaJualBaru: item.type === "barang" ? formatNumberDots(item.hargaJual) : "",
       supplier: item.type === "barang" ? item.supplier || "" : "",
       catatan: "",
+      kodeUnik: "",
     })
     setError(null)
     setShowModal(true)
@@ -670,10 +722,22 @@ export default function PembelianBarangPage() {
     const user = auth.currentUser
     if (!user || !selectedItem) return
 
-    const jumlahTambah = Number(pembelianForm.jumlahTambah || 0)
+    const isBarang = selectedItem.type === "barang"
+    const isImeiRestok = isBarang && Boolean(selectedItem.pakaiKodeUnik) && (selectedItem.jenisKodeUnik || "imei") === "imei"
+    const kodeUnikList = isImeiRestok ? getKodeUnikListFromText(pembelianForm.kodeUnik) : []
+    const jumlahTambah = isImeiRestok ? kodeUnikList.length : Number(pembelianForm.jumlahTambah || 0)
+
     if (Number.isNaN(jumlahTambah) || jumlahTambah <= 0) {
-      setError("Jumlah tambah harus lebih dari 0")
+      setError(isImeiRestok ? "Minimal 1 IMEI baru wajib discan" : "Jumlah tambah harus lebih dari 0")
       return
+    }
+
+    if (isImeiRestok) {
+      const duplicateInput = kodeUnikList.find((kode, index) => kodeUnikList.indexOf(kode) !== index)
+      if (duplicateInput) {
+        setError(`${duplicateInput} dobel di daftar scan`)
+        return
+      }
     }
 
     const hargaModalBaru = parseRupiahNumber(pembelianForm.hargaModalBaru)
@@ -711,7 +775,72 @@ export default function PembelianBarangPage() {
         let stokSesudah = stokSebelum + jumlahTambah
         let modeRestok: "tambah_stok" | "buat_varian" = "tambah_stok"
 
-        if (hargaBerubah) {
+        if (isImeiRestok) {
+          const snapKodeUnik = await getDocs(collection(db, "barang"))
+          const kodeUnikTerpakai = new Set(
+            snapKodeUnik.docs
+              .map((item) => normalizeKodeUnik(String((item.data() as any)?.kodeUnik || "")))
+              .filter(Boolean)
+          )
+          const duplicateDatabase = kodeUnikList.find((kode) => kodeUnikTerpakai.has(kode))
+
+          if (duplicateDatabase) {
+            setError(`${duplicateDatabase} sudah pernah terdaftar di sistem`)
+            return
+          }
+
+          const batch = writeBatch(db)
+          const unitCodes = buildAutoImeiUnitCodes(selectedItem.kodeRef, barangList, kodeUnikList.length)
+          const batchKey = `${user.uid}_${Date.now()}`
+
+          kodeUnikList.forEach((kodeUnik, index) => {
+            const newBarangRef = doc(collection(db, "barang"))
+            batch.set(newBarangRef, {
+              nama: selectedItem.nama,
+              kodeBarang: unitCodes[index],
+              kategoriId: selectedItem.kategoriId,
+              kategoriNama: selectedItem.kategoriNama,
+              tokoId: selectedItem.tokoId,
+              tokoNama: selectedItem.tokoNama,
+              merk: selectedItem.merk || "",
+              supplier: supplierBaru,
+              satuan: selectedItem.satuanLabel,
+              hargaModal: hargaModalBaru,
+              hargaJual: hargaJualBaru,
+              stok: 1,
+              stokMinimum: 0,
+              jenisBarang: "fisik",
+              pakaiKodeUnik: true,
+              jenisKodeUnik: "imei",
+              kodeUnik,
+              statusUnit: "tersedia",
+              parentBarangId: selectedItem.parentBarangId || selectedItem.id,
+              sourceBarangId: selectedItem.id,
+              restokBatch: batchKey,
+              restokIndex: index + 1,
+              restokTotal: kodeUnikList.length,
+              createdAt: Date.now() + index,
+              createdBy: user.uid,
+              updatedAt: serverTimestamp(),
+              updatedBy: user.uid,
+            })
+          })
+
+          await batch.commit()
+
+          targetBarangId = selectedItem.parentBarangId || selectedItem.id
+          targetNamaBarang = selectedItem.nama
+          targetKodeBarang = selectedItem.kodeRef
+          modeRestok = "buat_varian"
+
+          targetItem = {
+            ...selectedItem,
+            supplier: supplierBaru,
+            hargaModal: hargaModalBaru,
+            hargaJual: hargaJualBaru,
+            stokSekarang: stokSesudah,
+          }
+        } else if (hargaBerubah) {
           const variantCode = buildAutoVariantCode(selectedItem.kodeRef, barangList)
           const variantName = buildAutoVariantName(selectedItem.nama, variantCode.counter)
           const newBarangRef = doc(collection(db, "barang"))
@@ -738,6 +867,8 @@ export default function PembelianBarangPage() {
             stok: jumlahTambah,
             stokMinimum: selectedItem.stokMinimum,
             jenisBarang: "fisik",
+            pakaiKodeUnik: false,
+            kodeUnik: "",
             parentBarangId: selectedItem.parentBarangId || selectedItem.id,
             sourceBarangId: selectedItem.id,
             varianKe: variantCode.counter,
@@ -804,6 +935,10 @@ export default function PembelianBarangPage() {
           jumlahBeli: jumlahTambah,
           jumlahTambah,
           stokSesudah,
+          pakaiKodeUnik: isImeiRestok,
+          jenisKodeUnik: isImeiRestok ? "imei" : selectedItem.jenisKodeUnik || "",
+          kodeUnikList: isImeiRestok ? kodeUnikList : [],
+          totalKodeUnik: isImeiRestok ? kodeUnikList.length : 0,
           catatan: pembelianForm.catatan.trim(),
           tanggal,
           tahun,
@@ -857,7 +992,13 @@ export default function PembelianBarangPage() {
 
       closePembelianModal()
       await Promise.all([fetchBarang(), fetchSaldo(), fetchRiwayat()])
-      showSuccess(selectedItem.type === "barang" ? "Pembelian barang berhasil disimpan" : "Pembelian saldo berhasil disimpan")
+      showSuccess(
+        selectedItem.type === "barang"
+          ? isImeiRestok
+            ? `${jumlahTambah} IMEI baru berhasil disimpan`
+            : "Pembelian barang berhasil disimpan"
+          : "Pembelian saldo berhasil disimpan"
+      )
     } catch (error) {
       console.error(error)
       setError("Gagal menyimpan pembelian")
@@ -1692,11 +1833,20 @@ function PembelianModal({
   closeModal: () => void
   handleSubmit: (e: React.FormEvent) => void
 }) {
+  const scanInputRef = useRef<HTMLInputElement | null>(null)
   const hargaModalBaru = parseRupiahNumber(form.hargaModalBaru)
   const hargaJualBaru = parseRupiahNumber(form.hargaJualBaru)
+  const kodeUnikList = getKodeUnikListFromText(form.kodeUnik)
+  const isImeiRestok =
+    !!selectedItem &&
+    selectedItem.type === "barang" &&
+    Boolean(selectedItem.pakaiKodeUnik) &&
+    (selectedItem.jenisKodeUnik || "imei") === "imei"
+  const jumlahTambahFinal = isImeiRestok ? kodeUnikList.length : Number(form.jumlahTambah || 0)
   const hargaBerubah =
     !!selectedItem &&
     selectedItem.type === "barang" &&
+    !isImeiRestok &&
     (hargaModalBaru !== Number(selectedItem.hargaModal || 0) ||
       hargaJualBaru !== Number(selectedItem.hargaJual || 0))
   const previewVariant = selectedItem && selectedItem.type === "barang" && hargaBerubah
@@ -1704,6 +1854,44 @@ function PembelianModal({
     : null
   const previewVariantName =
     selectedItem && previewVariant ? buildAutoVariantName(selectedItem.nama, previewVariant.counter) : ""
+
+  useEffect(() => {
+    if (!show || !isImeiRestok) return
+
+    const timer = window.setTimeout(() => {
+      scanInputRef.current?.focus()
+    }, 120)
+
+    return () => window.clearTimeout(timer)
+  }, [show, isImeiRestok])
+
+  const addImeiToForm = (value: string) => {
+    const kode = normalizeKodeUnik(value)
+    if (!kode) return
+
+    setForm((prev) => {
+      const current = getKodeUnikListFromText(prev.kodeUnik)
+      if (current.includes(kode)) return prev
+
+      return {
+        ...prev,
+        kodeUnik: [...current, kode].join("\n"),
+        jumlahTambah: String(current.length + 1),
+      }
+    })
+  }
+
+  const removeImeiFromForm = (kode: string) => {
+    setForm((prev) => {
+      const nextList = getKodeUnikListFromText(prev.kodeUnik).filter((item) => item !== kode)
+      return {
+        ...prev,
+        kodeUnik: nextList.join("\n"),
+        jumlahTambah: String(nextList.length),
+      }
+    })
+    window.setTimeout(() => scanInputRef.current?.focus(), 60)
+  }
 
   return (
     <AnimatePresence>
@@ -1724,7 +1912,7 @@ function PembelianModal({
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
-                  Pembelian {selectedItem.type === "saldo" ? "Saldo" : "Barang"}
+                  Pembelian {selectedItem.type === "saldo" ? "Saldo" : isImeiRestok ? "Barang IMEI" : "Barang"}
                 </p>
                 <h2 className="truncate text-base font-black text-slate-800">{selectedItem.nama}</h2>
               </div>
@@ -1758,7 +1946,7 @@ function PembelianModal({
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   <ModalStat label="Sekarang" value={formatNilai(selectedItem, selectedItem.stokSekarang)} tone="slate" />
                   <ModalStat label="Minimum" value={formatNilai(selectedItem, selectedItem.stokMinimum)} tone="amber" />
-                  <ModalStat label="Kurang" value={formatNilai(selectedItem, selectedItem.kekurangan)} tone="rose" />
+                  <ModalStat label={isImeiRestok ? "IMEI Baru" : "Kurang"} value={isImeiRestok ? String(kodeUnikList.length) : formatNilai(selectedItem, selectedItem.kekurangan)} tone="rose" />
                 </div>
 
                 <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2.5">
@@ -1771,32 +1959,111 @@ function PembelianModal({
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
-                  <FormInput
-                    label="Jumlah Tambah"
-                    required
-                    icon={selectedItem.type === "saldo" ? Wallet : Package}
-                    inputMode="numeric"
-                    value={form.jumlahTambah}
-                    onChange={(e: any) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        jumlahTambah: e.target.value.replace(/[^\d]/g, ""),
-                      }))
-                    }
-                    placeholder={selectedItem.type === "saldo" ? "Contoh: 500000" : "Contoh: 10"}
-                    rightSlot={
-                      <span className="rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-black text-sky-700">
-                        {selectedItem.type === "saldo" ? formatRupiah(Number(form.jumlahTambah || 0)) : Number(form.jumlahTambah || 0)}
-                      </span>
-                    }
-                  />
+                  {isImeiRestok ? (
+                    <>
+                      <div className="sm:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Mode Scan IMEI Aktif</p>
+                            <p className="mt-1 text-xs font-bold text-sky-700">
+                             Setiap scan masuk ke daftar IMEI baru.
+                            </p>
+                          </div>
+                          <span className="inline-flex rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-sky-700 ring-1 ring-sky-100">
+                            {kodeUnikList.length} IMEI
+                          </span>
+                        </div>
 
-                  <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2.5">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Setelah Pembelian</p>
-                    <p className="mt-1 text-sm font-black text-sky-700">
-                      {formatNilai(selectedItem, Number(selectedItem.stokSekarang || 0) + Number(form.jumlahTambah || 0))}
-                    </p>
-                  </div>
+                        <input
+                          ref={scanInputRef}
+                          className="pointer-events-none absolute h-px w-px opacity-0"
+                          autoComplete="off"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              const target = e.target as HTMLInputElement
+                              addImeiToForm(target.value)
+                              target.value = ""
+                            }
+                          }}
+                        />
+
+                        <div className="mt-3">
+                          <FormTextarea
+                            label="Daftar IMEI Baru"
+                            icon={Package}
+                            value={form.kodeUnik}
+                            onChange={(e: any) => {
+                              const nextList = getKodeUnikListFromText(e.target.value)
+                              setForm((prev) => ({
+                                ...prev,
+                                kodeUnik: nextList.join("\n"),
+                                jumlahTambah: String(nextList.length),
+                              }))
+                            }}
+                            placeholder="Scan IMEI atau paste banyak IMEI, satu baris satu IMEI."
+                          />
+                        </div>
+
+                        {kodeUnikList.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {kodeUnikList.map((kode) => (
+                              <button
+                                key={kode}
+                                type="button"
+                                onClick={() => removeImeiFromForm(kode)}
+                                className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-white px-2.5 py-1 text-[10px] font-black text-sky-700 shadow-sm"
+                              >
+                                {kode}
+                                <X size={12} strokeWidth={2.5} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Jumlah Tambah</p>
+                        <p className="mt-1 text-sm font-black text-sky-700">{kodeUnikList.length}</p>
+                      </div>
+
+                      <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Setelah Pembelian</p>
+                        <p className="mt-1 text-sm font-black text-sky-700">
+                          {formatNilai(selectedItem, Number(selectedItem.stokSekarang || 0) + kodeUnikList.length)}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <FormInput
+                        label="Jumlah Tambah"
+                        required
+                        icon={selectedItem.type === "saldo" ? Wallet : Package}
+                        inputMode="numeric"
+                        value={form.jumlahTambah}
+                        onChange={(e: any) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            jumlahTambah: e.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                        placeholder={selectedItem.type === "saldo" ? "Contoh: 500000" : "Contoh: 10"}
+                        rightSlot={
+                          <span className="rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-black text-sky-700">
+                            {selectedItem.type === "saldo" ? formatRupiah(Number(form.jumlahTambah || 0)) : Number(form.jumlahTambah || 0)}
+                          </span>
+                        }
+                      />
+
+                      <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Setelah Pembelian</p>
+                        <p className="mt-1 text-sm font-black text-sky-700">
+                          {formatNilai(selectedItem, Number(selectedItem.stokSekarang || 0) + Number(form.jumlahTambah || 0))}
+                        </p>
+                      </div>
+                    </>
+                  )}
 
                   {selectedItem.type === "barang" && (
                     <>
@@ -1865,19 +2132,37 @@ function PembelianModal({
                       </div>
 
                       <div className={`sm:col-span-2 rounded-2xl border px-3 py-2.5 ${
-                        hargaBerubah ? "border-amber-200 bg-amber-50" : "border-sky-100 bg-sky-50/70"
+                        isImeiRestok
+                          ? "border-sky-200 bg-sky-50"
+                          : hargaBerubah
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-sky-100 bg-sky-50/70"
                       }`}>
                         <p className={`text-[10px] font-black uppercase tracking-widest ${
-                          hargaBerubah ? "text-amber-700" : "text-sky-600"
+                          isImeiRestok
+                            ? "text-sky-700"
+                            : hargaBerubah
+                              ? "text-amber-700"
+                              : "text-sky-600"
                         }`}>
-                          {hargaBerubah ? "Sistem Akan Membuat Varian Baru" : "Sistem Akan Menambah Stok Barang Ini"}
+                          {isImeiRestok
+                            ? "Sistem Akan Membuat Unit IMEI Baru"
+                            : hargaBerubah
+                              ? "Sistem Akan Membuat Varian Baru"
+                              : "Sistem Akan Menambah Stok Barang Ini"}
                         </p>
                         <p className={`mt-1 text-xs font-black ${
-                          hargaBerubah ? "text-amber-800" : "text-sky-700"
+                          isImeiRestok
+                            ? "text-sky-800"
+                            : hargaBerubah
+                              ? "text-amber-800"
+                              : "text-sky-700"
                         }`}>
-                          {hargaBerubah
-                            ? `${previewVariantName} · ${previewVariant?.code || "-"}`
-                            : `${selectedItem.nama} · ${selectedItem.kodeRef}`}
+                          {isImeiRestok
+                            ? `${kodeUnikList.length} unit baru · ${selectedItem.nama}`
+                            : hargaBerubah
+                              ? `${previewVariantName} · ${previewVariant?.code || "-"}`
+                              : `${selectedItem.nama} · ${selectedItem.kodeRef}`}
                         </p>
                       </div>
                     </>
@@ -1907,7 +2192,7 @@ function PembelianModal({
 
                   <button
                     type="submit"
-                    disabled={submitLoading}
+                    disabled={submitLoading || (isImeiRestok && jumlahTambahFinal <= 0)}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-sky-500/15 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {submitLoading ? (
