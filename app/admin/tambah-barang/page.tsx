@@ -237,6 +237,16 @@ function normalizeBarcode(value: string) {
     .toUpperCase()
 }
 
+function makeBarcodeHashDigits(value: string) {
+  let hash = 0
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
+  }
+
+  return String(hash).padStart(11, "0").slice(-11)
+}
+
 function makeShortBarcodeValue(params: {
   kodeBarang?: string
   kodeUnik?: string
@@ -245,16 +255,12 @@ function makeShortBarcodeValue(params: {
   const kodeBarang = normalizeBarcode(params.kodeBarang || "")
   const kodeUnik = normalizeBarcode(params.kodeUnik || "")
   const barangId = normalizeBarcode(params.barangId || "")
-  const parts = kodeBarang.split("-").filter(Boolean)
-  const prefix = normalizeBarcode((parts[0] || "B").slice(0, 4)) || "B"
+  const sourceDigits = onlyDigits(kodeUnik || kodeBarang || barangId)
 
-  const sourceDigits = onlyDigits(kodeUnik || kodeBarang)
-  if (sourceDigits.length >= 6) return normalizeBarcode(`${prefix}${sourceDigits.slice(-8)}`)
+  if (sourceDigits.length >= 11) return sourceDigits.slice(-11)
+  if (sourceDigits.length >= 6) return sourceDigits.padStart(11, "0").slice(-11)
 
-  if (barangId) return normalizeBarcode(`${prefix}${barangId.slice(-8)}`)
-  if (kodeBarang.length <= 12) return kodeBarang
-
-  return normalizeBarcode(`${prefix}${kodeBarang.slice(-8)}`)
+  return makeBarcodeHashDigits(`${kodeBarang}-${kodeUnik}-${barangId}`)
 }
 
 function normalizeKodeUnik(value: string) {
@@ -1071,7 +1077,7 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 1.18,
+        width: 1.55,
         height: 34,
       })
     } catch (error) {
@@ -3306,7 +3312,7 @@ export default function TambahBarangPage() {
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 1.18,
+        width: 1.55,
         height: 34,
       })
       return svg.outerHTML
@@ -3472,7 +3478,7 @@ export default function TambahBarangPage() {
               top: 0;
               bottom: 0;
               left: 50%;
-              width: 20%;
+              width: 10%;
               background: #ffffff;
               z-index: 2;
             }
@@ -3480,7 +3486,7 @@ export default function TambahBarangPage() {
             .barcode-meta {
               width: 88%;
               display: grid;
-              grid-template-columns: 50% 20% 30%;
+              grid-template-columns: 50% 10% 40%;
               align-items: center;
               gap: 0;
               margin: 0.05mm auto 0;
@@ -3666,7 +3672,7 @@ export default function TambahBarangPage() {
             top: 0 !important;
             bottom: 0 !important;
             left: 50% !important;
-            width: 20% !important;
+            width: 10% !important;
             background: #ffffff !important;
             z-index: 2 !important;
           }
@@ -3674,7 +3680,7 @@ export default function TambahBarangPage() {
           .barcode-meta {
             width: 100% !important;
             display: grid !important;
-            grid-template-columns: 50% 20% 30% !important;
+            grid-template-columns: 50% 10% 40% !important;
             align-items: center !important;
             gap: 0 !important;
             margin-top: 0.05mm !important;
@@ -5531,11 +5537,11 @@ export default function TambahBarangPage() {
                                     }
                                     className="barcode-svg-print h-[34px] w-full"
                                   />
-                                  <span className="pointer-events-none absolute inset-y-0 left-[50%] z-[2] w-[20%] bg-white" />
+                                  <span className="pointer-events-none absolute inset-y-0 left-[50%] z-[2] w-[10%] bg-white" />
                                 </div>
                               </div>
 
-                              <div className="barcode-meta mt-[0.5px] grid w-full grid-cols-[50%_20%_30%] items-center gap-0 text-[5.2px] font-black uppercase leading-none text-slate-950">
+                              <div className="barcode-meta mt-[0.5px] grid w-full grid-cols-[50%_10%_40%] items-center gap-0 text-[5.2px] font-black uppercase leading-none text-slate-950">
                                 <span className="col-start-1 min-w-0 truncate text-left">{normalizeBarcode(
                                   item.kodeBarcode ||
                                     makeShortBarcodeValue({

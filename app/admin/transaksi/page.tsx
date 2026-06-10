@@ -398,6 +398,47 @@ const makeShortBarcodeValue = (params: {
   return makeBarcodeHashDigits(`${kodeBarang}-${kodeUnik}-${barangId}`);
 };
 
+const makeLegacyShortBarcodeValue = (params: {
+  kodeBarang?: string;
+  kodeUnik?: string;
+  barangId?: string;
+}) => {
+  const kodeBarang = normalizeBarcode(params.kodeBarang || "");
+  const kodeUnik = normalizeBarcode(params.kodeUnik || "");
+  const barangId = normalizeBarcode(params.barangId || "");
+  const parts = kodeBarang.split("-").filter(Boolean);
+  const prefix = normalizeBarcode((parts[0] || "B").slice(0, 4)) || "B";
+  const sourceDigits = onlyDigits(kodeUnik || kodeBarang);
+
+  if (sourceDigits.length >= 6) return normalizeBarcode(`${prefix}${sourceDigits.slice(-8)}`);
+  if (barangId) return normalizeBarcode(`${prefix}${barangId.slice(-8)}`);
+  if (kodeBarang.length <= 12) return kodeBarang;
+
+  return normalizeBarcode(`${prefix}${kodeBarang.slice(-8)}`);
+};
+
+const getBarangKodeBarcodeBaru = (barang: {
+  id?: string;
+  kodeBarang?: string;
+  kodeUnik?: string;
+}) =>
+  makeShortBarcodeValue({
+    kodeBarang: barang.kodeBarang || "",
+    kodeUnik: barang.kodeUnik || "",
+    barangId: barang.id || "",
+  });
+
+const getBarangKodeBarcodeLegacy = (barang: {
+  id?: string;
+  kodeBarang?: string;
+  kodeUnik?: string;
+}) =>
+  makeLegacyShortBarcodeValue({
+    kodeBarang: barang.kodeBarang || "",
+    kodeUnik: barang.kodeUnik || "",
+    barangId: barang.id || "",
+  });
+
 const getDigitalNominalPotong = (
   item: Pick<TransaksiCartItem, "jenisBarang" | "hargaModal" | "qty">,
 ) => {
@@ -1154,6 +1195,8 @@ export default function TransaksiPage() {
         String(item.kodeBarcode || "")
           .toLowerCase()
           .includes(q) ||
+        getBarangKodeBarcodeBaru(item).toLowerCase().includes(q) ||
+        getBarangKodeBarcodeLegacy(item).toLowerCase().includes(q) ||
         item.merk.toLowerCase().includes(q) ||
         item.kategoriNama.toLowerCase().includes(q) ||
         String(item.provider || "")
@@ -1163,6 +1206,8 @@ export default function TransaksiPage() {
           .toLowerCase()
           .includes(q) ||
         (!!qScan && normalizeBarcode(item.kodeBarcode || "").includes(qScan)) ||
+        (!!qScan && getBarangKodeBarcodeBaru(item).includes(qScan)) ||
+        (!!qScan && getBarangKodeBarcodeLegacy(item).includes(qScan)) ||
         (!!qScan && kodeUnikList.some((kodeUnik) => kodeUnik.includes(qScan)));
 
       if (!sameToko || !sameJenis || !matchSearch) return false;
@@ -1186,8 +1231,16 @@ export default function TransaksiPage() {
       scanType: "kodeBarang" | "kodeBarcode" | "kodeUnik",
     ) => {
       const cleanKey = normalizeBarcode(key);
-      if (!cleanKey || map.has(cleanKey)) return;
-      map.set(cleanKey, { barang, scanType });
+      if (!cleanKey) return;
+
+      if (!map.has(cleanKey)) {
+        map.set(cleanKey, { barang, scanType });
+      }
+
+      const digitKey = onlyDigits(cleanKey);
+      if (digitKey && digitKey.length >= SCANNER_MIN_LENGTH && !map.has(digitKey)) {
+        map.set(digitKey, { barang, scanType });
+      }
     };
 
     for (const item of barangList) {
@@ -1196,19 +1249,14 @@ export default function TransaksiPage() {
       if (selectedTokoId && item.tokoId !== selectedTokoId) continue;
 
       registerScanKey(item.kodeBarang, item, "kodeBarang");
-      registerScanKey(
-        item.kodeBarcode ||
-          makeShortBarcodeValue({
-            kodeBarang: item.kodeBarang,
-            kodeUnik: item.kodeUnik,
-            barangId: item.id,
-          }),
-        item,
-        "kodeBarcode",
-      );
+      registerScanKey(item.kodeBarcode || "", item, "kodeBarcode");
+      registerScanKey(getBarangKodeBarcodeBaru(item), item, "kodeBarcode");
+      registerScanKey(getBarangKodeBarcodeLegacy(item), item, "kodeBarcode");
 
       for (const kodeUnik of splitKodeUnikScanValues(item.kodeUnik)) {
         registerScanKey(kodeUnik, item, "kodeUnik");
+        registerScanKey(getBarangKodeBarcodeBaru({ ...item, kodeUnik }), item, "kodeBarcode");
+        registerScanKey(getBarangKodeBarcodeLegacy({ ...item, kodeUnik }), item, "kodeBarcode");
       }
     }
 
@@ -1274,11 +1322,7 @@ export default function TransaksiPage() {
                   pakaiKodeUnik: barang.pakaiKodeUnik,
                   jenisKodeUnik: barang.jenisKodeUnik || "",
                   kodeUnik: barang.kodeUnik || "",
-                  kodeBarcode: barang.kodeBarcode || makeShortBarcodeValue({
-                    kodeBarang: barang.kodeBarang,
-                    kodeUnik: barang.kodeUnik,
-                    barangId: barang.id,
-                  }),
+                  kodeBarcode: getBarangKodeBarcodeBaru(barang),
                   providerId: barang.providerId || "",
                   provider: barang.provider || "",
                   saldoSourceId: barang.saldoSourceId || "",
@@ -1308,11 +1352,7 @@ export default function TransaksiPage() {
                 hargaModal: barang.hargaModal,
                 hargaAsli: barang.hargaJual,
                 hargaSetelahDiskon,
-                kodeBarcode: barang.kodeBarcode || makeShortBarcodeValue({
-                  kodeBarang: barang.kodeBarang,
-                  kodeUnik: barang.kodeUnik,
-                  barangId: barang.id,
-                }),
+                kodeBarcode: getBarangKodeBarcodeBaru(barang),
                 providerId: barang.providerId || "",
                 provider: barang.provider || "",
                 saldoSourceId: barang.saldoSourceId || "",
@@ -1335,11 +1375,7 @@ export default function TransaksiPage() {
         {
           barangId: barang.id,
           kodeBarang: barang.kodeBarang,
-          kodeBarcode: barang.kodeBarcode || makeShortBarcodeValue({
-            kodeBarang: barang.kodeBarang,
-            kodeUnik: barang.kodeUnik,
-            barangId: barang.id,
-          }),
+          kodeBarcode: getBarangKodeBarcodeBaru(barang),
           nama: barang.nama,
           kategoriId: barang.kategoriId || "",
           kategoriNama: barang.kategoriNama,
@@ -1392,7 +1428,11 @@ export default function TransaksiPage() {
       return { ok: false };
     }
 
-    const foundEntry = barangBarcodeMap.get(kode);
+    const foundEntry =
+      barangBarcodeMap.get(kode) ||
+      barangBarcodeMap.get(onlyDigits(kode)) ||
+      barangBarcodeMap.get(normalizeBarcode(onlyDigits(kode)));
+
     if (!foundEntry) {
       setError(`Barcode/IMEI ${kode} tidak ditemukan di toko ini`);
       setTimeout(() => setError(null), 1800);
