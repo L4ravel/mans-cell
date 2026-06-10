@@ -3330,7 +3330,7 @@ export default function TambahBarangPage() {
 
             .barcode-grid {
               display: grid;
-              grid-template-columns: repeat(7, minmax(0, 1fr));
+              grid-template-columns: repeat(6, minmax(0, 1fr));
               gap: 1px;
               width: 100%;
               align-items: start;
@@ -3501,7 +3501,7 @@ export default function TambahBarangPage() {
 
           .barcode-grid {
             display: grid !important;
-            grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+            grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
             gap: 1px !important;
             width: 100% !important;
             align-items: start !important;
@@ -5388,7 +5388,7 @@ export default function TambahBarangPage() {
   id="barcode-print-area"
   className="bg-white p-0"
 >
-                    <div className="barcode-grid grid grid-cols-2 gap-px sm:grid-cols-4 md:grid-cols-7">
+                    <div className="barcode-grid grid grid-cols-2 gap-px sm:grid-cols-3 md:grid-cols-6">
                       {flatPrintItems.map((item) => (
                         <div
                           key={item.key}
