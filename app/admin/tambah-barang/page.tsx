@@ -3364,7 +3364,7 @@ export default function TambahBarangPage() {
 
             .barcode-grid {
               display: grid;
-              grid-template-columns: repeat(6, minmax(0, 1fr));
+              grid-template-columns: repeat(5, minmax(0, 1fr));
               gap: 0.35mm;
               width: 100%;
               align-items: start;
@@ -3531,7 +3531,7 @@ export default function TambahBarangPage() {
 
           .barcode-grid {
             display: grid !important;
-            grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
             gap: 0.35mm !important;
             width: 100% !important;
             align-items: start !important;
