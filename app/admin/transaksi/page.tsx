@@ -372,6 +372,16 @@ const normalizeScannerValue = (value: unknown) => {
 
 const onlyDigits = (value: unknown) => String(value || "").replace(/\D/g, "");
 
+const makeBarcodeHashDigits = (value: string) => {
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+
+  return String(hash).padStart(11, "0").slice(-11);
+};
+
 const makeShortBarcodeValue = (params: {
   kodeBarang?: string;
   kodeUnik?: string;
@@ -380,16 +390,12 @@ const makeShortBarcodeValue = (params: {
   const kodeBarang = normalizeBarcode(params.kodeBarang || "");
   const kodeUnik = normalizeBarcode(params.kodeUnik || "");
   const barangId = normalizeBarcode(params.barangId || "");
-  const parts = kodeBarang.split("-").filter(Boolean);
-  const prefix = normalizeBarcode((parts[0] || "B").slice(0, 4)) || "B";
+  const sourceDigits = onlyDigits(kodeUnik || kodeBarang || barangId);
 
-  const sourceDigits = onlyDigits(kodeUnik || kodeBarang);
-  if (sourceDigits.length >= 6) return normalizeBarcode(`${prefix}${sourceDigits.slice(-8)}`);
+  if (sourceDigits.length >= 11) return sourceDigits.slice(-11);
+  if (sourceDigits.length >= 6) return sourceDigits.padStart(11, "0").slice(-11);
 
-  if (barangId) return normalizeBarcode(`${prefix}${barangId.slice(-8)}`);
-  if (kodeBarang.length <= 12) return kodeBarang;
-
-  return normalizeBarcode(`${prefix}${kodeBarang.slice(-8)}`);
+  return makeBarcodeHashDigits(`${kodeBarang}-${kodeUnik}-${barangId}`);
 };
 
 const getDigitalNominalPotong = (
