@@ -1,5 +1,20 @@
 /*
-  app/admin/barang/page.tsx
+  Halaman admin barang untuk CRUD data barang per toko di Firestore.
+  Layout direvisi konsisten 100% dengan master data terbaru: tema biru muda, filter mobile collapse, stat card sesuai filter aktif, card mobile modern, dan tombol aksi seragam.
+  Revisi:
+  - pilih jenis barang pakai tab fisik / digital
+  - provider digital ambil dari database koleksi provider
+  - sumber saldo digital ambil dari database koleksi master_saldo_digital
+  - supplier fisik tetap dari koleksi supplier
+  - print barcode hanya untuk barang fisik
+  - download template Excel, download data Excel, dan import Excel dengan style border konsisten
+  - nominal produk digital dibuat fleksibel: bisa angka atau huruf, misalnya Pulsa 10K / Data 5GB
+  - input harga modal dan harga jual otomatis memakai titik ribuan agar mudah dibaca
+  - card Total Barang, Barang Fisik, dan Barang Digital bisa diklik untuk toggle jumlah/modal
+  - kode barang dibuat otomatis dari kode toko + nama barang, contoh TOKO-CP-D-LVS-25
+  - import Excel tidak menerima kodeBarang manual; sistem membuat kode saat import
+  - label barcode menampilkan nama barang di atas barcode dan kode barang di bawahnya
+  - saat tambah barang dibuka, mode IMEI otomatis aktif dan cursor langsung fokus ke kolom scan
 */
 
 "use client"
@@ -97,7 +112,6 @@ type JenisBarang = "fisik" | "digital"
 type Barang = {
   id: string
   kodeBarang: string
-  kodeBarcode?: string
   nama: string
   kategoriId: string
   kategoriNama: string
@@ -133,7 +147,8 @@ type FlattenPrintItem = {
   barangId: string
   nama: string
   kodeBarang: string
-  kodeBarcode?: string
+  kodeUnik?: string
+  pakaiKodeUnik?: boolean
   tokoNama: string
   merk: string
   hargaJual: number
@@ -237,32 +252,6 @@ function normalizeBarcode(value: string) {
     .toUpperCase()
 }
 
-function makeBarcodeHashDigits(value: string) {
-  let hash = 0
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
-  }
-
-  return String(hash).padStart(11, "0").slice(-11)
-}
-
-function makeShortBarcodeValue(params: {
-  kodeBarang?: string
-  kodeUnik?: string
-  barangId?: string
-}) {
-  const kodeBarang = normalizeBarcode(params.kodeBarang || "")
-  const kodeUnik = normalizeBarcode(params.kodeUnik || "")
-  const barangId = normalizeBarcode(params.barangId || "")
-  const sourceDigits = onlyDigits(kodeUnik || kodeBarang || barangId)
-
-  if (sourceDigits.length >= 11) return sourceDigits.slice(-11)
-  if (sourceDigits.length >= 6) return sourceDigits.padStart(11, "0").slice(-11)
-
-  return makeBarcodeHashDigits(`${kodeBarang}-${kodeUnik}-${barangId}`)
-}
-
 function normalizeKodeUnik(value: string) {
   return String(value || "")
     .trim()
@@ -270,18 +259,18 @@ function normalizeKodeUnik(value: string) {
     .toUpperCase()
 }
 
-function formatJenisBarangLabel(value?: JenisBarang) {
-  return value === "digital" ? "Digital" : "Fisik"
+function getBarcodePrintValue(item: {
+  kodeBarang?: string
+  kodeUnik?: string
+  pakaiKodeUnik?: boolean
+}) {
+  const kodeUnik = normalizeKodeUnik(item.kodeUnik || "")
+  if (item.pakaiKodeUnik && kodeUnik) return kodeUnik
+  return normalizeBarcode(item.kodeBarang || "")
 }
 
-function formatBarcodeTokoName(value: string) {
-  const words = String(value || "TOKO")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-
-  return (words.join(" ") || "TOKO").toUpperCase()
+function formatJenisBarangLabel(value?: JenisBarang) {
+  return value === "digital" ? "Digital" : "Fisik"
 }
 
 function FormInput({
@@ -1077,8 +1066,8 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 1.55,
-        height: 34,
+        width: 1.2,
+        height: 26,
       })
     } catch (error) {
       console.error("Gagal generate barcode:", error)
@@ -1866,11 +1855,6 @@ export default function TambahBarangPage() {
         return {
           id: d.id,
           kodeBarang: x?.kodeBarang || "",
-          kodeBarcode: x?.kodeBarcode || makeShortBarcodeValue({
-            kodeBarang: x?.kodeBarang || "",
-            kodeUnik: x?.kodeUnik || "",
-            barangId: d.id,
-          }),
           nama: x?.nama || "",
           kategoriId: x?.kategoriId || "",
           kategoriNama: x?.kategoriNama || "",
@@ -2382,11 +2366,6 @@ export default function TambahBarangPage() {
 
       const basePayload = {
         kodeBarang,
-        kodeBarcode: makeShortBarcodeValue({
-          kodeBarang,
-          kodeUnik: pakaiKodeUnik ? kodeUnikList[0] || kodeUnik : "",
-          barangId: editId || undefined,
-        }),
         nama: form.nama.trim(),
         kategoriId: kategori.id,
         kategoriNama: kategori.nama,
@@ -2459,11 +2438,6 @@ export default function TambahBarangPage() {
             id: newRef.id,
             ...basePayload,
             kodeBarang: itemKodeBarang,
-            kodeBarcode: makeShortBarcodeValue({
-              kodeBarang: itemKodeBarang,
-              kodeUnik: kodeItem,
-              barangId: newRef.id,
-            }),
             stok: 1,
             jenisKodeUnik,
             kodeUnik: kodeItem,
@@ -2488,11 +2462,6 @@ export default function TambahBarangPage() {
         const newItem: Barang = {
           id: newRef.id,
           ...basePayload,
-          kodeBarcode: makeShortBarcodeValue({
-            kodeBarang,
-            kodeUnik: pakaiKodeUnik ? kodeUnikList[0] || kodeUnik : "",
-            barangId: newRef.id,
-          }),
           kodeUnik: pakaiKodeUnik ? kodeUnikList[0] || kodeUnik : "",
           createdAt: now,
         }
@@ -3000,11 +2969,6 @@ export default function TambahBarangPage() {
         const payload: Barang = {
           id: finalId,
           kodeBarang,
-          kodeBarcode: makeShortBarcodeValue({
-            kodeBarang,
-            kodeUnik: pakaiKodeUnik ? kodeUnik : "",
-            barangId: finalId,
-          }),
           nama,
           kategoriId: kategori.id,
           kategoriNama: kategori.nama,
@@ -3237,17 +3201,15 @@ export default function TambahBarangPage() {
       if (item.jenisBarang === "digital") continue
       const qty = Number(printSelections[item.id] || 0)
       if (qty <= 0) continue
+
       for (let i = 0; i < qty; i++) {
         result.push({
           key: `${item.id}-${i + 1}`,
           barangId: item.id,
           nama: item.nama,
           kodeBarang: item.kodeBarang,
-          kodeBarcode: item.kodeBarcode || makeShortBarcodeValue({
-            kodeBarang: item.kodeBarang,
-            kodeUnik: item.kodeUnik,
-            barangId: item.id,
-          }),
+          kodeUnik: item.kodeUnik,
+          pakaiKodeUnik: item.pakaiKodeUnik,
           tokoNama: item.tokoNama,
           merk: item.merk,
           hargaJual: item.hargaJual,
@@ -3312,8 +3274,8 @@ export default function TambahBarangPage() {
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 1.55,
-        height: 34,
+        width: 1.2,
+        height: 26,
       })
       return svg.outerHTML
     } catch (error) {
@@ -3331,30 +3293,23 @@ export default function TambahBarangPage() {
 
     const itemsHtml = flatPrintItems
       .map((item) => {
-        const code = normalizeBarcode(
-          item.kodeBarcode ||
-            makeShortBarcodeValue({
-              kodeBarang: item.kodeBarang,
-              barangId: item.barangId,
-            })
-        )
-        const barcodeSvg = makePrintBarcodeSvg(code)
+        const barcodeValue = getBarcodePrintValue(item)
+        const labelCode = normalizeBarcode(item.kodeBarang)
+        const barcodeSvg = makePrintBarcodeSvg(barcodeValue)
 
         return `
           <div class="barcode-card">
             <div class="barcode-inner">
-              <div class="barcode-title">${escapePrintText(item.nama || "Tanpa Nama")}</div>
-              <div class="barcode-svg">
-                <div class="barcode-svg-cut">
-                  ${barcodeSvg}
-                  <span class="barcode-gap"></span>
+              <div class="barcode-top">${escapePrintText(item.nama || "Tanpa Nama")}</div>
+              <div class="barcode-svg">${barcodeSvg}</div>
+
+              <div class="barcode-bottom">
+                <div class="barcode-left">
+                  <div class="barcode-code">${escapePrintText(labelCode)}</div>
+                  <div class="barcode-price">${escapePrintText(formatRupiah(item.hargaJual || 0))}</div>
                 </div>
+                <div class="barcode-store">${escapePrintText(item.tokoNama || "")}</div>
               </div>
-              <div class="barcode-meta">
-                <span>${escapePrintText(code)}</span>
-                <span>${escapePrintText(formatBarcodeTokoName(item.tokoNama || "TOKO"))}</span>
-              </div>
-              <div class="barcode-price">${escapePrintText(formatRupiah(item.hargaJual || 0))}</div>
             </div>
           </div>
         `
@@ -3410,19 +3365,19 @@ export default function TambahBarangPage() {
             .barcode-grid {
               display: grid;
               grid-template-columns: repeat(6, minmax(0, 1fr));
-              gap: 1px;
+              gap: 0.35mm;
               width: 100%;
               align-items: start;
             }
 
             .barcode-card {
               width: 100%;
-              aspect-ratio: 1.95 / 1;
+              aspect-ratio: 2.05 / 1;
               break-inside: avoid;
               page-break-inside: avoid;
               overflow: hidden;
               background: #ffffff;
-              padding: 0.6mm 0.6mm;
+              padding: 0.35mm;
             }
 
             .barcode-inner {
@@ -3430,93 +3385,66 @@ export default function TambahBarangPage() {
               height: 100%;
               display: flex;
               flex-direction: column;
-              align-items: stretch;
-              justify-content: center;
+              justify-content: flex-start;
               overflow: hidden;
             }
 
-            .barcode-title {
-              margin-bottom: 0.15mm;
-              font-size: 5.6px;
+            .barcode-top {
+              font-size: 6.2px;
               line-height: 1;
               font-weight: 900;
               text-align: center;
-              text-transform: uppercase;
               white-space: nowrap;
               overflow: hidden;
               text-overflow: ellipsis;
-              letter-spacing: -0.05px;
+              margin-bottom: 0.3mm;
             }
 
             .barcode-svg {
-              width: 88%;
-              height: 9.2mm;
+              width: 100%;
+              height: 8.2mm;
               overflow: hidden;
               display: flex;
               align-items: center;
-              justify-content: flex-start;
+              justify-content: center;
+            }
+
+            .barcode-svg svg {
+              width: auto;
+              max-width: 100%;
+              height: 8.2mm;
+              display: block;
               margin: 0 auto;
             }
 
-            .barcode-svg-cut {
-              position: relative;
-              width: 100%;
-              height: 9.2mm;
-              overflow: hidden;
+            .barcode-bottom {
+              display: flex;
+              align-items: flex-end;
+              justify-content: space-between;
+              gap: 0.8mm;
+              margin-top: 0.25mm;
             }
 
-            .barcode-svg-cut svg {
-              width: 100%;
-              max-width: 100%;
-              height: 9.2mm;
-              display: block;
-              margin: 0;
+            .barcode-left {
+              min-width: 0;
+              flex: 1;
             }
 
-            .barcode-gap {
-              position: absolute;
-              top: 0;
-              bottom: 0;
-              left: 50%;
-              width: 10%;
-              background: #ffffff;
-              z-index: 2;
-            }
-
-            .barcode-meta {
-              width: 88%;
-              display: grid;
-              grid-template-columns: 50% 10% 40%;
-              align-items: center;
-              gap: 0;
-              margin: 0.05mm auto 0;
-              font-size: 4.7px;
+            .barcode-code,
+            .barcode-fallback {
+              font-size: 5.4px;
               line-height: 1;
               font-weight: 900;
-              text-transform: uppercase;
+              letter-spacing: 0;
+              text-align: left;
               white-space: nowrap;
-            }
-
-            .barcode-meta span {
-              min-width: 0;
               overflow: hidden;
               text-overflow: ellipsis;
-            }
-
-            .barcode-meta span:first-child {
-              grid-column: 1;
-              text-align: left;
-            }
-
-            .barcode-meta span:last-child {
-              grid-column: 3;
-              text-align: left;
             }
 
             .barcode-price {
-              margin: 0.05mm auto 0;
-              width: 88%;
-              font-size: 7.2px;
+              margin-top: 0.15mm;
+              font-size: 7px;
               line-height: 1;
               font-weight: 900;
               text-align: left;
@@ -3525,11 +3453,12 @@ export default function TambahBarangPage() {
               text-overflow: ellipsis;
             }
 
-            .barcode-fallback {
-              font-size: 5.2px;
+            .barcode-store {
+              max-width: 45%;
+              font-size: 6px;
               line-height: 1;
               font-weight: 900;
-              text-align: center;
+              text-align: right;
               white-space: nowrap;
               overflow: hidden;
               text-overflow: ellipsis;
@@ -3603,7 +3532,7 @@ export default function TambahBarangPage() {
           .barcode-grid {
             display: grid !important;
             grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-            gap: 1px !important;
+            gap: 0.35mm !important;
             width: 100% !important;
             align-items: start !important;
           }
@@ -3612,13 +3541,13 @@ export default function TambahBarangPage() {
             width: 100% !important;
             max-width: 100% !important;
             min-width: 0 !important;
-            aspect-ratio: 1.95 / 1 !important;
+            aspect-ratio: 2.05 / 1 !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
-            padding: 0.6mm 0.6mm !important;
+            padding: 0.35mm !important;
             background: white !important;
-            border: none !important;
             box-shadow: none !important;
+            border: none !important;
             overflow: hidden !important;
           }
 
@@ -3626,97 +3555,77 @@ export default function TambahBarangPage() {
             height: 100% !important;
             display: flex !important;
             flex-direction: column !important;
-            justify-content: center !important;
-            align-items: stretch !important;
-            padding: 0 !important;
+            justify-content: flex-start !important;
             overflow: hidden !important;
-            margin-top: 0 !important;
-            border: none !important;
+            padding: 0 !important;
             border-radius: 0 !important;
           }
 
-          .barcode-title {
-            margin-bottom: 0.15mm !important;
-            font-size: 5.6px !important;
+          .barcode-top {
+            font-size: 6.2px !important;
             line-height: 1 !important;
             font-weight: 900 !important;
-            text-transform: uppercase !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
             text-align: center !important;
-            letter-spacing: -0.05px !important;
+            margin-bottom: 0.3mm !important;
           }
 
           .barcode-svg-print {
-            width: 100% !important;
+            width: auto !important;
             max-width: 100% !important;
-            height: 9.2mm !important;
-            min-height: 9.2mm !important;
+            height: 8.2mm !important;
+            min-height: 8.2mm !important;
             display: block !important;
-            margin-left: 0 !important;
-            margin-right: 0 !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
           }
 
-          .barcode-split-wrap {
-            position: relative !important;
-            width: 100% !important;
-            height: 9.2mm !important;
-            min-height: 9.2mm !important;
-            overflow: hidden !important;
+          .barcode-bottom {
+            display: flex !important;
+            align-items: flex-end !important;
+            justify-content: space-between !important;
+            gap: 0.8mm !important;
+            margin-top: 0.25mm !important;
           }
 
-          .barcode-split-wrap::after {
-            content: "" !important;
-            position: absolute !important;
-            top: 0 !important;
-            bottom: 0 !important;
-            left: 50% !important;
-            width: 10% !important;
-            background: #ffffff !important;
-            z-index: 2 !important;
-          }
-
-          .barcode-meta {
-            width: 100% !important;
-            display: grid !important;
-            grid-template-columns: 50% 10% 40% !important;
-            align-items: center !important;
-            gap: 0 !important;
-            margin-top: 0.05mm !important;
-            font-size: 4.7px !important;
-            line-height: 1 !important;
-            font-weight: 900 !important;
-            text-transform: uppercase !important;
-            white-space: nowrap !important;
-          }
-
-          .barcode-meta span {
+          .barcode-left {
             min-width: 0 !important;
+            flex: 1 !important;
+          }
+
+          .barcode-code {
+            font-size: 5.4px !important;
+            line-height: 1 !important;
+            letter-spacing: 0 !important;
+            font-weight: 900 !important;
+            white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
-          }
-
-          .barcode-meta span:first-child {
-            grid-column: 1 !important;
-            text-align: left !important;
-          }
-
-          .barcode-meta span:last-child {
-            grid-column: 3 !important;
             text-align: left !important;
           }
 
           .barcode-price {
-            font-size: 7.2px !important;
+            font-size: 7px !important;
             line-height: 1 !important;
-            width: 88% !important;
-            margin: 0.05mm auto 0 !important;
+            margin-top: 0.15mm !important;
             font-weight: 900 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
             text-align: left !important;
+          }
+
+          .barcode-store {
+            max-width: 45% !important;
+            font-size: 6px !important;
+            line-height: 1 !important;
+            font-weight: 900 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            text-align: right !important;
           }
         }
       `}</style>
@@ -5513,47 +5422,36 @@ export default function TambahBarangPage() {
   id="barcode-print-area"
   className="bg-white p-0"
 >
-                    <div className="barcode-grid grid grid-cols-2 gap-px sm:grid-cols-3 md:grid-cols-6">
+                    <div className="barcode-grid grid grid-cols-2 gap-[2px] sm:grid-cols-3 md:grid-cols-6">
                       {flatPrintItems.map((item) => (
                         <div
                           key={item.key}
-                          className="barcode-card aspect-[1.95/1] bg-white p-1"
+                          className="barcode-card aspect-[2.05/1] bg-white p-[2px]"
                         >
-                          <div className="barcode-svg-wrap flex h-full flex-col justify-center overflow-hidden">
-                            <p className="barcode-title truncate text-center text-[6.5px] font-black uppercase leading-none tracking-tight text-slate-950">
+                          <div className="barcode-svg-wrap overflow-hidden">
+                            <p className="barcode-top truncate text-center text-[8px] font-black leading-none text-slate-900">
                               {item.nama}
                             </p>
 
-                            <div className="mx-auto mt-[1px] w-[88%] overflow-hidden">
-                              <div className="flex h-[36px] items-center justify-start overflow-hidden">
-                                <div className="barcode-split-wrap relative h-[34px] w-full overflow-hidden">
-                                  <BarcodeSvg
-                                    value={
-                                      item.kodeBarcode ||
-                                      makeShortBarcodeValue({
-                                        kodeBarang: item.kodeBarang,
-                                        barangId: item.barangId,
-                                      })
-                                    }
-                                    className="barcode-svg-print h-[34px] w-full"
-                                  />
-                                  <span className="pointer-events-none absolute inset-y-0 left-[50%] z-[2] w-[10%] bg-white" />
-                                </div>
+                            <div className="flex justify-center">
+                              <BarcodeSvg
+                                value={getBarcodePrintValue(item)}
+                                className="barcode-svg-print h-[30px] max-w-full"
+                              />
+                            </div>
+
+                            <div className="barcode-bottom mt-[2px] flex items-end justify-between gap-1">
+                              <div className="barcode-left min-w-0 flex-1">
+                                <p className="barcode-code truncate text-left text-[6px] font-black leading-none text-slate-900">
+                                  {item.kodeBarang}
+                                </p>
+                                <p className="barcode-price mt-[1px] truncate text-left text-[8px] font-black leading-none text-slate-900">
+                                  {formatRupiah(item.hargaJual || 0)}
+                                </p>
                               </div>
 
-                              <div className="barcode-meta mt-[0.5px] grid w-full grid-cols-[50%_10%_40%] items-center gap-0 text-[5.2px] font-black uppercase leading-none text-slate-950">
-                                <span className="col-start-1 min-w-0 truncate text-left">{normalizeBarcode(
-                                  item.kodeBarcode ||
-                                    makeShortBarcodeValue({
-                                      kodeBarang: item.kodeBarang,
-                                      barangId: item.barangId,
-                                    })
-                                )}</span>
-                                <span className="col-start-3 min-w-0 truncate text-left">{formatBarcodeTokoName(item.tokoNama || "TOKO")}</span>
-                              </div>
-
-                              <p className="barcode-price mt-[0.5px] w-full truncate text-left text-[9px] font-black leading-none text-slate-950">
-                                {formatRupiah(item.hargaJual || 0)}
+                              <p className="barcode-store truncate text-right text-[7px] font-black leading-none text-slate-900">
+                                {item.tokoNama}
                               </p>
                             </div>
                           </div>

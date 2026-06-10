@@ -439,6 +439,32 @@ const getBarangKodeBarcodeLegacy = (barang: {
     barangId: barang.id || "",
   });
 
+
+const buildScannerCandidateKeys = (value: unknown) => {
+  const keys = new Set<string>();
+  const cleanValue = normalizeScannerValue(value);
+  const digitValue = onlyDigits(cleanValue);
+
+  const addKey = (key: unknown) => {
+    const cleanKey = normalizeBarcode(String(key || ""));
+    if (!cleanKey || cleanKey.length < SCANNER_MIN_LENGTH) return;
+    keys.add(cleanKey);
+
+    const digitKey = onlyDigits(cleanKey);
+    if (digitKey && digitKey.length >= SCANNER_MIN_LENGTH) keys.add(digitKey);
+  };
+
+  addKey(cleanValue);
+  addKey(digitValue);
+
+  if (digitValue.length >= 11) addKey(digitValue.slice(-11));
+  if (digitValue.length >= 8) addKey(digitValue.slice(-8));
+  if (digitValue.length >= 6) addKey(digitValue.padStart(11, "0").slice(-11));
+
+  return Array.from(keys);
+};
+
+
 const getDigitalNominalPotong = (
   item: Pick<TransaksiCartItem, "jenisBarang" | "hargaModal" | "qty">,
 ) => {
@@ -1222,6 +1248,8 @@ export default function TransaksiPage() {
       {
         barang: TransaksiBarang;
         scanType: "kodeBarang" | "kodeBarcode" | "kodeUnik";
+        kodeUnikValue?: string;
+        matchedKey?: string;
       }
     >();
 
@@ -1229,17 +1257,19 @@ export default function TransaksiPage() {
       key: string,
       barang: TransaksiBarang,
       scanType: "kodeBarang" | "kodeBarcode" | "kodeUnik",
+      kodeUnikValue = "",
     ) => {
-      const cleanKey = normalizeBarcode(key);
-      if (!cleanKey) return;
+      const keys = buildScannerCandidateKeys(key);
 
-      if (!map.has(cleanKey)) {
-        map.set(cleanKey, { barang, scanType });
-      }
-
-      const digitKey = onlyDigits(cleanKey);
-      if (digitKey && digitKey.length >= SCANNER_MIN_LENGTH && !map.has(digitKey)) {
-        map.set(digitKey, { barang, scanType });
+      for (const scanKey of keys) {
+        if (!map.has(scanKey)) {
+          map.set(scanKey, {
+            barang,
+            scanType,
+            kodeUnikValue: normalizeBarcode(kodeUnikValue),
+            matchedKey: scanKey,
+          });
+        }
       }
     };
 
@@ -1254,14 +1284,25 @@ export default function TransaksiPage() {
       registerScanKey(getBarangKodeBarcodeLegacy(item), item, "kodeBarcode");
 
       for (const kodeUnik of splitKodeUnikScanValues(item.kodeUnik)) {
-        registerScanKey(kodeUnik, item, "kodeUnik");
-        registerScanKey(getBarangKodeBarcodeBaru({ ...item, kodeUnik }), item, "kodeBarcode");
-        registerScanKey(getBarangKodeBarcodeLegacy({ ...item, kodeUnik }), item, "kodeBarcode");
+        registerScanKey(kodeUnik, item, "kodeUnik", kodeUnik);
+        registerScanKey(getBarangKodeBarcodeBaru({ ...item, kodeUnik }), item, "kodeUnik", kodeUnik);
+        registerScanKey(getBarangKodeBarcodeLegacy({ ...item, kodeUnik }), item, "kodeUnik", kodeUnik);
       }
     }
 
     return map;
   }, [barangList, selectedTokoId]);
+
+  const findBarangBarcodeEntry = (rawValue: string) => {
+    const candidates = buildScannerCandidateKeys(rawValue);
+
+    for (const candidate of candidates) {
+      const entry = barangBarcodeMap.get(candidate);
+      if (entry) return entry;
+    }
+
+    return null;
+  };
 
   type AddToCartResult = {
     ok: boolean;
@@ -1428,10 +1469,7 @@ export default function TransaksiPage() {
       return { ok: false };
     }
 
-    const foundEntry =
-      barangBarcodeMap.get(kode) ||
-      barangBarcodeMap.get(onlyDigits(kode)) ||
-      barangBarcodeMap.get(normalizeBarcode(onlyDigits(kode)));
+    const foundEntry = findBarangBarcodeEntry(kode);
 
     if (!foundEntry) {
       setError(`Barcode/IMEI ${kode} tidak ditemukan di toko ini`);
@@ -1441,7 +1479,9 @@ export default function TransaksiPage() {
 
     const found = foundEntry.barang;
     const barangScan =
-      foundEntry.scanType === "kodeUnik" ? { ...found, kodeUnik: kode } : found;
+      foundEntry.scanType === "kodeUnik"
+        ? { ...found, kodeUnik: foundEntry.kodeUnikValue || kode }
+        : found;
 
     if (Number(found.stok || 0) <= 0) {
       setError(`Stok ${found.nama} habis`);
@@ -1511,7 +1551,7 @@ export default function TransaksiPage() {
       const pasted = normalizeScannerValue(e.clipboardData?.getData("text") || "");
       if (pasted.length < SCANNER_MIN_LENGTH) return;
 
-      if (barangBarcodeMap.has(pasted)) {
+      if (findBarangBarcodeEntry(pasted)) {
         e.preventDefault();
         resetScanBuffer();
         commitBarcodeValue(pasted, "scanner");
@@ -1581,7 +1621,7 @@ export default function TransaksiPage() {
       }
 
       const currentClean = normalizeScannerValue(scanBufferRef.current);
-      if (barangBarcodeMap.has(currentClean)) {
+      if (findBarangBarcodeEntry(currentClean)) {
         e.preventDefault();
         e.stopPropagation();
         commitScan();
