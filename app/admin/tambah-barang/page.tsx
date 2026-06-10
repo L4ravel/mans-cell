@@ -97,6 +97,7 @@ type JenisBarang = "fisik" | "digital"
 type Barang = {
   id: string
   kodeBarang: string
+  kodeBarcode?: string
   nama: string
   kategoriId: string
   kategoriNama: string
@@ -132,6 +133,7 @@ type FlattenPrintItem = {
   barangId: string
   nama: string
   kodeBarang: string
+  kodeBarcode?: string
   tokoNama: string
   merk: string
   hargaJual: number
@@ -233,6 +235,26 @@ function normalizeBarcode(value: string) {
     .trim()
     .replace(/\s+/g, "")
     .toUpperCase()
+}
+
+function makeShortBarcodeValue(params: {
+  kodeBarang?: string
+  kodeUnik?: string
+  barangId?: string
+}) {
+  const kodeBarang = normalizeBarcode(params.kodeBarang || "")
+  const kodeUnik = normalizeBarcode(params.kodeUnik || "")
+  const barangId = normalizeBarcode(params.barangId || "")
+  const parts = kodeBarang.split("-").filter(Boolean)
+  const prefix = normalizeBarcode((parts[0] || "B").slice(0, 4)) || "B"
+
+  const sourceDigits = onlyDigits(kodeUnik || kodeBarang)
+  if (sourceDigits.length >= 6) return normalizeBarcode(`${prefix}${sourceDigits.slice(-8)}`)
+
+  if (barangId) return normalizeBarcode(`${prefix}${barangId.slice(-8)}`)
+  if (kodeBarang.length <= 12) return kodeBarang
+
+  return normalizeBarcode(`${prefix}${kodeBarang.slice(-8)}`)
 }
 
 function normalizeKodeUnik(value: string) {
@@ -1039,8 +1061,8 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 0.58,
-        height: 30,
+        width: 1.18,
+        height: 34,
       })
     } catch (error) {
       console.error("Gagal generate barcode:", error)
@@ -1828,6 +1850,11 @@ export default function TambahBarangPage() {
         return {
           id: d.id,
           kodeBarang: x?.kodeBarang || "",
+          kodeBarcode: x?.kodeBarcode || makeShortBarcodeValue({
+            kodeBarang: x?.kodeBarang || "",
+            kodeUnik: x?.kodeUnik || "",
+            barangId: d.id,
+          }),
           nama: x?.nama || "",
           kategoriId: x?.kategoriId || "",
           kategoriNama: x?.kategoriNama || "",
@@ -2339,6 +2366,11 @@ export default function TambahBarangPage() {
 
       const basePayload = {
         kodeBarang,
+        kodeBarcode: makeShortBarcodeValue({
+          kodeBarang,
+          kodeUnik: pakaiKodeUnik ? kodeUnikList[0] || kodeUnik : "",
+          barangId: editId || undefined,
+        }),
         nama: form.nama.trim(),
         kategoriId: kategori.id,
         kategoriNama: kategori.nama,
@@ -2411,6 +2443,11 @@ export default function TambahBarangPage() {
             id: newRef.id,
             ...basePayload,
             kodeBarang: itemKodeBarang,
+            kodeBarcode: makeShortBarcodeValue({
+              kodeBarang: itemKodeBarang,
+              kodeUnik: kodeItem,
+              barangId: newRef.id,
+            }),
             stok: 1,
             jenisKodeUnik,
             kodeUnik: kodeItem,
@@ -2435,6 +2472,11 @@ export default function TambahBarangPage() {
         const newItem: Barang = {
           id: newRef.id,
           ...basePayload,
+          kodeBarcode: makeShortBarcodeValue({
+            kodeBarang,
+            kodeUnik: pakaiKodeUnik ? kodeUnikList[0] || kodeUnik : "",
+            barangId: newRef.id,
+          }),
           kodeUnik: pakaiKodeUnik ? kodeUnikList[0] || kodeUnik : "",
           createdAt: now,
         }
@@ -2942,6 +2984,11 @@ export default function TambahBarangPage() {
         const payload: Barang = {
           id: finalId,
           kodeBarang,
+          kodeBarcode: makeShortBarcodeValue({
+            kodeBarang,
+            kodeUnik: pakaiKodeUnik ? kodeUnik : "",
+            barangId: finalId,
+          }),
           nama,
           kategoriId: kategori.id,
           kategoriNama: kategori.nama,
@@ -3180,6 +3227,11 @@ export default function TambahBarangPage() {
           barangId: item.id,
           nama: item.nama,
           kodeBarang: item.kodeBarang,
+          kodeBarcode: item.kodeBarcode || makeShortBarcodeValue({
+            kodeBarang: item.kodeBarang,
+            kodeUnik: item.kodeUnik,
+            barangId: item.id,
+          }),
           tokoNama: item.tokoNama,
           merk: item.merk,
           hargaJual: item.hargaJual,
@@ -3244,8 +3296,8 @@ export default function TambahBarangPage() {
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 0.58,
-        height: 30,
+        width: 1.18,
+        height: 34,
       })
       return svg.outerHTML
     } catch (error) {
@@ -3263,7 +3315,13 @@ export default function TambahBarangPage() {
 
     const itemsHtml = flatPrintItems
       .map((item) => {
-        const code = normalizeBarcode(item.kodeBarang)
+        const code = normalizeBarcode(
+          item.kodeBarcode ||
+            makeShortBarcodeValue({
+              kodeBarang: item.kodeBarang,
+              barangId: item.barangId,
+            })
+        )
         const barcodeSvg = makePrintBarcodeSvg(code)
 
         return `
@@ -3343,7 +3401,7 @@ export default function TambahBarangPage() {
               page-break-inside: avoid;
               overflow: hidden;
               background: #ffffff;
-              padding: 0.5mm 0.5mm;
+              padding: 0.6mm 0.6mm;
             }
 
             .barcode-inner {
@@ -3371,20 +3429,20 @@ export default function TambahBarangPage() {
 
             .barcode-svg {
               width: 88%;
-              height: 8.2mm;
+              height: 9.2mm;
               overflow: hidden;
               display: flex;
               align-items: center;
-              justify-content: center;
+              justify-content: flex-start;
               margin: 0 auto;
             }
 
             .barcode-svg svg {
               width: 100%;
               max-width: 100%;
-              height: 8.2mm;
+              height: 9.2mm;
               display: block;
-              margin: 0 auto;
+              margin: 0;
             }
 
             .barcode-meta {
@@ -3393,7 +3451,7 @@ export default function TambahBarangPage() {
               align-items: center;
               justify-content: space-between;
               gap: 0.7mm;
-              margin: 0.1mm auto 0;
+              margin: 0.05mm auto 0;
               font-size: 4.7px;
               line-height: 1;
               font-weight: 900;
@@ -3413,7 +3471,7 @@ export default function TambahBarangPage() {
             }
 
             .barcode-price {
-              margin: 0.25mm auto 0;
+              margin: 0.05mm auto 0;
               width: 88%;
               font-size: 7.2px;
               line-height: 1;
@@ -3514,7 +3572,7 @@ export default function TambahBarangPage() {
             aspect-ratio: 1.95 / 1 !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
-            padding: 0.5mm 0.5mm !important;
+            padding: 0.6mm 0.6mm !important;
             background: white !important;
             border: none !important;
             box-shadow: none !important;
@@ -3550,11 +3608,11 @@ export default function TambahBarangPage() {
           .barcode-svg-print {
             width: 100% !important;
             max-width: 100% !important;
-            height: 8.2mm !important;
-            min-height: 8.2mm !important;
+            height: 9.2mm !important;
+            min-height: 9.2mm !important;
             display: block !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
           }
 
           .barcode-meta {
@@ -3563,7 +3621,7 @@ export default function TambahBarangPage() {
             align-items: center !important;
             justify-content: space-between !important;
             gap: 0.7mm !important;
-            margin-top: 0.1mm !important;
+            margin-top: 0.05mm !important;
             font-size: 4.7px !important;
             line-height: 1 !important;
             font-weight: 900 !important;
@@ -3586,7 +3644,7 @@ export default function TambahBarangPage() {
             font-size: 7.2px !important;
             line-height: 1 !important;
             width: 88% !important;
-            margin: 0.25mm auto 0 !important;
+            margin: 0.05mm auto 0 !important;
             font-weight: 900 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
@@ -5400,19 +5458,34 @@ export default function TambahBarangPage() {
                             </p>
 
                             <div className="mx-auto mt-[1px] w-[88%] overflow-hidden">
-                              <div className="flex h-[32px] items-center justify-center overflow-hidden">
-                                <BarcodeSvg value={item.kodeBarang} className="barcode-svg-print h-[30px] w-full" />
+                              <div className="flex h-[36px] items-center justify-start overflow-hidden">
+                                <BarcodeSvg
+                                  value={
+                                    item.kodeBarcode ||
+                                    makeShortBarcodeValue({
+                                      kodeBarang: item.kodeBarang,
+                                      barangId: item.barangId,
+                                    })
+                                  }
+                                  className="barcode-svg-print h-[34px] w-full"
+                                />
                               </div>
 
-                              <div className="barcode-meta mt-[1px] flex w-full items-center justify-between gap-1 text-[5.2px] font-black uppercase leading-none text-slate-950">
-                                <span className="min-w-0 flex-1 truncate">{normalizeBarcode(item.kodeBarang)}</span>
+                              <div className="barcode-meta mt-[0.5px] flex w-full items-center justify-between gap-1 text-[5.2px] font-black uppercase leading-none text-slate-950">
+                                <span className="min-w-0 flex-1 truncate text-left">{normalizeBarcode(
+                                  item.kodeBarcode ||
+                                    makeShortBarcodeValue({
+                                      kodeBarang: item.kodeBarang,
+                                      barangId: item.barangId,
+                                    })
+                                )}</span>
                                 <span className="min-w-0 max-w-[48%] truncate text-right">{item.tokoNama || "TOKO"}</span>
                               </div>
-                            </div>
 
-                            <p className="barcode-price mx-auto mt-[1px] w-[88%] truncate text-left text-[9px] font-black leading-none text-slate-950">
-                              {formatRupiah(item.hargaJual || 0)}
-                            </p>
+                              <p className="barcode-price mt-[0.5px] w-full truncate text-left text-[9px] font-black leading-none text-slate-950">
+                                {formatRupiah(item.hargaJual || 0)}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       ))}

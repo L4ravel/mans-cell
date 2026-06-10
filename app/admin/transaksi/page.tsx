@@ -1,21 +1,5 @@
-/* 
-  Halaman admin transaksi kasir.
-  Menangani transaksi fisik dan digital, scanner barcode/IMEI/kamera,
-  sinkron saldo digital, simpan kasir dari koleksi users, pelanggan opsional, preview struk, dan retur transaksi.
-
-  Revisi:
-  - Tambah fitur retur transaksi dari riwayat pembelian.
-  - Retur membalik stok fisik, saldo digital, mutasi stok, dan laporan harian/bulanan.
-  - Retur tidak menghapus transaksi lama, tetapi membuat dokumen retur_transaksi.
-  - Qty retur dilacak di transaksi asal agar tidak bisa retur dobel.
-  - Layout riwayat dan modal retur dibuat konsisten hijau sky.
-  - Tambah pelanggan opsional agar diskon member masuk transaksi tanpa terlalu menonjol.
-  - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
-  - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
-  - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
-  - Scanner fisik sekarang membaca kodeBarang dan kodeUnik/IMEI dari data barang.
-  - Scanner aktif otomatis setelah toko dipilih dan berjalan tersembunyi di belakang layar.
-  - Buffer scanner dibuat lebih sabar agar IMEI panjang tidak terpotong.
+/*
+  app/admin/transaksi/page.tsx
 */
 
 "use client";
@@ -116,10 +100,12 @@ type UserProfile = {
 
 type TransaksiBarang = Omit<Barang, "nominalProduk"> & {
   nominalProduk?: string;
+  kodeBarcode?: string;
 };
 
 type TransaksiCartItem = Omit<CartItem, "nominalProduk"> & {
   nominalProduk?: string;
+  kodeBarcode?: string;
 };
 
 type PelangganTransaksi = {
@@ -382,6 +368,28 @@ const normalizeScannerValue = (value: unknown) => {
       .replace(/[\t\n\r]/g, "")
       .trim(),
   );
+};
+
+const onlyDigits = (value: unknown) => String(value || "").replace(/\D/g, "");
+
+const makeShortBarcodeValue = (params: {
+  kodeBarang?: string;
+  kodeUnik?: string;
+  barangId?: string;
+}) => {
+  const kodeBarang = normalizeBarcode(params.kodeBarang || "");
+  const kodeUnik = normalizeBarcode(params.kodeUnik || "");
+  const barangId = normalizeBarcode(params.barangId || "");
+  const parts = kodeBarang.split("-").filter(Boolean);
+  const prefix = normalizeBarcode((parts[0] || "B").slice(0, 4)) || "B";
+
+  const sourceDigits = onlyDigits(kodeUnik || kodeBarang);
+  if (sourceDigits.length >= 6) return normalizeBarcode(`${prefix}${sourceDigits.slice(-8)}`);
+
+  if (barangId) return normalizeBarcode(`${prefix}${barangId.slice(-8)}`);
+  if (kodeBarang.length <= 12) return kodeBarang;
+
+  return normalizeBarcode(`${prefix}${kodeBarang.slice(-8)}`);
 };
 
 const getDigitalNominalPotong = (
@@ -710,6 +718,11 @@ export default function TransaksiPage() {
           return {
             id: d.id,
             kodeBarang: x?.kodeBarang || "",
+            kodeBarcode: x?.kodeBarcode || makeShortBarcodeValue({
+              kodeBarang: x?.kodeBarang || "",
+              kodeUnik: x?.kodeUnik || "",
+              barangId: d.id,
+            }),
             nama: x?.nama || "",
             kategoriId: x?.kategoriId || "",
             kategoriNama: x?.kategoriNama || "",
@@ -1132,6 +1145,9 @@ export default function TransaksiPage() {
         !q ||
         item.nama.toLowerCase().includes(q) ||
         item.kodeBarang.toLowerCase().includes(q) ||
+        String(item.kodeBarcode || "")
+          .toLowerCase()
+          .includes(q) ||
         item.merk.toLowerCase().includes(q) ||
         item.kategoriNama.toLowerCase().includes(q) ||
         String(item.provider || "")
@@ -1140,6 +1156,7 @@ export default function TransaksiPage() {
         String(item.kodeUnik || "")
           .toLowerCase()
           .includes(q) ||
+        (!!qScan && normalizeBarcode(item.kodeBarcode || "").includes(qScan)) ||
         (!!qScan && kodeUnikList.some((kodeUnik) => kodeUnik.includes(qScan)));
 
       if (!sameToko || !sameJenis || !matchSearch) return false;
@@ -1151,13 +1168,16 @@ export default function TransaksiPage() {
   const barangBarcodeMap = useMemo(() => {
     const map = new Map<
       string,
-      { barang: TransaksiBarang; scanType: "kodeBarang" | "kodeUnik" }
+      {
+        barang: TransaksiBarang;
+        scanType: "kodeBarang" | "kodeBarcode" | "kodeUnik";
+      }
     >();
 
     const registerScanKey = (
       key: string,
       barang: TransaksiBarang,
-      scanType: "kodeBarang" | "kodeUnik",
+      scanType: "kodeBarang" | "kodeBarcode" | "kodeUnik",
     ) => {
       const cleanKey = normalizeBarcode(key);
       if (!cleanKey || map.has(cleanKey)) return;
@@ -1170,6 +1190,16 @@ export default function TransaksiPage() {
       if (selectedTokoId && item.tokoId !== selectedTokoId) continue;
 
       registerScanKey(item.kodeBarang, item, "kodeBarang");
+      registerScanKey(
+        item.kodeBarcode ||
+          makeShortBarcodeValue({
+            kodeBarang: item.kodeBarang,
+            kodeUnik: item.kodeUnik,
+            barangId: item.id,
+          }),
+        item,
+        "kodeBarcode",
+      );
 
       for (const kodeUnik of splitKodeUnikScanValues(item.kodeUnik)) {
         registerScanKey(kodeUnik, item, "kodeUnik");
@@ -1238,6 +1268,11 @@ export default function TransaksiPage() {
                   pakaiKodeUnik: barang.pakaiKodeUnik,
                   jenisKodeUnik: barang.jenisKodeUnik || "",
                   kodeUnik: barang.kodeUnik || "",
+                  kodeBarcode: barang.kodeBarcode || makeShortBarcodeValue({
+                    kodeBarang: barang.kodeBarang,
+                    kodeUnik: barang.kodeUnik,
+                    barangId: barang.id,
+                  }),
                   providerId: barang.providerId || "",
                   provider: barang.provider || "",
                   saldoSourceId: barang.saldoSourceId || "",
@@ -1267,6 +1302,11 @@ export default function TransaksiPage() {
                 hargaModal: barang.hargaModal,
                 hargaAsli: barang.hargaJual,
                 hargaSetelahDiskon,
+                kodeBarcode: barang.kodeBarcode || makeShortBarcodeValue({
+                  kodeBarang: barang.kodeBarang,
+                  kodeUnik: barang.kodeUnik,
+                  barangId: barang.id,
+                }),
                 providerId: barang.providerId || "",
                 provider: barang.provider || "",
                 saldoSourceId: barang.saldoSourceId || "",
@@ -1289,6 +1329,11 @@ export default function TransaksiPage() {
         {
           barangId: barang.id,
           kodeBarang: barang.kodeBarang,
+          kodeBarcode: barang.kodeBarcode || makeShortBarcodeValue({
+            kodeBarang: barang.kodeBarang,
+            kodeUnik: barang.kodeUnik,
+            barangId: barang.id,
+          }),
           nama: barang.nama,
           kategoriId: barang.kategoriId || "",
           kategoriNama: barang.kategoriNama,
@@ -2051,6 +2096,11 @@ export default function TransaksiPage() {
           const itemRow = {
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
+            kodeBarcode: item.kodeBarcode || makeShortBarcodeValue({
+              kodeBarang: item.kodeBarang,
+              kodeUnik: item.kodeUnik,
+              barangId: item.barangId,
+            }),
             nama: item.nama,
             kategoriId: item.kategoriId || "",
             kategoriNama: item.kategoriNama,
@@ -2158,6 +2208,11 @@ export default function TransaksiPage() {
             tokoNama: selectedToko.nama,
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
+            kodeBarcode: item.kodeBarcode || makeShortBarcodeValue({
+              kodeBarang: item.kodeBarang,
+              kodeUnik: item.kodeUnik,
+              barangId: item.barangId,
+            }),
             namaBarang: item.nama,
             qty: item.qty,
             stokSebelum: stokSekarang,
