@@ -1,20 +1,5 @@
 /*
-  Halaman admin barang untuk CRUD data barang per toko di Firestore.
-  Layout direvisi konsisten 100% dengan master data terbaru: tema biru muda, filter mobile collapse, stat card sesuai filter aktif, card mobile modern, dan tombol aksi seragam.
-  Revisi:
-  - pilih jenis barang pakai tab fisik / digital
-  - provider digital ambil dari database koleksi provider
-  - sumber saldo digital ambil dari database koleksi master_saldo_digital
-  - supplier fisik tetap dari koleksi supplier
-  - print barcode hanya untuk barang fisik
-  - download template Excel, download data Excel, dan import Excel dengan style border konsisten
-  - nominal produk digital dibuat fleksibel: bisa angka atau huruf, misalnya Pulsa 10K / Data 5GB
-  - input harga modal dan harga jual otomatis memakai titik ribuan agar mudah dibaca
-  - card Total Barang, Barang Fisik, dan Barang Digital bisa diklik untuk toggle jumlah/modal
-  - kode barang dibuat otomatis dari kode toko + nama barang, contoh TOKO-CP-D-LVS-25
-  - import Excel tidak menerima kodeBarang manual; sistem membuat kode saat import
-  - label barcode menampilkan nama barang di atas barcode dan kode barang di bawahnya
-  - saat tambah barang dibuka, mode IMEI otomatis aktif dan cursor langsung fokus ke kolom scan
+  app/admin/barang/page.tsx
 */
 
 "use client"
@@ -1046,13 +1031,16 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
   useEffect(() => {
     if (!svgRef.current || !value) return
 
+    const cleanValue = normalizeBarcode(value)
+    if (!cleanValue) return
+
     try {
-      JsBarcode(svgRef.current, value, {
+      JsBarcode(svgRef.current, cleanValue, {
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 1.15,
-        height: 24,
+        width: 0.58,
+        height: 30,
       })
     } catch (error) {
       console.error("Gagal generate barcode:", error)
@@ -3256,8 +3244,8 @@ export default function TambahBarangPage() {
         format: "CODE128",
         displayValue: false,
         margin: 0,
-        width: 1.15,
-        height: 24,
+        width: 0.58,
+        height: 30,
       })
       return svg.outerHTML
     } catch (error) {
@@ -3281,10 +3269,13 @@ export default function TambahBarangPage() {
         return `
           <div class="barcode-card">
             <div class="barcode-inner">
-              <div class="barcode-name">${escapePrintText(item.nama || "Tanpa Nama")}</div>
+              <div class="barcode-title">${escapePrintText(item.nama || "Tanpa Nama")}</div>
               <div class="barcode-svg">${barcodeSvg}</div>
+              <div class="barcode-meta">
+                <span>${escapePrintText(code)}</span>
+                <span>${escapePrintText(item.tokoNama || "TOKO")}</span>
+              </div>
               <div class="barcode-price">${escapePrintText(formatRupiah(item.hargaJual || 0))}</div>
-              <div class="barcode-code">${escapePrintText(code)}</div>
             </div>
           </div>
         `
@@ -3339,20 +3330,20 @@ export default function TambahBarangPage() {
 
             .barcode-grid {
               display: grid;
-              grid-template-columns: repeat(6, minmax(0, 1fr));
-              gap: 1mm;
+              grid-template-columns: repeat(7, minmax(0, 1fr));
+              gap: 1px;
               width: 100%;
               align-items: start;
             }
 
             .barcode-card {
               width: 100%;
-              aspect-ratio: 1.65 / 1;
+              aspect-ratio: 1.95 / 1;
               break-inside: avoid;
               page-break-inside: avoid;
-              overflow: hidden;           
+              overflow: hidden;
               background: #ffffff;
-              padding: 0.75mm;
+              padding: 0.5mm 0.5mm;
             }
 
             .barcode-inner {
@@ -3365,52 +3356,78 @@ export default function TambahBarangPage() {
               overflow: hidden;
             }
 
-            .barcode-name {
-              margin-bottom: 0.25mm;
-              font-size: 5.5px;
+            .barcode-title {
+              margin-bottom: 0.15mm;
+              font-size: 5.6px;
               line-height: 1;
               font-weight: 900;
               text-align: center;
+              text-transform: uppercase;
               white-space: nowrap;
               overflow: hidden;
               text-overflow: ellipsis;
+              letter-spacing: -0.05px;
             }
 
             .barcode-svg {
-              width: 100%;
-              height: 6.8mm;
+              width: 88%;
+              height: 8.2mm;
               overflow: hidden;
               display: flex;
               align-items: center;
               justify-content: center;
+              margin: 0 auto;
             }
 
             .barcode-svg svg {
-              width: auto;
+              width: 100%;
               max-width: 100%;
-              height: 6.8mm;
+              height: 8.2mm;
               display: block;
               margin: 0 auto;
             }
 
-            .barcode-price {
-              margin-top: 0.25mm;
-              font-size: 5.8px;
+            .barcode-meta {
+              width: 88%;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 0.7mm;
+              margin: 0.1mm auto 0;
+              font-size: 4.7px;
               line-height: 1;
               font-weight: 900;
-              text-align: center;
+              text-transform: uppercase;
+              white-space: nowrap;
+            }
+
+            .barcode-meta span {
+              min-width: 0;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+
+            .barcode-meta span:last-child {
+              max-width: 48%;
+              text-align: right;
+            }
+
+            .barcode-price {
+              margin: 0.25mm auto 0;
+              width: 88%;
+              font-size: 7.2px;
+              line-height: 1;
+              font-weight: 900;
+              text-align: left;
               white-space: nowrap;
               overflow: hidden;
               text-overflow: ellipsis;
             }
 
-            .barcode-code,
             .barcode-fallback {
-              margin-top: 0.2mm;
-              font-size: 5.4px;
+              font-size: 5.2px;
               line-height: 1;
               font-weight: 900;
-              letter-spacing: 0;
               text-align: center;
               white-space: nowrap;
               overflow: hidden;
@@ -3484,8 +3501,8 @@ export default function TambahBarangPage() {
 
           .barcode-grid {
             display: grid !important;
-            grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-            gap: 1mm !important;
+            grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+            gap: 1px !important;
             width: 100% !important;
             align-items: start !important;
           }
@@ -3494,11 +3511,12 @@ export default function TambahBarangPage() {
             width: 100% !important;
             max-width: 100% !important;
             min-width: 0 !important;
-            aspect-ratio: 1.65 / 1 !important;
+            aspect-ratio: 1.95 / 1 !important;
             break-inside: avoid !important;
-            page-break-inside: avoid !important;            
-            padding: 0.75mm !important;
+            page-break-inside: avoid !important;
+            padding: 0.5mm 0.5mm !important;
             background: white !important;
+            border: none !important;
             box-shadow: none !important;
             overflow: hidden !important;
           }
@@ -3508,55 +3526,72 @@ export default function TambahBarangPage() {
             display: flex !important;
             flex-direction: column !important;
             justify-content: center !important;
-            align-items: center !important;
-            padding: 0.35mm !important;
+            align-items: stretch !important;
+            padding: 0 !important;
             overflow: hidden !important;
-            margin-top: -1mm !important;
+            margin-top: 0 !important;
+            border: none !important;
             border-radius: 0 !important;
           }
 
-          .barcode-name {
-            margin-bottom: 0.25mm !important;
-            font-size: 5.5px !important;
+          .barcode-title {
+            margin-bottom: 0.15mm !important;
+            font-size: 5.6px !important;
             line-height: 1 !important;
             font-weight: 900 !important;
+            text-transform: uppercase !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
             text-align: center !important;
+            letter-spacing: -0.05px !important;
           }
 
           .barcode-svg-print {
-            width: auto !important;
+            width: 100% !important;
             max-width: 100% !important;
-            height: 6.8mm !important;
-            min-height: 6.8mm !important;
+            height: 8.2mm !important;
+            min-height: 8.2mm !important;
             display: block !important;
             margin-left: auto !important;
             margin-right: auto !important;
           }
 
-          .barcode-price {
-            font-size: 5.8px !important;
+          .barcode-meta {
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 0.7mm !important;
+            margin-top: 0.1mm !important;
+            font-size: 4.7px !important;
             line-height: 1 !important;
-            margin-top: 0.25mm !important;
             font-weight: 900 !important;
+            text-transform: uppercase !important;
             white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            text-align: center !important;
           }
 
-          .barcode-code {
-            font-size: 5.4px !important;
+          .barcode-meta span {
+            min-width: 0 !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+          }
+
+          .barcode-meta span:last-child {
+            max-width: 48% !important;
+            text-align: right !important;
+          }
+
+          .barcode-price {
+            font-size: 7.2px !important;
             line-height: 1 !important;
-            margin-top: 0.2mm !important;
-            letter-spacing: 0 !important;
+            width: 88% !important;
+            margin: 0.25mm auto 0 !important;
             font-weight: 900 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
-            text-align: center !important;
+            text-align: left !important;
           }
         }
       `}</style>
@@ -5353,24 +5388,30 @@ export default function TambahBarangPage() {
   id="barcode-print-area"
   className="bg-white p-0"
 >
-                    <div className="barcode-grid grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-6">
+                    <div className="barcode-grid grid grid-cols-2 gap-px sm:grid-cols-4 md:grid-cols-7">
                       {flatPrintItems.map((item) => (
                         <div
                           key={item.key}
-                          className="barcode-card aspect-[1.65/1] rounded-md border border-slate-200 bg-white p-1.5"
+                          className="barcode-card aspect-[1.95/1] bg-white p-1"
                         >
-                          <div className="barcode-svg-wrap overflow-hidden">
-                            <p className="barcode-name truncate text-center text-[7px] font-black leading-none text-slate-900">
+                          <div className="barcode-svg-wrap flex h-full flex-col justify-center overflow-hidden">
+                            <p className="barcode-title truncate text-center text-[6.5px] font-black uppercase leading-none tracking-tight text-slate-950">
                               {item.nama}
                             </p>
-                            <div className="flex justify-center">
-                              <BarcodeSvg value={item.kodeBarang} className="barcode-svg-print h-[24px] max-w-full" />
+
+                            <div className="mx-auto mt-[1px] w-[88%] overflow-hidden">
+                              <div className="flex h-[32px] items-center justify-center overflow-hidden">
+                                <BarcodeSvg value={item.kodeBarang} className="barcode-svg-print h-[30px] w-full" />
+                              </div>
+
+                              <div className="barcode-meta mt-[1px] flex w-full items-center justify-between gap-1 text-[5.2px] font-black uppercase leading-none text-slate-950">
+                                <span className="min-w-0 flex-1 truncate">{normalizeBarcode(item.kodeBarang)}</span>
+                                <span className="min-w-0 max-w-[48%] truncate text-right">{item.tokoNama || "TOKO"}</span>
+                              </div>
                             </div>
-                            <p className="barcode-price truncate text-center text-[7px] font-black leading-none text-slate-900">
+
+                            <p className="barcode-price mx-auto mt-[1px] w-[88%] truncate text-left text-[9px] font-black leading-none text-slate-950">
                               {formatRupiah(item.hargaJual || 0)}
-                            </p>
-                            <p className="barcode-code truncate text-center text-[6px] font-black leading-none tracking-normal text-slate-900">
-                              {item.kodeBarang}
                             </p>
                           </div>
                         </div>
