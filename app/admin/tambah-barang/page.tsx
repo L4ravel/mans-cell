@@ -13,11 +13,12 @@
   - card Total Barang, Barang Fisik, dan Barang Digital bisa diklik untuk toggle jumlah/modal
   - kode barang dibuat otomatis dari kode toko + nama barang, contoh TOKO-CP-D-LVS-25
   - import Excel tidak menerima kodeBarang manual; sistem membuat kode saat import
-  - label barcode menampilkan nama barang di atas barcode dan kode barang di bawahnya
+  - label barcode menampilkan kode barang di atas barcode dan kode barcode pendek di bawahnya
   - saat tambah barang dibuka, mode IMEI otomatis aktif dan cursor langsung fokus ke kolom scan
   - kodeBarcode dibuat otomatis saat tombol Barcode dibuka; kode lama tidak diubah dan kode yang sudah ada tidak digenerate ulang
   - layout barcode dirapikan: kode pendek, harga, dan nama toko rata mengikuti lebar barcode
   - teks bawah barcode digeser tipis ke kanan agar kode, harga, dan nama toko lebih pas sejajar
+  - kode barang di atas barcode dibatasi mengikuti lebar barcode dan digeser ke kanan agar rata
 */
 
 "use client"
@@ -3418,7 +3419,7 @@ export default function TambahBarangPage() {
           <div class="barcode-card">
             <div class="barcode-inner">
               <div class="barcode-pack">
-                <div class="barcode-top">${escapePrintText(item.nama || "Tanpa Nama")}</div>
+                <div class="barcode-top">${escapePrintText(item.kodeBarang || "Tanpa Kode")}</div>
                 <div class="barcode-svg">${barcodeSvg}</div>
 
                 <div class="barcode-bottom">
@@ -3518,7 +3519,11 @@ export default function TambahBarangPage() {
             }
 
             .barcode-top {
-              font-size: 6.2px;
+              width: 100%;
+              min-width: 0;
+              padding-left: 0;
+              padding-right: 0;
+              font-size: 4.8px;
               line-height: 1;
               font-weight: 900;
               text-align: center;
@@ -3710,7 +3715,11 @@ export default function TambahBarangPage() {
           }
 
           .barcode-top {
-            font-size: 6.2px !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            font-size: 4.8px !important;
             line-height: 1 !important;
             font-weight: 900 !important;
             white-space: nowrap !important;
@@ -5617,8 +5626,8 @@ export default function TambahBarangPage() {
                         >
                           <div className="barcode-svg-wrap flex h-full flex-col items-center overflow-hidden">
                             <div className="barcode-pack mx-auto w-[86%] max-w-[170px] min-w-0 overflow-hidden">
-                              <p className="barcode-top truncate text-center text-[8px] font-black leading-none text-slate-900">
-                                {item.nama}
+                              <p className="barcode-top w-full min-w-0 truncate text-center text-[6px] font-black leading-none text-slate-900">
+                                {item.kodeBarang || "Tanpa Kode"}
                               </p>
 
                               <div className="flex w-full justify-center overflow-hidden">
@@ -5639,7 +5648,7 @@ export default function TambahBarangPage() {
                                   </p>
                                 </div>
 
-                                <p className="barcode-price mt-[1px] truncate text-left text-[8px] font-black leading-none text-slate-900">
+                                <p className="barcode-price mt-[1px] truncate text-left text-[6px] font-black leading-none text-slate-900">
                                   {formatRupiah(item.hargaJual || 0)}
                                 </p>
                               </div>
