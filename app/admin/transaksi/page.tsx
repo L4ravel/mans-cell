@@ -13,7 +13,8 @@
   - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
   - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
   - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
-  - Scanner fisik sekarang membaca kodeBarcode, barcodeValue, kodeBarang, dan kodeUnik/IMEI dari data barang.
+  - Scanner fisik membaca kodeBarcode, barcodeValue, kodeBarang, dan kodeUnik/IMEI dari data barang.
+  - Scan kodeBarcode/barcodeValue/kodeBarang langsung masuk atau menambah qty di keranjang; scan IMEI tetap menjaga kode unik.
   - Scanner aktif otomatis setelah toko dipilih dan berjalan tersembunyi di belakang layar.
   - Buffer scanner dibuat lebih sabar agar IMEI panjang tidak terpotong.
 */
@@ -1367,9 +1368,41 @@ export default function TransaksiPage() {
       return { ok: false };
     }
 
-    const foundEntry = barangBarcodeMap.get(kode);
+    const directEntry = barangBarcodeMap.get(kode);
+    const fallbackEntry = directEntry
+      ? null
+      : barangList.reduce<{
+          barang: TransaksiBarang;
+          scanType: "kodeBarcode" | "barcodeValue" | "kodeBarang" | "kodeUnik";
+        } | null>((found, item) => {
+          if (found) return found;
+          if (!item?.id) return null;
+          if ((item.jenisBarang || "fisik") !== "fisik") return null;
+          if (selectedTokoId && item.tokoId !== selectedTokoId) return null;
+
+          if (normalizeScannerValue(item.kodeBarcode || "") === kode) {
+            return { barang: item, scanType: "kodeBarcode" };
+          }
+
+          if (normalizeScannerValue(item.barcodeValue || "") === kode) {
+            return { barang: item, scanType: "barcodeValue" };
+          }
+
+          if (normalizeScannerValue(item.kodeBarang || "") === kode) {
+            return { barang: item, scanType: "kodeBarang" };
+          }
+
+          if (splitKodeUnikScanValues(item.kodeUnik).some((kodeUnik) => kodeUnik === kode)) {
+            return { barang: item, scanType: "kodeUnik" };
+          }
+
+          return null;
+        }, null);
+
+    const foundEntry = directEntry || fallbackEntry;
+
     if (!foundEntry) {
-      setError(`Barcode/IMEI ${kode} tidak ditemukan di toko ini`);
+      setError(`Barcode/kode ${kode} tidak ditemukan di toko ini`);
       setTimeout(() => setError(null), 1800);
       return { ok: false };
     }
@@ -1384,7 +1417,8 @@ export default function TransaksiPage() {
       return { ok: false };
     }
 
-    const result = addToCart(barangScan, "scan");
+    const addMode: AddToCartMode = foundEntry.scanType === "kodeUnik" ? "scan" : "manual";
+    const result = addToCart(barangScan, addMode);
     if (!result.ok) return { ok: false };
 
     scanLastCommittedRef.current = kode;
@@ -1434,7 +1468,7 @@ export default function TransaksiPage() {
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
       scanTimeoutRef.current = setTimeout(() => {
         const cleanRaw = normalizeScannerValue(scanBufferRef.current);
-        if (cleanRaw.length >= 6) commitScan();
+        if (cleanRaw.length >= SCANNER_MIN_LENGTH) commitScan();
         else resetScanBuffer();
       }, SCANNER_IDLE_COMMIT_MS);
     };
@@ -1534,7 +1568,7 @@ export default function TransaksiPage() {
       window.removeEventListener("paste", onPaste, true);
       resetScanBuffer();
     };
-  }, [barangBarcodeMap, selectedTokoId, showCheckoutConfirm, strukModal, returModal]);
+  }, [barangBarcodeMap, barangList, selectedTokoId, showCheckoutConfirm, strukModal, returModal]);
 
   const stopCameraScanner = () => {
     if (cameraRafRef.current) {
