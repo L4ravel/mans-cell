@@ -13,7 +13,7 @@
   - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
   - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
   - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
-  - Scanner fisik sekarang membaca kodeBarang dan kodeUnik/IMEI dari data barang.
+  - Scanner fisik sekarang membaca kodeBarcode, barcodeValue, kodeBarang, dan kodeUnik/IMEI dari data barang.
   - Scanner aktif otomatis setelah toko dipilih dan berjalan tersembunyi di belakang layar.
   - Buffer scanner dibuat lebih sabar agar IMEI panjang tidak terpotong.
 */
@@ -116,10 +116,14 @@ type UserProfile = {
 
 type TransaksiBarang = Omit<Barang, "nominalProduk"> & {
   nominalProduk?: string;
+  kodeBarcode?: string;
+  barcodeValue?: string;
 };
 
 type TransaksiCartItem = Omit<CartItem, "nominalProduk"> & {
   nominalProduk?: string;
+  kodeBarcode?: string;
+  barcodeValue?: string;
 };
 
 type PelangganTransaksi = {
@@ -710,6 +714,8 @@ export default function TransaksiPage() {
           return {
             id: d.id,
             kodeBarang: x?.kodeBarang || "",
+            kodeBarcode: x?.kodeBarcode || x?.barcodeValue || "",
+            barcodeValue: x?.barcodeValue || x?.kodeBarcode || "",
             nama: x?.nama || "",
             kategoriId: x?.kategoriId || "",
             kategoriNama: x?.kategoriNama || "",
@@ -1132,6 +1138,12 @@ export default function TransaksiPage() {
         !q ||
         item.nama.toLowerCase().includes(q) ||
         item.kodeBarang.toLowerCase().includes(q) ||
+        String(item.kodeBarcode || "")
+          .toLowerCase()
+          .includes(q) ||
+        String(item.barcodeValue || "")
+          .toLowerCase()
+          .includes(q) ||
         item.merk.toLowerCase().includes(q) ||
         item.kategoriNama.toLowerCase().includes(q) ||
         String(item.provider || "")
@@ -1140,7 +1152,10 @@ export default function TransaksiPage() {
         String(item.kodeUnik || "")
           .toLowerCase()
           .includes(q) ||
-        (!!qScan && kodeUnikList.some((kodeUnik) => kodeUnik.includes(qScan)));
+        (!!qScan &&
+          (normalizeBarcode(item.kodeBarcode || "").includes(qScan) ||
+            normalizeBarcode(item.barcodeValue || "").includes(qScan) ||
+            kodeUnikList.some((kodeUnik) => kodeUnik.includes(qScan))));
 
       if (!sameToko || !sameJenis || !matchSearch) return false;
       if (activeTab === "digital") return item.aktif !== false;
@@ -1151,13 +1166,16 @@ export default function TransaksiPage() {
   const barangBarcodeMap = useMemo(() => {
     const map = new Map<
       string,
-      { barang: TransaksiBarang; scanType: "kodeBarang" | "kodeUnik" }
+      {
+        barang: TransaksiBarang;
+        scanType: "kodeBarcode" | "barcodeValue" | "kodeBarang" | "kodeUnik";
+      }
     >();
 
     const registerScanKey = (
       key: string,
       barang: TransaksiBarang,
-      scanType: "kodeBarang" | "kodeUnik",
+      scanType: "kodeBarcode" | "barcodeValue" | "kodeBarang" | "kodeUnik",
     ) => {
       const cleanKey = normalizeBarcode(key);
       if (!cleanKey || map.has(cleanKey)) return;
@@ -1169,6 +1187,8 @@ export default function TransaksiPage() {
       if ((item.jenisBarang || "fisik") !== "fisik") continue;
       if (selectedTokoId && item.tokoId !== selectedTokoId) continue;
 
+      registerScanKey(item.kodeBarcode || "", item, "kodeBarcode");
+      registerScanKey(item.barcodeValue || "", item, "barcodeValue");
       registerScanKey(item.kodeBarang, item, "kodeBarang");
 
       for (const kodeUnik of splitKodeUnikScanValues(item.kodeUnik)) {
@@ -1238,6 +1258,8 @@ export default function TransaksiPage() {
                   pakaiKodeUnik: barang.pakaiKodeUnik,
                   jenisKodeUnik: barang.jenisKodeUnik || "",
                   kodeUnik: barang.kodeUnik || "",
+                  kodeBarcode: barang.kodeBarcode || barang.barcodeValue || "",
+                  barcodeValue: barang.barcodeValue || barang.kodeBarcode || "",
                   providerId: barang.providerId || "",
                   provider: barang.provider || "",
                   saldoSourceId: barang.saldoSourceId || "",
@@ -1267,6 +1289,8 @@ export default function TransaksiPage() {
                 hargaModal: barang.hargaModal,
                 hargaAsli: barang.hargaJual,
                 hargaSetelahDiskon,
+                kodeBarcode: barang.kodeBarcode || barang.barcodeValue || "",
+                barcodeValue: barang.barcodeValue || barang.kodeBarcode || "",
                 providerId: barang.providerId || "",
                 provider: barang.provider || "",
                 saldoSourceId: barang.saldoSourceId || "",
@@ -1289,6 +1313,8 @@ export default function TransaksiPage() {
         {
           barangId: barang.id,
           kodeBarang: barang.kodeBarang,
+          kodeBarcode: barang.kodeBarcode || barang.barcodeValue || "",
+          barcodeValue: barang.barcodeValue || barang.kodeBarcode || "",
           nama: barang.nama,
           kategoriId: barang.kategoriId || "",
           kategoriNama: barang.kategoriNama,
@@ -2051,6 +2077,8 @@ export default function TransaksiPage() {
           const itemRow = {
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
+            kodeBarcode: item.kodeBarcode || item.barcodeValue || "",
+            barcodeValue: item.barcodeValue || item.kodeBarcode || "",
             nama: item.nama,
             kategoriId: item.kategoriId || "",
             kategoriNama: item.kategoriNama,
@@ -2314,6 +2342,8 @@ export default function TransaksiPage() {
             ? x.items.map((item: any) => ({
                 barangId: item?.barangId || "",
                 kodeBarang: item?.kodeBarang || "",
+                kodeBarcode: item?.kodeBarcode || item?.barcodeValue || "",
+                barcodeValue: item?.barcodeValue || item?.kodeBarcode || "",
                 nama: item?.nama || "",
                 kategoriId: item?.kategoriId || "",
                 kategoriNama: item?.kategoriNama || "",
@@ -2911,6 +2941,8 @@ export default function TransaksiPage() {
         ? trx.items.map((item: any) => ({
             barangId: item?.barangId || "",
             kodeBarang: item?.kodeBarang || "",
+            kodeBarcode: item?.kodeBarcode || item?.barcodeValue || "",
+            barcodeValue: item?.barcodeValue || item?.kodeBarcode || "",
             nama: item?.nama || "",
             kategoriId: item?.kategoriId || "",
             kategoriNama: item?.kategoriNama || "",

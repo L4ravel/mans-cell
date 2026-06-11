@@ -42,6 +42,7 @@ export type Toko = {
 export type Barang = {
   id: string
   kodeBarang: string
+  kodeBarcode?: string
   nama: string
   kategoriId: string
   kategoriNama: string
@@ -129,6 +130,7 @@ export type MetodePembayaran = {
 export type CartItem = {
   barangId: string
   kodeBarang: string
+  kodeBarcode?: string
   nama: string
   kategoriId: string
   kategoriNama: string
@@ -167,6 +169,7 @@ export type CartItem = {
 export type StrukItem = {
   barangId: string
   kodeBarang: string
+  kodeBarcode?: string
   nama: string
   kategoriId: string
   kategoriNama: string
@@ -1363,6 +1366,7 @@ export function RiwayatTransaksiPanel() {
             ? x.items.map((item: any) => ({
                 barangId: item?.barangId || "",
                 kodeBarang: item?.kodeBarang || "",
+                kodeBarcode: item?.kodeBarcode || item?.barcodeValue || "",
                 nama: item?.nama || "",
                 kategoriId: item?.kategoriId || "",
                 kategoriNama: item?.kategoriNama || "",
