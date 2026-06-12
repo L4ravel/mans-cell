@@ -1,23 +1,4 @@
-/* 
-  Halaman admin transaksi kasir.
-  Menangani transaksi fisik dan digital, scanner barcode/IMEI/kamera,
-  sinkron saldo digital, simpan kasir dari koleksi users, pelanggan opsional, preview struk, dan retur transaksi.
-
-  Revisi:
-  - Tambah fitur retur transaksi dari riwayat pembelian.
-  - Retur membalik stok fisik, saldo digital, mutasi stok, dan laporan harian/bulanan.
-  - Retur tidak menghapus transaksi lama, tetapi membuat dokumen retur_transaksi.
-  - Qty retur dilacak di transaksi asal agar tidak bisa retur dobel.
-  - Layout riwayat dan modal retur dibuat konsisten hijau sky.
-  - Tambah pelanggan opsional agar diskon member masuk transaksi tanpa terlalu menonjol.
-  - Data barang baru diambil setelah toko asal dipilih agar lebih irit read.
-  - Barang yang memiliki promo tetap menampilkan pengingat promo meski qty belum memenuhi syarat.
-  - Riwayat transaksi bisa difilter hari/tanggal dan mengikuti toko yang sedang dipilih.
-  - Scanner fisik membaca kodeBarcode, barcodeValue, kodeBarang, dan kodeUnik/IMEI dari data barang.
-  - Scan kodeBarcode/barcodeValue/kodeBarang langsung masuk atau menambah qty di keranjang; scan IMEI tetap menjaga kode unik.
-  - Scanner aktif otomatis setelah toko dipilih dan berjalan tersembunyi di belakang layar.
-  - Buffer scanner dibuat lebih sabar agar IMEI panjang tidak terpotong.
-*/
+/* app/admin/transaksi/page.tsx */
 
 "use client";
 
@@ -177,6 +158,20 @@ type RiwayatTransaksiItem = {
   returQtyByBarangId?: Record<string, number>;
   totalReturQty?: number;
   totalReturNominal?: number;
+  totalReturSubtotal?: number;
+  totalReturDiskon?: number;
+  totalReturSetelahDiskon?: number;
+  totalReturModal?: number;
+  totalReturBiayaAdmin?: number;
+  totalReturLabaKotor?: number;
+  subtotalBersih?: number;
+  totalDiskonBersih?: number;
+  totalSetelahDiskonBersih?: number;
+  biayaAdminBersih?: number;
+  grandTotalBersih?: number;
+  totalModalBersih?: number;
+  estimasiLabaKotorBersih?: number;
+  totalItemBersih?: number;
   items: Array<any>;
   createdAtMs: number;
   createdAt?: any;
@@ -260,6 +255,22 @@ const normalizeTransaksiHistory = (
       : {},
   totalReturQty: Number(data?.totalReturQty || 0),
   totalReturNominal: Number(data?.totalReturNominal || 0),
+  totalReturSubtotal: Number(data?.totalReturSubtotal || 0),
+  totalReturDiskon: Number(data?.totalReturDiskon || 0),
+  totalReturSetelahDiskon: Number(data?.totalReturSetelahDiskon || 0),
+  totalReturModal: Number(data?.totalReturModal || 0),
+  totalReturBiayaAdmin: Number(data?.totalReturBiayaAdmin || 0),
+  totalReturLabaKotor: Number(data?.totalReturLabaKotor || 0),
+  subtotalBersih: Number(data?.subtotalBersih ?? data?.subtotal ?? 0),
+  totalDiskonBersih: Number(data?.totalDiskonBersih ?? data?.totalDiskon ?? 0),
+  totalSetelahDiskonBersih: Number(data?.totalSetelahDiskonBersih ?? data?.totalSetelahDiskon ?? 0),
+  biayaAdminBersih: Number(data?.biayaAdminBersih ?? data?.biayaAdminNominal ?? 0),
+  grandTotalBersih: Number(data?.grandTotalBersih ?? data?.grandTotal ?? 0),
+  totalModalBersih: Number(data?.totalModalBersih ?? data?.totalModal ?? 0),
+  estimasiLabaKotorBersih: Number(
+    data?.estimasiLabaKotorBersih ?? data?.estimasiLabaKotor ?? 0,
+  ),
+  totalItemBersih: Number(data?.totalItemBersih ?? data?.totalItem ?? 0),
   items: Array.isArray(data?.items) ? data.items : [],
   createdAtMs: Number(data?.createdAtMs || 0),
   createdAt: data?.createdAt,
@@ -2150,6 +2161,14 @@ export default function TransaksiPage() {
             diskonQtyGratis: Number(item.diskonQtyGratis || 0),
             diskonPaketPromo: Number(item.diskonPaketPromo || 0),
             diskonDeskripsi: item.diskonDeskripsi || "",
+            qtySudahRetur: 0,
+            qtyReturTotal: 0,
+            qtyBersih: item.qty,
+            subtotalAsliBersih: subtotalAsliItem,
+            subtotalFinalBersih: subtotalFinalItem,
+            totalDiskonBersih: totalDiskonItem,
+            totalModalBersih: Number(item.hargaModal || 0) * Number(item.qty || 0),
+            returStatusItem: "belum",
           };
           itemPayload.push(itemRow);
 
@@ -2258,6 +2277,24 @@ export default function TransaksiPage() {
           grandTotal: grandTotalSnapshot,
           totalModal: totalModalSnapshot,
           estimasiLabaKotor: estimasiLabaKotorSnapshot,
+          returStatus: "belum",
+          returQtyByBarangId: {},
+          totalReturQty: 0,
+          totalReturNominal: 0,
+          totalReturSubtotal: 0,
+          totalReturDiskon: 0,
+          totalReturSetelahDiskon: 0,
+          totalReturModal: 0,
+          totalReturBiayaAdmin: 0,
+          totalReturLabaKotor: 0,
+          subtotalBersih: subtotalSnapshot,
+          totalDiskonBersih: totalDiskonSnapshot,
+          totalSetelahDiskonBersih: totalSetelahDiskonSnapshot,
+          biayaAdminBersih: biayaAdminNominalSnapshot,
+          grandTotalBersih: grandTotalSnapshot,
+          totalModalBersih: totalModalSnapshot,
+          estimasiLabaKotorBersih: estimasiLabaKotorSnapshot,
+          totalItemBersih: totalItemSnapshot,
           uangBayar: uangBayarSnapshot,
           kembalian: kembalianSnapshot,
           kurangBayar: 0,
@@ -2487,7 +2524,7 @@ export default function TransaksiPage() {
 
   const totalReturQtyDipilih = useMemo(
     () =>
-      Object.values(returSelections).reduce(
+      Object.values(returSelections).reduce<number>(
         (sum, qty) => sum + Number(qty || 0),
         0,
       ),
@@ -2634,11 +2671,24 @@ export default function TransaksiPage() {
           const item = row.item;
           const qtyRetur = row.qtyRetur;
 
-          const subtotalAsliItem = Number(item?.hargaAsli || 0) * qtyRetur;
-          const subtotalFinalItem =
-            Number(item?.hargaSetelahDiskon || 0) * qtyRetur;
+          const qtyTerjualItem = Math.max(1, Number(item?.qty || 0));
+          const hargaAsliReturSatuan =
+            Number(item?.subtotalAsli || 0) > 0
+              ? Number(item.subtotalAsli) / qtyTerjualItem
+              : Number(item?.hargaAsli || 0);
+          const hargaFinalReturSatuan =
+            Number(item?.subtotalFinal || 0) > 0
+              ? Number(item.subtotalFinal) / qtyTerjualItem
+              : Number(item?.hargaSetelahDiskon || 0);
+          const hargaModalReturSatuan =
+            Number(item?.totalModal || 0) > 0
+              ? Number(item.totalModal) / qtyTerjualItem
+              : Number(item?.hargaModal || 0);
+
+          const subtotalAsliItem = Math.round(hargaAsliReturSatuan * qtyRetur);
+          const subtotalFinalItem = Math.round(hargaFinalReturSatuan * qtyRetur);
           const totalDiskonItem = subtotalAsliItem - subtotalFinalItem;
-          const totalModalItem = Number(item?.hargaModal || 0) * qtyRetur;
+          const totalModalItem = Math.round(hargaModalReturSatuan * qtyRetur);
 
           subtotalRetur += subtotalAsliItem;
           totalSetelahDiskonRetur += subtotalFinalItem;
@@ -2801,8 +2851,8 @@ export default function TransaksiPage() {
           (sum: number, item: any) => sum + Number(item?.qty || 0),
           0,
         );
-        const totalQtySudahReturBaru = Object.values(returQtyByBarangId).reduce(
-          (sum: number, qty: any) => sum + Number(qty || 0),
+        const totalQtySudahReturBaru = Object.values(returQtyByBarangId).reduce<number>(
+          (sum, qty) => sum + Number(qty || 0),
           0,
         );
 
@@ -2812,6 +2862,84 @@ export default function TransaksiPage() {
             : totalQtySudahReturBaru > 0
               ? "sebagian"
               : "belum";
+
+        const totalReturNominalBaru =
+          Number(transaksiData?.totalReturNominal || 0) + grandTotalRetur;
+        const totalReturSubtotalBaru =
+          Number(transaksiData?.totalReturSubtotal || 0) + subtotalRetur;
+        const totalReturDiskonBaru =
+          Number(transaksiData?.totalReturDiskon || 0) + totalDiskonRetur;
+        const totalReturSetelahDiskonBaru =
+          Number(transaksiData?.totalReturSetelahDiskon || 0) +
+          totalSetelahDiskonRetur;
+        const totalReturModalBaru =
+          Number(transaksiData?.totalReturModal || 0) + totalModalRetur;
+        const totalReturBiayaAdminBaru =
+          Number(transaksiData?.totalReturBiayaAdmin || 0) + biayaAdminRetur;
+        const totalReturLabaKotorBaru =
+          Number(transaksiData?.totalReturLabaKotor || 0) + labaKotorRetur;
+
+        const subtotalBersih = Math.max(
+          0,
+          Number(transaksiData?.subtotal || 0) - totalReturSubtotalBaru,
+        );
+        const totalDiskonBersih = Math.max(
+          0,
+          Number(transaksiData?.totalDiskon || 0) - totalReturDiskonBaru,
+        );
+        const totalSetelahDiskonBersih = Math.max(
+          0,
+          Number(transaksiData?.totalSetelahDiskon || 0) -
+            totalReturSetelahDiskonBaru,
+        );
+        const biayaAdminBersih = Math.max(
+          0,
+          Number(transaksiData?.biayaAdminNominal || 0) -
+            totalReturBiayaAdminBaru,
+        );
+        const grandTotalBersih = Math.max(
+          0,
+          Number(transaksiData?.grandTotal || 0) - totalReturNominalBaru,
+        );
+        const totalModalBersih = Math.max(
+          0,
+          Number(transaksiData?.totalModal || 0) - totalReturModalBaru,
+        );
+        const estimasiLabaKotorBersih =
+          Number(transaksiData?.estimasiLabaKotor || 0) -
+          totalReturLabaKotorBaru;
+        const totalItemBersih = Math.max(0, totalQtyTerjual - totalQtySudahReturBaru);
+
+        const itemsSetelahRetur = originalItems.map((item: any, index: number) => {
+          const key = getReturKey(item, index);
+          const qtyTerjualItem = Number(item?.qty || 0);
+          const qtyReturTotal = Math.min(
+            qtyTerjualItem,
+            Number(returQtyByBarangId[key] || returQtyByBarangId[item?.barangId] || 0),
+          );
+          const qtyBersih = Math.max(0, qtyTerjualItem - qtyReturTotal);
+          const rasioBersih = qtyTerjualItem > 0 ? qtyBersih / qtyTerjualItem : 0;
+
+          return {
+            ...item,
+            returKey: key,
+            qtySudahRetur: qtyReturTotal,
+            qtyReturTotal,
+            qtyBersih,
+            subtotalAsliBersih: Math.round(Number(item?.subtotalAsli || 0) * rasioBersih),
+            subtotalFinalBersih: Math.round(Number(item?.subtotalFinal || 0) * rasioBersih),
+            totalDiskonBersih: Math.round(Number(item?.totalDiskon || 0) * rasioBersih),
+            totalModalBersih: Math.round(
+              Number(item?.hargaModal || 0) * qtyBersih,
+            ),
+            returStatusItem:
+              qtyReturTotal >= qtyTerjualItem && qtyTerjualItem > 0
+                ? "penuh"
+                : qtyReturTotal > 0
+                  ? "sebagian"
+                  : "belum",
+          };
+        });
 
         const kategoriBreakdownRetur = Array.from(
           kategoriAccumulator.values(),
@@ -2902,8 +3030,22 @@ export default function TransaksiPage() {
           returStatus,
           returQtyByBarangId,
           totalReturQty: totalQtySudahReturBaru,
-          totalReturNominal:
-            Number(transaksiData?.totalReturNominal || 0) + grandTotalRetur,
+          totalReturNominal: totalReturNominalBaru,
+          totalReturSubtotal: totalReturSubtotalBaru,
+          totalReturDiskon: totalReturDiskonBaru,
+          totalReturSetelahDiskon: totalReturSetelahDiskonBaru,
+          totalReturModal: totalReturModalBaru,
+          totalReturBiayaAdmin: totalReturBiayaAdminBaru,
+          totalReturLabaKotor: totalReturLabaKotorBaru,
+          subtotalBersih,
+          totalDiskonBersih,
+          totalSetelahDiskonBersih,
+          biayaAdminBersih,
+          grandTotalBersih,
+          totalModalBersih,
+          estimasiLabaKotorBersih,
+          totalItemBersih,
+          items: itemsSetelahRetur,
           lastReturId: returRef.id,
           lastReturNomor: nomorRetur,
           lastReturAt: serverTimestamp(),
@@ -4773,8 +4915,6 @@ export default function TransaksiPage() {
                               <Trash2 size={15} strokeWidth={2.5} />
                             </button>
                           </div>
-
-                          {/* Input tujuan (digital) */}
                           {item.jenisBarang === "digital" && (
                             <div className="mt-3">
                               <FieldLabel label="Nomor Tujuan" />

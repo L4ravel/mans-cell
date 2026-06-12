@@ -1,8 +1,4 @@
-/*
-  Halaman admin riwayat transaksi.
-  Menampilkan daftar transaksi dengan pagination Firestore, filter toko, metode, kasir, tanggal, pencarian lokal, dan detail transaksi.
-  Layout dibuat konsisten dengan halaman master data terbaru: header biru, stat card, filter collapse mobile, tabel desktop, card mobile, dan modal detail.
-*/
+/* app/admin/riwayat-transaksi/page.tsx */
 
 "use client"
 
@@ -36,6 +32,7 @@ import {
   Percent,
   Receipt,
   RefreshCw,
+  RotateCcw,
   Search,
   ShoppingCart,
   Store,
@@ -59,6 +56,12 @@ type TransaksiItem = {
   subtotalAsli: number
   subtotalFinal: number
   totalDiskon: number
+  qtyReturTotal?: number
+  qtyBersih?: number
+  subtotalRetur?: number
+  subtotalBersih?: number
+  totalModalRetur?: number
+  totalModalBersih?: number
   diskonId?: string
   diskonNama?: string
   diskonTipe?: string
@@ -87,6 +90,16 @@ type Transaksi = {
   kurangBayar: number
   totalItem: number
   totalJenisBarang: number
+  returStatus: "belum" | "sebagian" | "penuh"
+  returQtyByBarangId: Record<string, number>
+  totalReturQty: number
+  totalReturNominal: number
+  totalReturModal: number
+  totalReturLabaKotor: number
+  grandTotalBersih: number
+  totalModalBersih: number
+  estimasiLabaKotorBersih: number
+  totalItemBersih: number
   status: string
   catatan?: string
   items: TransaksiItem[]
@@ -154,6 +167,46 @@ function isAdminProfile(profile: UserProfile | null) {
   const role = String(profile.role || "").trim().toLowerCase()
   if (role === "admin" || role === "superadmin") return true
   return profile.roles.includes("admin") || profile.roles.includes("superadmin")
+}
+
+function getReturKey(item: any, index: number) {
+  return String(item?.barangId || item?.kodeBarang || item?.nama || `item-${index}`)
+}
+
+function getReturStatusLabel(status?: string) {
+  if (status === "penuh") return "Retur Penuh"
+  if (status === "sebagian") return "Retur Sebagian"
+  return "Selesai"
+}
+
+function getReturBadgeClass(status?: string) {
+  if (status === "penuh") return "bg-rose-50 text-rose-700 ring-1 ring-rose-100"
+  if (status === "sebagian") return "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
+  return "bg-sky-50 text-sky-700"
+}
+
+function isReturTransaksi(item: Pick<Transaksi, "returStatus" | "totalReturQty" | "totalReturNominal">) {
+  return item.returStatus === "sebagian" || item.returStatus === "penuh" || Number(item.totalReturQty || 0) > 0 || Number(item.totalReturNominal || 0) > 0
+}
+
+function getGrandTotalBersih(item: Transaksi) {
+  if (Number.isFinite(Number(item.grandTotalBersih))) return Math.max(0, Number(item.grandTotalBersih || 0))
+  return Math.max(0, Number(item.grandTotal || 0) - Number(item.totalReturNominal || 0))
+}
+
+function getTotalModalBersih(item: Transaksi) {
+  if (Number.isFinite(Number(item.totalModalBersih))) return Math.max(0, Number(item.totalModalBersih || 0))
+  return Math.max(0, Number(item.totalModal || 0) - Number(item.totalReturModal || 0))
+}
+
+function getLabaKotorBersih(item: Transaksi) {
+  if (Number.isFinite(Number(item.estimasiLabaKotorBersih))) return Number(item.estimasiLabaKotorBersih || 0)
+  return Number(item.estimasiLabaKotor || 0) - Number(item.totalReturLabaKotor || 0)
+}
+
+function getTotalItemBersih(item: Transaksi) {
+  if (Number.isFinite(Number(item.totalItemBersih))) return Math.max(0, Number(item.totalItemBersih || 0))
+  return Math.max(0, Number(item.totalItem || 0) - Number(item.totalReturQty || 0))
 }
 
 export default function RiwayatTransaksiPage() {
@@ -257,6 +310,77 @@ export default function RiwayatTransaksiPage() {
 
   const mapTransaksiDoc = (d: QueryDocumentSnapshot<DocumentData>): Transaksi => {
     const x = d.data() as any
+    const returQtyByBarangId: Record<string, number> =
+      x?.returQtyByBarangId && typeof x.returQtyByBarangId === "object" ? x.returQtyByBarangId : {}
+
+    const rawItems = Array.isArray(x?.items) ? x.items : []
+    const items: TransaksiItem[] = rawItems.map((rawItem: any, index: number) => {
+      const qty = Number(rawItem?.qty || 0)
+      const hargaModal = Number(rawItem?.hargaModal || 0)
+      const subtotalFinal = Number(rawItem?.subtotalFinal || 0)
+      const hargaFinal = Number(rawItem?.hargaSetelahDiskon || rawItem?.hargaAsli || 0)
+      const key = getReturKey(rawItem, index)
+      const qtyReturTotal = Math.min(
+        qty,
+        Math.max(0, Number(rawItem?.qtyReturTotal ?? rawItem?.qtyRetur ?? returQtyByBarangId[key] ?? returQtyByBarangId[rawItem?.barangId] ?? 0))
+      )
+      const qtyBersih = Math.max(0, Number(rawItem?.qtyBersih ?? qty - qtyReturTotal))
+      const subtotalRetur = Math.max(0, Number(rawItem?.subtotalRetur ?? hargaFinal * qtyReturTotal))
+      const subtotalBersih = Math.max(0, Number(rawItem?.subtotalBersih ?? subtotalFinal - subtotalRetur))
+      const totalModalRetur = Math.max(0, Number(rawItem?.totalModalRetur ?? hargaModal * qtyReturTotal))
+      const totalModalBersih = Math.max(0, Number(rawItem?.totalModalBersih ?? hargaModal * qtyBersih))
+
+      return {
+        ...rawItem,
+        barangId: String(rawItem?.barangId || ""),
+        kodeBarang: String(rawItem?.kodeBarang || ""),
+        nama: String(rawItem?.nama || ""),
+        kategoriNama: String(rawItem?.kategoriNama || ""),
+        merk: String(rawItem?.merk || ""),
+        satuan: String(rawItem?.satuan || ""),
+        qty,
+        hargaModal,
+        hargaAsli: Number(rawItem?.hargaAsli || 0),
+        hargaSetelahDiskon: hargaFinal,
+        subtotalAsli: Number(rawItem?.subtotalAsli || 0),
+        subtotalFinal,
+        totalDiskon: Number(rawItem?.totalDiskon || 0),
+        qtyReturTotal,
+        qtyBersih,
+        subtotalRetur,
+        subtotalBersih,
+        totalModalRetur,
+        totalModalBersih,
+      }
+    })
+
+    const totalReturQty = Math.max(
+      0,
+      Number(x?.totalReturQty ?? items.reduce((acc, item) => acc + Number(item.qtyReturTotal || 0), 0))
+    )
+    const totalReturNominal = Math.max(
+      0,
+      Number(x?.totalReturNominal ?? items.reduce((acc, item) => acc + Number(item.subtotalRetur || 0), 0))
+    )
+    const totalReturModal = Math.max(
+      0,
+      Number(x?.totalReturModal ?? items.reduce((acc, item) => acc + Number(item.totalModalRetur || 0), 0))
+    )
+    const grandTotal = Number(x?.grandTotal || 0)
+    const totalModal = Number(x?.totalModal || 0)
+    const estimasiLabaKotor = Number(x?.estimasiLabaKotor || 0)
+    const totalReturLabaKotor = Math.max(0, Number(x?.totalReturLabaKotor ?? totalReturNominal - totalReturModal))
+    const grandTotalBersih = Math.max(0, Number(x?.grandTotalBersih ?? grandTotal - totalReturNominal))
+    const totalModalBersih = Math.max(0, Number(x?.totalModalBersih ?? totalModal - totalReturModal))
+    const estimasiLabaKotorBersih = Number(x?.estimasiLabaKotorBersih ?? estimasiLabaKotor - totalReturLabaKotor)
+    const totalItem = Number(x?.totalItem || 0)
+    const totalItemBersih = Math.max(0, Number(x?.totalItemBersih ?? totalItem - totalReturQty))
+    const returStatus =
+      x?.returStatus === "penuh" || totalItemBersih <= 0
+        ? "penuh"
+        : x?.returStatus === "sebagian" || totalReturQty > 0 || totalReturNominal > 0
+          ? "sebagian"
+          : "belum"
 
     return {
       id: d.id,
@@ -272,17 +396,27 @@ export default function RiwayatTransaksiPage() {
       subtotal: Number(x?.subtotal || 0),
       totalDiskon: Number(x?.totalDiskon || 0),
       totalSetelahDiskon: Number(x?.totalSetelahDiskon || 0),
-      grandTotal: Number(x?.grandTotal || 0),
-      totalModal: Number(x?.totalModal || 0),
-      estimasiLabaKotor: Number(x?.estimasiLabaKotor || 0),
+      grandTotal,
+      totalModal,
+      estimasiLabaKotor,
       uangBayar: Number(x?.uangBayar || 0),
       kembalian: Number(x?.kembalian || 0),
       kurangBayar: Number(x?.kurangBayar || 0),
-      totalItem: Number(x?.totalItem || 0),
+      totalItem,
       totalJenisBarang: Number(x?.totalJenisBarang || 0),
+      returStatus,
+      returQtyByBarangId,
+      totalReturQty,
+      totalReturNominal,
+      totalReturModal,
+      totalReturLabaKotor,
+      grandTotalBersih,
+      totalModalBersih,
+      estimasiLabaKotorBersih,
+      totalItemBersih,
       status: x?.status || "selesai",
       catatan: x?.catatan || "",
-      items: Array.isArray(x?.items) ? x.items : [],
+      items,
       createdAtMs: Number(x?.createdAtMs || 0),
       updatedAtMs: x?.updatedAtMs ? Number(x.updatedAtMs) : undefined,
       createdBy: x?.createdBy || "",
@@ -420,7 +554,7 @@ export default function RiwayatTransaksiPage() {
   }, [filterToko, filterMetode, filterTanggalAwal, filterTanggalAkhir, filterKasir])
 
   const metodeOptions = useMemo(() => {
-    return Array.from(new Set(data.map((item) => item.metodePembayaranNama).filter(Boolean))).sort((a, b) =>
+    return Array.from(new Set<string>(data.map((item) => item.metodePembayaranNama).filter(Boolean))).sort((a, b) =>
       a.localeCompare(b)
     )
   }, [data])
@@ -450,6 +584,7 @@ export default function RiwayatTransaksiPage() {
         item.tokoNama.toLowerCase().includes(q) ||
         item.metodePembayaranNama.toLowerCase().includes(q) ||
         String(item.kasirNama || "").toLowerCase().includes(q) ||
+        getReturStatusLabel(item.returStatus).toLowerCase().includes(q) ||
         item.items.some((x) => x.nama?.toLowerCase().includes(q) || x.kodeBarang?.toLowerCase().includes(q))
 
       return matchSearch
@@ -457,9 +592,9 @@ export default function RiwayatTransaksiPage() {
   }, [data, search])
 
   const totalTransaksi = filtered.length
-  const totalOmzet = filtered.reduce((acc, item) => acc + item.grandTotal, 0)
-  const totalDiskon = filtered.reduce((acc, item) => acc + item.totalDiskon, 0)
-  const totalLabaKotor = filtered.reduce((acc, item) => acc + item.estimasiLabaKotor, 0)
+  const totalOmzet = filtered.reduce((acc, item) => acc + getGrandTotalBersih(item), 0)
+  const totalRetur = filtered.reduce((acc, item) => acc + Number(item.totalReturNominal || 0), 0)
+  const totalLabaKotor = filtered.reduce((acc, item) => acc + getLabaKotorBersih(item), 0)
 
   return (
     <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
@@ -514,9 +649,9 @@ export default function RiwayatTransaksiPage() {
         <div className="space-y-2 sm:space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <RiwayatStatCard icon={ShoppingCart} label="Transaksi" value={String(totalTransaksi)} tone="sky" />
-            <RiwayatStatCard icon={CircleDollarSign} label="Omzet" value={formatRupiah(totalOmzet)} tone="blue" />
-            <RiwayatStatCard icon={Percent} label="Diskon" value={formatRupiah(totalDiskon)} tone="slate" />
-            <RiwayatStatCard icon={BadgeDollarSign} label="Laba Kotor" value={formatRupiah(totalLabaKotor)} tone="rose" />
+            <RiwayatStatCard icon={CircleDollarSign} label="Omzet Bersih" value={formatRupiah(totalOmzet)} tone="blue" />
+            <RiwayatStatCard icon={RotateCcw} label="Total Retur" value={formatRupiah(totalRetur)} tone="slate" />
+            <RiwayatStatCard icon={BadgeDollarSign} label="Laba Bersih" value={formatRupiah(totalLabaKotor)} tone="rose" />
           </div>
         </div>
 
@@ -911,8 +1046,8 @@ function RiwayatList({
                     </p>
                   </div>
 
-                  <span className="inline-flex shrink-0 rounded-full bg-sky-50 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-sky-700">
-                    {item.status || "selesai"}
+                  <span className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${getReturBadgeClass(item.returStatus)}`}>
+                    {getReturStatusLabel(item.returStatus)}
                   </span>
                 </div>
 
@@ -933,8 +1068,11 @@ function RiwayatList({
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Grand Total</p>
-                    <p className="truncate text-xs font-black text-slate-800">{formatRupiah(item.grandTotal)}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Bersih</p>
+                    <p className="truncate text-xs font-black text-slate-800">{formatRupiah(getGrandTotalBersih(item))}</p>
+                    {isReturTransaksi(item) ? (
+                      <p className="mt-0.5 truncate text-[9px] font-bold text-rose-600">Retur {formatRupiah(item.totalReturNominal)}</p>
+                    ) : null}
                   </div>
 
                   <motion.button
@@ -964,7 +1102,7 @@ function RiwayatList({
           <table className="w-full text-xs">
             <thead className="border-b border-slate-100 bg-slate-50/70">
               <tr>
-                {["No", "Transaksi", "Tanggal", "Toko", "Kasir", "Metode", "Item", "Grand Total", "Aksi"].map((head) => (
+                {["No", "Transaksi", "Tanggal", "Toko", "Kasir", "Metode", "Item", "Total Bersih", "Aksi"].map((head) => (
                   <th
                     key={head}
                     className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
@@ -980,7 +1118,12 @@ function RiwayatList({
               {filtered.map((item, index) => (
                 <tr key={item.id} className="border-t border-slate-100 transition-colors hover:bg-sky-50/40">
                   <td className="px-3 py-3 text-center font-bold text-slate-400">{index + 1}</td>
-                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">{item.nomorTransaksi}</td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <div className="font-black text-slate-800">{item.nomorTransaksi}</div>
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${getReturBadgeClass(item.returStatus)}`}>
+                      {getReturStatusLabel(item.returStatus)}
+                    </span>
+                  </td>
                   <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{formatTanggal(item.createdAtMs)}</td>
                   <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.tokoNama || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.kasirNama || "-"}</td>
@@ -989,8 +1132,16 @@ function RiwayatList({
                       {item.metodePembayaranNama || "-"}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.totalItem} item</td>
-                  <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">{formatRupiah(item.grandTotal)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
+                    <div>{getTotalItemBersih(item)} item</div>
+                    {isReturTransaksi(item) ? <div className="text-[10px] font-black text-rose-600">Retur {item.totalReturQty}</div> : null}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <div className="font-black text-slate-800">{formatRupiah(getGrandTotalBersih(item))}</div>
+                    {isReturTransaksi(item) ? (
+                      <div className="text-[10px] font-bold text-rose-600">- {formatRupiah(item.totalReturNominal)}</div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-3 text-center">
                     <button
                       type="button"
@@ -1085,9 +1236,24 @@ function DetailModal({
               <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
                 <RiwayatStatCard icon={Store} label="Toko" value={selectedDetail.tokoNama || "-"} tone="sky" />
                 <RiwayatStatCard icon={Wallet} label="Metode" value={selectedDetail.metodePembayaranNama || "-"} tone="blue" />
-                <RiwayatStatCard icon={CircleDollarSign} label="Total" value={formatRupiah(selectedDetail.grandTotal)} tone="slate" />
-                <RiwayatStatCard icon={BadgeDollarSign} label="Laba" value={formatRupiah(selectedDetail.estimasiLabaKotor)} tone="rose" />
+                <RiwayatStatCard icon={CircleDollarSign} label="Total Bersih" value={formatRupiah(getGrandTotalBersih(selectedDetail))} tone="slate" />
+                <RiwayatStatCard icon={BadgeDollarSign} label="Laba Bersih" value={formatRupiah(getLabaKotorBersih(selectedDetail))} tone="rose" />
               </div>
+
+              {isReturTransaksi(selectedDetail) ? (
+                <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-600">Keterangan Retur</p>
+                      <p className="mt-1 text-sm font-black text-slate-800">{getReturStatusLabel(selectedDetail.returStatus)}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:min-w-[360px]">
+                      <InfoMini label="Qty Retur" value={`${selectedDetail.totalReturQty} item`} />
+                      <InfoMini label="Nominal Retur" value={formatRupiah(selectedDetail.totalReturNominal)} />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-600">Kasir Konfirmasi</p>
@@ -1119,23 +1285,33 @@ function DetailModal({
                         </div>
 
                         <div className="rounded-xl bg-slate-50 px-3 py-2 text-right">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Qty</p>
-                          <p className="text-sm font-black text-slate-800">{detail.qty}</p>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Qty Bersih</p>
+                          <p className="text-sm font-black text-slate-800">{detail.qtyBersih ?? detail.qty}</p>
+                          {Number(detail.qtyReturTotal || 0) > 0 ? (
+                            <p className="mt-0.5 text-[9px] font-black text-rose-600">Retur {detail.qtyReturTotal}</p>
+                          ) : null}
                         </div>
                       </div>
 
                       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
                         <InfoMini label="Harga Asli" value={formatRupiah(detail.hargaAsli)} />
                         <InfoMini label="Harga Final" value={formatRupiah(detail.hargaSetelahDiskon)} tone="sky" />
-                        <InfoMini label="Diskon" value={formatRupiah(detail.totalDiskon)} />
-                        <InfoMini label="Subtotal" value={formatRupiah(detail.subtotalFinal)} />
+                        <InfoMini label="Subtotal Awal" value={formatRupiah(detail.subtotalFinal)} />
+                        <InfoMini label="Subtotal Bersih" value={formatRupiah(detail.subtotalBersih ?? detail.subtotalFinal)} tone="sky" />
                       </div>
 
-                      {detail.diskonNama ? (
-                        <div className="mt-3 inline-flex rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700">
-                          {detail.diskonNama}
-                        </div>
-                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {detail.diskonNama ? (
+                          <div className="inline-flex rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700">
+                            {detail.diskonNama}
+                          </div>
+                        ) : null}
+                        {Number(detail.qtyReturTotal || 0) > 0 ? (
+                          <div className="inline-flex rounded-lg bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-rose-700">
+                            Retur {detail.qtyReturTotal} item · {formatRupiah(detail.subtotalRetur || 0)}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1143,11 +1319,15 @@ function DetailModal({
 
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <SummaryCard title="Ringkasan Pembayaran">
-                  <SummaryRow label="Subtotal" value={formatRupiah(selectedDetail.subtotal)} />
+                  <SummaryRow label="Subtotal Awal" value={formatRupiah(selectedDetail.subtotal)} />
                   <SummaryRow label="Diskon" value={`- ${formatRupiah(selectedDetail.totalDiskon)}`} highlight="sky" />
                   <SummaryRow label="Biaya Admin" value={formatRupiah(selectedDetail.biayaAdminNominal)} />
+                  <SummaryRow label="Grand Total Awal" value={formatRupiah(selectedDetail.grandTotal)} />
+                  {isReturTransaksi(selectedDetail) ? (
+                    <SummaryRow label="Retur" value={`- ${formatRupiah(selectedDetail.totalReturNominal)}`} highlight="rose" />
+                  ) : null}
                   <div className="border-t border-dashed border-slate-200 pt-3">
-                    <SummaryRow label="Grand Total" value={formatRupiah(selectedDetail.grandTotal)} strong />
+                    <SummaryRow label="Total Bersih" value={formatRupiah(getGrandTotalBersih(selectedDetail))} strong />
                   </div>
                 </SummaryCard>
 
@@ -1191,7 +1371,7 @@ function SummaryRow({
 }: {
   label: string
   value: string
-  highlight?: "slate" | "sky"
+  highlight?: "slate" | "sky" | "rose"
   strong?: boolean
 }) {
   return (
@@ -1199,7 +1379,7 @@ function SummaryRow({
       <span className={`font-semibold ${strong ? "uppercase tracking-wide text-slate-500" : "text-slate-500"}`}>{label}</span>
       <span
         className={`max-w-[60%] text-right ${strong ? "text-lg" : "text-sm"} font-black ${
-          highlight === "sky" ? "text-sky-600" : "text-slate-800"
+          highlight === "sky" ? "text-sky-600" : highlight === "rose" ? "text-rose-600" : "text-slate-800"
         }`}
       >
         {value}
