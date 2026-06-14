@@ -108,6 +108,23 @@ type TransaksiCartItem = Omit<CartItem, "nominalProduk"> & {
   barcodeValue?: string;
 };
 
+type PembayaranSplitItem = {
+  id: string;
+  metodeId: string;
+  nominal: string;
+};
+
+type PembayaranSplitPayload = {
+  metodePembayaranId: string;
+  metodePembayaranNama: string;
+  metodePembayaranTipe: string;
+  metodePembayaranProvider: string;
+  biayaAdminPersen: number;
+  nominal: number;
+  biayaAdminNominal: number;
+  totalDenganAdmin: number;
+};
+
 type PelangganTransaksi = {
   id: string;
   uid?: string;
@@ -132,6 +149,8 @@ type RiwayatTransaksiItem = {
   metodePembayaranTipe: string;
   metodePembayaranProvider?: string;
   biayaAdminPersen?: number;
+  pembayaranItems?: PembayaranSplitPayload[];
+  jumlahMetodePembayaran?: number;
   subtotal: number;
   totalDiskon: number;
   totalSetelahDiskon: number;
@@ -226,6 +245,8 @@ const normalizeTransaksiHistory = (
   metodePembayaranTipe: String(data?.metodePembayaranTipe || ""),
   metodePembayaranProvider: String(data?.metodePembayaranProvider || ""),
   biayaAdminPersen: Number(data?.biayaAdminPersen || 0),
+  pembayaranItems: Array.isArray(data?.pembayaranItems) ? data.pembayaranItems : [],
+  jumlahMetodePembayaran: Number(data?.jumlahMetodePembayaran || 1),
   subtotal: Number(data?.subtotal || 0),
   totalDiskon: Number(data?.totalDiskon || 0),
   totalSetelahDiskon: Number(data?.totalSetelahDiskon || 0),
@@ -532,8 +553,13 @@ export default function TransaksiPage() {
 
   const [selectedTokoId, setSelectedTokoId] = useState("");
   const [selectedMetodeId, setSelectedMetodeId] = useState("");
-  const [searchBarang, setSearchBarang] = useState("");
+  const [splitPaymentMode, setSplitPaymentMode] = useState(false);
   const [uangBayar, setUangBayar] = useState("");
+  const [pembayaranSplit, setPembayaranSplit] = useState<PembayaranSplitItem[]>([
+    { id: "pay-1", metodeId: "", nominal: "" },
+    { id: "pay-2", metodeId: "", nominal: "" },
+  ]);
+  const [searchBarang, setSearchBarang] = useState("");
   const [catatan, setCatatan] = useState("");
   const [activeTab, setActiveTab] = useState<"fisik" | "digital">("fisik");
   const [selectedPelangganId, setSelectedPelangganId] = useState("");
@@ -550,6 +576,8 @@ export default function TransaksiPage() {
     pelangganTipeMember?: string;
     diskonPelangganPersen?: number;
     diskonPelangganNominal?: number;
+    pembayaranItems?: PembayaranSplitPayload[];
+    jumlahMetodePembayaran?: number;
   };
 
   const [strukModal, setStrukModal] = useState<StrukDataWithPelanggan | null>(
@@ -1069,6 +1097,87 @@ export default function TransaksiPage() {
     [metodeList],
   );
 
+  const updatePembayaranSplit = (
+    id: string,
+    field: "metodeId" | "nominal",
+    value: string,
+  ) => {
+    setPembayaranSplit((prev) => {
+      const next = prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              [field]: field === "nominal" ? formatRibuanInput(value) : value,
+            }
+          : item,
+      );
+
+      const firstMetode = next.find((item) => item.metodeId)?.metodeId || "";
+      setSelectedMetodeId(firstMetode);
+      return next;
+    });
+  };
+
+  const addPembayaranSplit = () => {
+    setPembayaranSplit((prev) => [
+      ...prev,
+      { id: `pay-${Date.now()}-${prev.length + 1}`, metodeId: "", nominal: "" },
+    ]);
+  };
+
+  const removePembayaranSplit = (id: string) => {
+    setPembayaranSplit((prev) => {
+      const next = prev.length <= 2 ? prev : prev.filter((item) => item.id !== id);
+      const firstMetode = next.find((item) => item.metodeId)?.metodeId || selectedMetodeId;
+      setSelectedMetodeId(firstMetode);
+      return next;
+    });
+  };
+
+  const handleToggleSplitPayment = () => {
+    setSplitPaymentMode((prev) => {
+      const next = !prev;
+
+      if (next) {
+        setPembayaranSplit((prevItems) => {
+          const base = prevItems.length >= 2
+            ? prevItems.slice(0, 2)
+            : [
+                ...prevItems,
+                { id: `pay-${Date.now()}-2`, metodeId: "", nominal: "" },
+              ];
+
+          return base.map((item, index) => {
+            if (index === 0) {
+              return {
+                ...item,
+                metodeId: item.metodeId || selectedMetodeId,
+                nominal: item.nominal || uangBayar,
+              };
+            }
+
+            return item;
+          });
+        });
+      }
+
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const defaultId = metodeTunaiDefault?.id || metodeList[0]?.id || "";
+    if (!defaultId) return;
+
+    setPembayaranSplit((prev) => {
+      if (prev.some((item) => item.metodeId)) return prev;
+      setSelectedMetodeId(defaultId);
+      return prev.map((item, index) =>
+        index === 0 ? { ...item, metodeId: defaultId } : item,
+      );
+    });
+  }, [metodeTunaiDefault?.id, metodeList]);
+
   const filteredPelanggan = useMemo(() => {
     return pelangganList
       .filter((item) => item.aktif !== false)
@@ -1485,10 +1594,23 @@ export default function TransaksiPage() {
     };
 
     const onPaste = (e: ClipboardEvent) => {
-      if (!selectedTokoId) return;
-      if (showCheckoutConfirm || strukModal || returModal) return;
+  if (!selectedTokoId) return;
+  if (showCheckoutConfirm || strukModal || returModal) return;
 
-      const pasted = normalizeScannerValue(e.clipboardData?.getData("text") || "");
+  const target = e.target as HTMLElement | null;
+  const tagName = target?.tagName?.toLowerCase() || "";
+  const isTypingField =
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    target?.isContentEditable;
+
+  if (isTypingField) {
+    resetScanBuffer();
+    return;
+  }
+
+  const pasted = normalizeScannerValue(e.clipboardData?.getData("text") || "");
       if (pasted.length < SCANNER_MIN_LENGTH) return;
 
       if (barangBarcodeMap.has(pasted)) {
@@ -1499,11 +1621,24 @@ export default function TransaksiPage() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!selectedTokoId) return;
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (showCheckoutConfirm || strukModal || returModal) return;
+  if (!selectedTokoId) return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (showCheckoutConfirm || strukModal || returModal) return;
 
-      const ignoredKeys = [
+  const target = e.target as HTMLElement | null;
+  const tagName = target?.tagName?.toLowerCase() || "";
+  const isTypingField =
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    target?.isContentEditable;
+
+  if (isTypingField) {
+    resetScanBuffer();
+    return;
+  }
+
+  const ignoredKeys = [
         "Shift",
         "CapsLock",
         "Tab",
@@ -1750,6 +1885,12 @@ export default function TransaksiPage() {
     if (activeTab === "fisik") setCartFisik([]);
     else setCartDigital([]);
     setUangBayar("");
+    setPembayaranSplit((prev) =>
+      (prev.length >= 2 ? prev.slice(0, 2) : prev).map((item) => ({
+        ...item,
+        nominal: "",
+      })),
+    );
     setCatatan("");
     setSuccessMsg("Keranjang dikosongkan");
     setTimeout(() => setSuccessMsg(null), 2000);
@@ -1800,12 +1941,50 @@ export default function TransaksiPage() {
     [totalDiskonBarang, pelangganDiskonNominal],
   );
 
+  const pembayaranSplitPayload = useMemo<PembayaranSplitPayload[]>(() => {
+    return pembayaranSplit
+      .slice(0, 2)
+      .map((item) => {
+        const metode = metodeList.find((m) => m.id === item.metodeId) || null;
+        const nominal = Number(item.nominal.replace(/\D/g, "") || 0);
+        const biayaAdminPersen =
+          metode && metode.tipe !== "Tunai" ? Number(metode.biayaAdmin || 0) : 0;
+        const biayaAdminNominal =
+          nominal > 0 && biayaAdminPersen > 0
+            ? Math.round(nominal * (biayaAdminPersen / 100))
+            : 0;
+
+        return {
+          metodePembayaranId: metode?.id || "",
+          metodePembayaranNama: metode?.nama || "",
+          metodePembayaranTipe: metode?.tipe || "",
+          metodePembayaranProvider: metode?.provider || "",
+          biayaAdminPersen,
+          nominal,
+          biayaAdminNominal,
+          totalDenganAdmin: nominal + biayaAdminNominal,
+        };
+      })
+      .filter((item) => item.metodePembayaranId && item.nominal > 0);
+  }, [pembayaranSplit, metodeList]);
+
+  const uangBayarNumber = splitPaymentMode
+    ? pembayaranSplitPayload.reduce((acc, item) => acc + item.nominal, 0)
+    : Number(uangBayar.replace(/\D/g, "") || 0);
+
   const biayaAdminNominal = useMemo(() => {
+    if (splitPaymentMode) {
+      return pembayaranSplitPayload.reduce(
+        (acc, item) => acc + item.biayaAdminNominal,
+        0,
+      );
+    }
+
     const persen = Number(selectedMetode?.biayaAdmin || 0);
     if (!selectedMetode || selectedMetode.tipe === "Tunai" || persen <= 0)
       return 0;
     return Math.round(totalSetelahDiskon * (persen / 100));
-  }, [selectedMetode, totalSetelahDiskon]);
+  }, [splitPaymentMode, pembayaranSplitPayload, selectedMetode, totalSetelahDiskon]);
 
   const grandTotal = useMemo(
     () => totalSetelahDiskon + biayaAdminNominal,
@@ -1820,7 +1999,27 @@ export default function TransaksiPage() {
     [totalSetelahDiskon, totalModal, biayaAdminNominal],
   );
 
-  const uangBayarNumber = Number(uangBayar.replace(/\D/g, "") || 0);
+  const pembayaranPayload = useMemo<PembayaranSplitPayload[]>(() => {
+    if (splitPaymentMode) return pembayaranSplitPayload;
+
+    if (!selectedMetode || uangBayarNumber <= 0) return [];
+
+    return [
+      {
+        metodePembayaranId: selectedMetode.id,
+        metodePembayaranNama: selectedMetode.nama,
+        metodePembayaranTipe: selectedMetode.tipe,
+        metodePembayaranProvider: selectedMetode.provider || "",
+        biayaAdminPersen:
+          selectedMetode.tipe !== "Tunai" ? Number(selectedMetode.biayaAdmin || 0) : 0,
+        nominal: uangBayarNumber,
+        biayaAdminNominal,
+        totalDenganAdmin: uangBayarNumber + biayaAdminNominal,
+      },
+    ];
+  }, [splitPaymentMode, pembayaranSplitPayload, selectedMetode, uangBayarNumber, biayaAdminNominal]);
+
+  const totalPembayaranNominal = uangBayarNumber;
   const kembalian = Math.max(0, uangBayarNumber - grandTotal);
   const kurangBayar = Math.max(0, grandTotal - uangBayarNumber);
   const totalItem = useMemo(
@@ -1829,11 +2028,14 @@ export default function TransaksiPage() {
   );
   const totalJenisBarang = cart.length;
 
+  const isPembayaranValid = splitPaymentMode
+    ? pembayaranPayload.length >= 2 && uangBayarNumber >= grandTotal
+    : !!selectedMetodeId && uangBayarNumber >= grandTotal;
+
   const isBisaCheckout =
     !!selectedTokoId &&
-    !!selectedMetodeId &&
+    isPembayaranValid &&
     cart.length > 0 &&
-    uangBayarNumber >= grandTotal &&
     !submitLoading;
 
   const fisikCount = useMemo(
@@ -1867,16 +2069,191 @@ export default function TransaksiPage() {
       }));
   }, [cart]);
 
+  const renderPembayaranModeToggle = () => (
+    <button
+      type="button"
+      onClick={handleToggleSplitPayment}
+      className={`inline-flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${
+        splitPaymentMode
+          ? "border-sky-200 bg-sky-50 text-sky-700"
+          : "border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50/40"
+      }`}
+    >
+      <span>
+        <span className="block text-xs font-black uppercase tracking-[0.12em]">
+          Mode Split Pembayaran
+        </span>
+        <span className="mt-0.5 block text-[10px] font-semibold opacity-75">
+          {splitPaymentMode
+            ? "Aktif: gunakan 2 metode pembayaran."
+            : "Nonaktif: transaksi tetap seperti biasa."}
+        </span>
+      </span>
+      <span
+        className={`relative h-6 w-11 rounded-full transition ${
+          splitPaymentMode ? "bg-sky-600" : "bg-slate-200"
+        }`}
+      >
+        <span
+          className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${
+            splitPaymentMode ? "left-6" : "left-1"
+          }`}
+        />
+      </span>
+    </button>
+  );
+
+  const renderSinglePaymentFields = () => (
+    <div className="space-y-3">
+      <div>
+        <FieldLabel icon={Wallet} label="Metode Pembayaran" />
+        <select
+          value={selectedMetodeId}
+          onChange={(e) => setSelectedMetodeId(e.target.value)}
+          className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-blue-300 focus:border-blue-500"
+        >
+          <option value="">Pilih metode pembayaran</option>
+          {metodeList.map((metode) => (
+            <option key={metode.id} value={metode.id}>
+              {metode.nama}
+              {metode.biayaAdmin ? ` (${formatPercent(metode.biayaAdmin)})` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {biayaAdminNominal > 0 && (
+        <p className="rounded-xl bg-sky-50 px-3 py-2 text-[10px] font-bold text-sky-700 ring-1 ring-sky-100">
+          Admin {formatPercent(selectedMetode?.biayaAdmin || 0)}: {formatRupiah(biayaAdminNominal)}
+        </p>
+      )}
+
+      <div>
+        <FieldLabel icon={Wallet} label="Uang Bayar" />
+        <input
+          value={uangBayar}
+          onChange={(e) => setUangBayar(formatRibuanInput(e.target.value))}
+          placeholder="Masukkan uang bayar"
+          inputMode="numeric"
+          className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-blue-300 focus:border-blue-500"
+        />
+      </div>
+    </div>
+  );
+
+  const renderPembayaranSplitFields = () => (
+    <div className="space-y-3 rounded-2xl border border-sky-100 bg-sky-50/50 p-3">
+      <div>
+        <FieldLabel icon={Wallet} label="Split Pembayaran" />
+        <p className="mt-1 text-[10px] font-semibold text-slate-500">
+          Isi 2 metode pembayaran yang digunakan pelanggan.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {pembayaranSplit.slice(0, 2).map((item, index) => {
+          const metode = metodeList.find((m) => m.id === item.metodeId) || null;
+          const nominalNumber = Number(item.nominal.replace(/\D/g, "") || 0);
+          const adminPersen =
+            metode && metode.tipe !== "Tunai" ? Number(metode.biayaAdmin || 0) : 0;
+          const adminNominal =
+            nominalNumber > 0 && adminPersen > 0
+              ? Math.round(nominalNumber * (adminPersen / 100))
+              : 0;
+
+          return (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  Pembayaran {index + 1}
+                </p>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <select
+                  value={item.metodeId}
+                  onChange={(e) =>
+                    updatePembayaranSplit(item.id, "metodeId", e.target.value)
+                  }
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-blue-300 focus:border-blue-500"
+                >
+                  <option value="">Pilih metode</option>
+                  {metodeList.map((metodeItem) => (
+                    <option key={metodeItem.id} value={metodeItem.id}>
+                      {metodeItem.nama}
+                      {metodeItem.biayaAdmin
+                        ? ` (${formatPercent(metodeItem.biayaAdmin)})`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  value={item.nominal}
+                  onChange={(e) =>
+                    updatePembayaranSplit(item.id, "nominal", e.target.value)
+                  }
+                  placeholder={index === 0 ? "Nominal pembayaran 1" : "Nominal pembayaran 2"}
+                  inputMode="numeric"
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-blue-300 focus:border-blue-500"
+                />
+              </div>
+
+              {adminNominal > 0 && (
+                <p className="mt-2 text-[10px] font-bold text-slate-500">
+                  Admin {formatPercent(adminPersen)}: {formatRupiah(adminNominal)}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white p-3 ring-1 ring-sky-100">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+            Total Bayar
+          </p>
+          <p className="mt-1 text-sm font-black text-slate-800">
+            {formatRupiah(totalPembayaranNominal)}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+            Sisa/Kembali
+          </p>
+          <p
+            className={`mt-1 text-sm font-black ${
+              kurangBayar > 0 ? "text-red-600" : "text-sky-700"
+            }`}
+          >
+            {formatRupiah(kurangBayar > 0 ? kurangBayar : kembalian)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPaymentFields = () => (
+    <div className="space-y-3">
+      {renderPembayaranModeToggle()}
+      {splitPaymentMode ? renderPembayaranSplitFields() : renderSinglePaymentFields()}
+    </div>
+  );
+
   const openCheckoutConfirm = () => {
     if (!selectedTokoId) return void setError("Pilih toko terlebih dahulu");
-    if (!selectedMetodeId)
+    if (!splitPaymentMode && !selectedMetodeId)
       return void setError("Pilih metode pembayaran terlebih dahulu");
+    if (splitPaymentMode && pembayaranPayload.length < 2)
+      return void setError("Isi 2 metode pembayaran dan nominalnya");
     if (cart.length === 0) return void setError("Keranjang masih kosong");
     if (uangBayarNumber < grandTotal)
       return void setError("Uang bayar masih kurang");
     if (!selectedToko) return void setError("Data toko tidak ditemukan");
-    if (!selectedMetode)
-      return void setError("Data metode pembayaran tidak ditemukan");
 
     if (activeTab === "digital") {
       const invalidTarget = cart.some(
@@ -1899,14 +2276,14 @@ export default function TransaksiPage() {
     const user = auth.currentUser;
     if (!user) return void setError("Sesi login tidak ditemukan");
     if (!selectedTokoId) return void setError("Pilih toko terlebih dahulu");
-    if (!selectedMetodeId)
+    if (!splitPaymentMode && !selectedMetodeId)
       return void setError("Pilih metode pembayaran terlebih dahulu");
+    if (splitPaymentMode && pembayaranPayload.length < 2)
+      return void setError("Isi 2 metode pembayaran dan nominalnya");
     if (cart.length === 0) return void setError("Keranjang masih kosong");
     if (uangBayarNumber < grandTotal)
       return void setError("Uang bayar masih kurang");
     if (!selectedToko) return void setError("Data toko tidak ditemukan");
-    if (!selectedMetode)
-      return void setError("Data metode pembayaran tidak ditemukan");
 
     if (activeTab === "digital") {
       const invalidTarget = cart.some(
@@ -1944,6 +2321,8 @@ export default function TransaksiPage() {
       const pelangganDiskonPersenSnapshot = pelangganDiskonPersen;
       const pelangganDiskonNominalSnapshot = pelangganDiskonNominal;
       const totalSetelahDiskonSnapshot = totalSetelahDiskon;
+      const pembayaranPayloadSnapshot = [...pembayaranPayload];
+      const primaryPembayaranSnapshot = pembayaranPayloadSnapshot[0];
       const biayaAdminNominalSnapshot = biayaAdminNominal;
       const totalModalSnapshot = totalModal;
       const estimasiLabaKotorSnapshot = estimasiLabaKotor;
@@ -2265,12 +2644,21 @@ export default function TransaksiPage() {
           diskonPelangganPersen: pelangganDiskonPersenSnapshot,
           diskonPelangganNominal: pelangganDiskonNominalSnapshot,
           totalSetelahDiskonBarang: totalSetelahDiskonBarangSnapshot,
-          metodePembayaranId: selectedMetode.id,
-          metodePembayaranNama: selectedMetode.nama,
-          metodePembayaranTipe: selectedMetode.tipe,
-          metodePembayaranProvider: selectedMetode.provider || "",
-          biayaAdminPersen: Number(selectedMetode.biayaAdmin || 0),
+          metodePembayaranId: primaryPembayaranSnapshot?.metodePembayaranId || "",
+          metodePembayaranNama:
+            pembayaranPayloadSnapshot.length > 1
+              ? "Split Payment"
+              : primaryPembayaranSnapshot?.metodePembayaranNama || "",
+          metodePembayaranTipe:
+            pembayaranPayloadSnapshot.length > 1
+              ? "Split"
+              : primaryPembayaranSnapshot?.metodePembayaranTipe || "",
+          metodePembayaranProvider:
+            primaryPembayaranSnapshot?.metodePembayaranProvider || "",
+          biayaAdminPersen: Number(primaryPembayaranSnapshot?.biayaAdminPersen || 0),
           biayaAdminNominal: biayaAdminNominalSnapshot,
+          pembayaranItems: pembayaranPayloadSnapshot,
+          jumlahMetodePembayaran: pembayaranPayloadSnapshot.length,
           subtotal: subtotalSnapshot,
           totalDiskon: totalDiskonSnapshot,
           totalSetelahDiskon: totalSetelahDiskonSnapshot,
@@ -2328,7 +2716,7 @@ export default function TransaksiPage() {
         const sharedLaporanArgs = {
           tokoId: selectedToko.id,
           tokoNama: selectedToko.nama,
-          metodeNama: selectedMetode.nama,
+          metodeNama: pembayaranPayloadSnapshot.length > 1 ? "Split Payment" : primaryPembayaranSnapshot?.metodePembayaranNama || "-",
           omzetTambah: grandTotalSnapshot,
           subtotalTambah: subtotalSnapshot,
           totalDiskonTambah: totalDiskonSnapshot,
@@ -2376,10 +2764,13 @@ export default function TransaksiPage() {
           nomorTransaksi: x?.nomorTransaksi || nomorTransaksi,
           tokoId: x?.tokoId || "",
           tokoNama: x?.tokoNama || selectedToko.nama,
-          metodePembayaranNama: x?.metodePembayaranNama || selectedMetode.nama,
+          metodePembayaranNama:
+            x?.metodePembayaranNama || primaryPembayaranSnapshot?.metodePembayaranNama || "-",
           metodePembayaranTipe: x?.metodePembayaranTipe || "",
           metodePembayaranProvider: x?.metodePembayaranProvider || "",
           biayaAdminPersen: Number(x?.biayaAdminPersen || 0),
+          pembayaranItems: Array.isArray(x?.pembayaranItems) ? x.pembayaranItems : [],
+          jumlahMetodePembayaran: Number(x?.jumlahMetodePembayaran || 1),
           biayaAdminNominal: Number(x?.biayaAdminNominal || 0),
           subtotal: Number(x?.subtotal || 0),
           totalDiskon: Number(x?.totalDiskon || 0),
@@ -2479,9 +2870,14 @@ export default function TransaksiPage() {
       if (activeTab === "fisik") setCartFisik([]);
       else setCartDigital([]);
       setUangBayar("");
+      setPembayaranSplit([
+        { id: "pay-1", metodeId: metodeTunaiDefault?.id || metodeList[0]?.id || "", nominal: "" },
+        { id: "pay-2", metodeId: "", nominal: "" },
+      ]);
+      setSplitPaymentMode(false);
       setCatatan("");
       setSelectedPelangganId("");
-      setSelectedMetodeId(metodeTunaiDefault?.id || "");
+      setSelectedMetodeId(metodeTunaiDefault?.id || metodeList[0]?.id || "");
       if (isMobileLayout) setMobileKasirStep("riwayat");
       setSuccessMsg(`Transaksi ${activeTab} berhasil! Struk siap dicetak.`);
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -3086,6 +3482,8 @@ export default function TransaksiPage() {
       metodePembayaranTipe: trx.metodePembayaranTipe,
       metodePembayaranProvider: trx.metodePembayaranProvider || "",
       biayaAdminPersen: Number(trx.biayaAdminPersen || 0),
+      pembayaranItems: Array.isArray(trx.pembayaranItems) ? trx.pembayaranItems : [],
+      jumlahMetodePembayaran: Number(trx.jumlahMetodePembayaran || 1),
       biayaAdminNominal: Number(trx.biayaAdminNominal || 0),
       subtotal: Number(trx.subtotal || 0),
       totalDiskon: Number(trx.totalDiskon || 0),
@@ -3246,7 +3644,9 @@ export default function TransaksiPage() {
                       Metode
                     </p>
                     <p className="mt-1 truncate text-sm font-black text-slate-800">
-                      {selectedMetode?.nama || "-"}
+                      {pembayaranPayload.length > 1
+                        ? `${pembayaranPayload.length} Metode`
+                        : pembayaranPayload[0]?.metodePembayaranNama || "-"}
                     </p>
                   </div>
 
@@ -3340,11 +3740,27 @@ export default function TransaksiPage() {
 
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-black text-slate-700">
-                        Uang Bayar
+                        Total Bayar
                       </span>
                       <span className="text-xl font-black text-slate-900">
                         {formatRupiah(uangBayarNumber)}
                       </span>
+                    </div>
+
+                    <div className="rounded-2xl bg-white px-3 py-2">
+                      <div className="space-y-1.5">
+                        {pembayaranPayload.map((item, index) => (
+                          <div
+                            key={`${item.metodePembayaranId}-${index}`}
+                            className="flex items-center justify-between gap-3 text-xs font-bold text-slate-600"
+                          >
+                            <span className="truncate">{item.metodePembayaranNama}</span>
+                            <span className="shrink-0 text-slate-900">
+                              {formatRupiah(item.nominal)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
@@ -4240,24 +4656,7 @@ export default function TransaksiPage() {
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <FieldLabel icon={Wallet} label="Metode Pembayaran" />
-                  <select
-                    value={selectedMetodeId}
-                    onChange={(e) => setSelectedMetodeId(e.target.value)}
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-blue-500"
-                  >
-                    <option value="">Pilih metode pembayaran</option>
-                    {metodeList.map((metode) => (
-                      <option key={metode.id} value={metode.id}>
-                        {metode.nama}
-                        {metode.biayaAdmin
-                          ? ` (${formatPercent(metode.biayaAdmin)})`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {renderPaymentFields()}
 
                 <div>
                   <FieldLabel icon={User2} label="Pelanggan Opsional" />
@@ -4287,19 +4686,6 @@ export default function TransaksiPage() {
                       strokeWidth={2.6}
                     />
                   </div>
-                </div>
-
-                <div>
-                  <FieldLabel icon={Wallet} label="Uang Bayar" />
-                  <input
-                    value={uangBayar}
-                    onChange={(e) =>
-                      setUangBayar(formatRibuanInput(e.target.value))
-                    }
-                    placeholder="Masukkan uang bayar"
-                    inputMode="numeric"
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-blue-500"
-                  />
                 </div>
 
                 <div>
@@ -4455,25 +4841,6 @@ export default function TransaksiPage() {
                           "Toko belum terhubung"}
                       </div>
                     )}
-                  </div>
-
-                  <div>
-                    <FieldLabel icon={Wallet} label="Metode Pembayaran" />
-                    <select
-                      value={selectedMetodeId}
-                      onChange={(e) => setSelectedMetodeId(e.target.value)}
-                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-blue-300 focus:border-blue-500"
-                    >
-                      <option value="">Pilih metode pembayaran</option>
-                      {metodeList.map((metode) => (
-                        <option key={metode.id} value={metode.id}>
-                          {metode.nama}
-                          {metode.biayaAdmin
-                            ? ` (${formatPercent(metode.biayaAdmin)})`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
                   </div>
 
                   <div>
@@ -5067,18 +5434,7 @@ export default function TransaksiPage() {
                     </div>
                   )}
 
-                  <div>
-                    <FieldLabel icon={Wallet} label="Uang Bayar" />
-                    <input
-                      value={uangBayar}
-                      onChange={(e) =>
-                        setUangBayar(formatRibuanInput(e.target.value))
-                      }
-                      placeholder="Masukkan uang bayar"
-                      inputMode="numeric"
-                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-blue-300 focus:border-blue-500"
-                    />
-                  </div>
+                  {renderPaymentFields()}
 
                   <div>
                     <FieldLabel icon={BadgeDollarSign} label="Catatan" />
