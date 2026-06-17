@@ -1,7 +1,9 @@
 /*
   app/admin/pembelian-barang/page.tsx
   Halaman admin pembelian barang gabungan.
-  Barang hanya tampil setelah toko dipilih, lalu semua barang fisik pada toko tersebut ditampilkan tanpa batas stok minimum.
+  Tab Barang Fisik dan Saldo Digital.
+  Barang fisik hanya tampil setelah toko dipilih agar query lebih irit.
+  Saldo digital tampil dari master_saldo_digital dan setiap pembelian saldo disimpan sebagai jejak riwayat.
   Restok barang IMEI mendukung scan tersembunyi dan banyak IMEI sekaligus; 1 IMEI disimpan sebagai 1 unit barang baru.
 */
 
@@ -124,6 +126,8 @@ type PembelianItem = {
   kodeUnik?: string
   statusUnit?: string
 }
+
+type PembelianTab = "barang" | "saldo"
 
 type RiwayatPembelianRow = {
   id: string
@@ -359,10 +363,10 @@ export default function PembelianBarangPage() {
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
 
+  const [activeTab, setActiveTab] = useState<PembelianTab>("barang")
   const [search, setSearch] = useState("")
   const [filterKategori, setFilterKategori] = useState("")
   const [filterToko, setFilterToko] = useState("")
-  const [filterJenis, setFilterJenis] = useState("")
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [dataLimit, setDataLimit] = useState(50)
@@ -609,11 +613,48 @@ export default function PembelianBarangPage() {
 
   useEffect(() => {
     if (!auth.currentUser) return
+    if (activeTab !== "barang") return
     fetchBarang(filterToko)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterToko])
+  }, [filterToko, activeTab])
+
+  useEffect(() => {
+    setSearch("")
+    setPage(1)
+
+    if (activeTab === "saldo") {
+      setFilterKategori("")
+      setFilterToko("")
+      setBarangList([])
+    }
+  }, [activeTab])
 
   const pembelianItems = useMemo<PembelianItem[]>(() => {
+    if (activeTab === "saldo") {
+      return saldoList
+        .filter((item) => item.aktif !== false)
+        .map((item) => ({
+          type: "saldo",
+          id: item.id,
+          nama: item.namaSaldo,
+          subtitle: item.keterangan || "Saldo Digital",
+          tokoId: "",
+          tokoNama: "Saldo Digital",
+          kategoriId: "saldo-digital",
+          kategoriNama: "Saldo Digital",
+          merk: "",
+          supplier: "Saldo Digital",
+          kodeRef: item.id,
+          hargaModal: 0,
+          hargaJual: 0,
+          stokSekarang: Number(item.jumlahSaldo || 0),
+          stokMinimum: Number(item.jumlahMinimum || 0),
+          kekurangan: Math.max(0, Number(item.jumlahMinimum || 0) - Number(item.jumlahSaldo || 0)),
+          satuanLabel: "rupiah",
+          badgeLabel: "Saldo",
+        }))
+    }
+
     if (!filterToko) return []
 
     const barangNeedPembelian: PembelianItem[] = barangList
@@ -646,7 +687,7 @@ export default function PembelianBarangPage() {
       }))
 
     return barangNeedPembelian
-  }, [barangList, filterToko])
+  }, [activeTab, barangList, filterToko, saldoList])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -661,17 +702,16 @@ export default function PembelianBarangPage() {
           item.tokoNama.toLowerCase().includes(q) ||
           item.supplier.toLowerCase().includes(q)
 
-        const matchKategori = !filterKategori || (item.type === "barang" && item.kategoriId === filterKategori)
-        const matchToko = !filterToko || (item.type === "barang" && item.tokoId === filterToko)
-        const matchJenis = !filterJenis || item.type === filterJenis
+        const matchKategori = activeTab !== "barang" || !filterKategori || item.kategoriId === filterKategori
+        const matchToko = activeTab !== "barang" || !filterToko || item.tokoId === filterToko
 
-        return matchSearch && matchKategori && matchToko && matchJenis
+        return matchSearch && matchKategori && matchToko
       })
       .sort((a, b) => {
         if (b.kekurangan !== a.kekurangan) return b.kekurangan - a.kekurangan
         return a.nama.localeCompare(b.nama, "id")
       })
-  }, [pembelianItems, search, filterKategori, filterToko, filterJenis])
+  }, [activeTab, pembelianItems, search, filterKategori, filterToko])
 
   const totalBarangPembelian = filtered.filter((item) => item.type === "barang").length
   const totalSaldoPembelian = filtered.filter((item) => item.type === "saldo").length
@@ -682,13 +722,23 @@ export default function PembelianBarangPage() {
     .filter((item) => item.type === "saldo")
     .reduce((sum, item) => sum + item.kekurangan, 0)
 
+  const filteredRiwayatList = useMemo(() => {
+    return riwayatList.filter((item) => item.jenis === activeTab)
+  }, [activeTab, riwayatList])
+
+  const totalSaldoNominal = useMemo(() => {
+    return saldoList
+      .filter((item) => item.aktif !== false)
+      .reduce((sum, item) => sum + Number(item.jumlahSaldo || 0), 0)
+  }, [saldoList])
+
   const totalPages = itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / itemsPerPage))
   const paged = itemsPerPage === 0 ? filtered : filtered.slice((page - 1) * itemsPerPage, page * itemsPerPage)
   const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
 
   useEffect(() => {
     setPage(1)
-  }, [search, filterKategori, filterToko, filterJenis, itemsPerPage, dataLimit])
+  }, [search, filterKategori, filterToko, activeTab, itemsPerPage, dataLimit])
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
@@ -1025,10 +1075,10 @@ export default function PembelianBarangPage() {
 
               <div className="min-w-0">
                 <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">
-                  Pembelian Barang
+                  Pembelian Barang & Saldo
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Pilih toko terlebih dahulu untuk melihat semua barang fisik yang bisa dibeli.
+                  Kelola pembelian barang fisik dan top up saldo digital dalam tab terpisah dengan jejak riwayat.
                 </p>
               </div>
             </div>
@@ -1077,6 +1127,42 @@ export default function PembelianBarangPage() {
           )}
         </AnimatePresence>
 
+        {/* Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, delay: 0.03 }}
+          className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("barang")}
+              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
+                activeTab === "barang"
+                  ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
+                  : "border-2 border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Package size={16} strokeWidth={2.5} />
+              Barang Fisik
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("saldo")}
+              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
+                activeTab === "saldo"
+                  ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
+                  : "border-2 border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Wallet size={16} strokeWidth={2.5} />
+              Saldo Digital
+            </button>
+          </div>
+        </motion.div>
+
         {/* Search & Filter */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -1112,26 +1198,36 @@ export default function PembelianBarangPage() {
                 ))}
               </FilterSelect>
 
-              <FilterSelect label="Jenis" value={filterJenis} onChange={setFilterJenis} icon={AlertTriangle}>
-                <option value="">Semua Jenis</option>
-                <option value="barang">Barang</option>
-                <option value="saldo">Saldo</option>
-              </FilterSelect>
+              {activeTab === "barang" && (
+                <>
+                  <FilterSelect label="Kategori" value={filterKategori} onChange={setFilterKategori} icon={Tag}>
+                    <option value="">Semua Kategori</option>
+                    {kategoriList.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nama}
+                      </option>
+                    ))}
+                  </FilterSelect>
 
-              <FilterSelect label="Kategori" value={filterKategori} onChange={setFilterKategori} icon={Tag}>
-                <option value="">Semua Kategori</option>
-                {kategoriList.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nama}
-                  </option>
-                ))}
-              </FilterSelect>
+                  <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
+                    <option value="">Pilih Toko</option>
+                    {tokoList.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nama}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </>
+              )}
 
-              <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
-                <option value="">Pilih Toko</option>
-                {tokoList.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nama}
+              <FilterSelect
+                label="Tampilkan"
+                value={String(itemsPerPage)}
+                onChange={(value) => setItemsPerPage(Number(value))}
+              >
+                {ITEMS_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </FilterSelect>
@@ -1152,11 +1248,11 @@ export default function PembelianBarangPage() {
 
             <button
               type="button"
-              onClick={() => router.push("/admin/tambah-barang")}
+              onClick={() => router.push(activeTab === "saldo" ? "/admin/tambah-saldo" : "/admin/tambah-barang")}
               className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-sky-700"
             >
-              <Package size={14} strokeWidth={2.5} />
-              Barang
+              {activeTab === "saldo" ? <Wallet size={14} strokeWidth={2.5} /> : <Package size={14} strokeWidth={2.5} />}
+              {activeTab === "saldo" ? "Saldo" : "Barang"}
             </button>
 
             <button
@@ -1181,29 +1277,27 @@ export default function PembelianBarangPage() {
                 className="overflow-hidden sm:hidden"
               >
                 <div className="mt-3 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
-                  <FilterSelect label="Jenis" value={filterJenis} onChange={setFilterJenis} icon={AlertTriangle}>
-                    <option value="">Semua Jenis</option>
-                    <option value="barang">Barang</option>
-                    <option value="saldo">Saldo</option>
-                  </FilterSelect>
+                  {activeTab === "barang" && (
+                    <>
+                      <FilterSelect label="Kategori" value={filterKategori} onChange={setFilterKategori} icon={Tag}>
+                        <option value="">Semua Kategori</option>
+                        {kategoriList.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nama}
+                          </option>
+                        ))}
+                      </FilterSelect>
 
-                  <FilterSelect label="Kategori" value={filterKategori} onChange={setFilterKategori} icon={Tag}>
-                    <option value="">Semua Kategori</option>
-                    {kategoriList.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nama}
-                      </option>
-                    ))}
-                  </FilterSelect>
-
-                  <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
-                    <option value="">Pilih Toko</option>
-                    {tokoList.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nama}
-                      </option>
-                    ))}
-                  </FilterSelect>
+                      <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
+                        <option value="">Pilih Toko</option>
+                        {tokoList.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nama}
+                          </option>
+                        ))}
+                      </FilterSelect>
+                    </>
+                  )}
 
                   <FilterSelect
                     label="Limit Riwayat"
@@ -1239,10 +1333,21 @@ export default function PembelianBarangPage() {
         {/* Stats */}
         <div className="space-y-2 sm:space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-            <StatCard icon={Package} label="Barang" value={String(totalBarangPembelian)} subValue="Toko dipilih" tone="sky" />
-            <StatCard icon={Boxes} label="Kurang Barang" value={String(totalKekuranganBarang)} subValue="Di bawah minimum" tone="blue" />
-            <StatCard icon={Wallet} label="Saldo" value={String(totalSaldoPembelian)} subValue="Riwayat tetap ada" tone="slate" />
-            <StatCard icon={Coins} label="Kurang Saldo" value={formatRupiah(totalKekuranganSaldo)} subValue="Di bawah minimum" tone="rose" />
+            {activeTab === "barang" ? (
+              <>
+                <StatCard icon={Package} label="Barang" value={String(totalBarangPembelian)} subValue="Toko dipilih" tone="sky" />
+                <StatCard icon={Boxes} label="Kurang Barang" value={String(totalKekuranganBarang)} subValue="Di bawah minimum" tone="blue" />
+                <StatCard icon={Store} label="Toko" value={filterToko ? "1" : "0"} subValue="Filter aktif" tone="slate" />
+                <StatCard icon={Wallet} label="Riwayat Barang" value={String(filteredRiwayatList.length)} subValue="Jejak pembelian" tone="rose" />
+              </>
+            ) : (
+              <>
+                <StatCard icon={Wallet} label="Sumber Saldo" value={String(totalSaldoPembelian)} subValue="Saldo aktif" tone="sky" />
+                <StatCard icon={Coins} label="Total Saldo" value={formatRupiah(totalSaldoNominal)} subValue="Saldo tersedia" tone="blue" />
+                <StatCard icon={ShieldAlert} label="Kurang Saldo" value={formatRupiah(totalKekuranganSaldo)} subValue="Di bawah minimum" tone="rose" />
+                <StatCard icon={Boxes} label="Riwayat Saldo" value={String(filteredRiwayatList.length)} subValue="Jejak top up" tone="slate" />
+              </>
+            )}
           </div>
         </div>
 
@@ -1250,7 +1355,8 @@ export default function PembelianBarangPage() {
           loading={loading}
           filtered={filtered}
           paged={paged}
-          riwayatList={riwayatList}
+          riwayatList={filteredRiwayatList}
+          activeTab={activeTab}
           itemsPerPage={itemsPerPage}
           page={page}
           totalPages={totalPages}
@@ -1430,6 +1536,7 @@ function PembelianContent({
   filtered,
   paged,
   riwayatList,
+  activeTab,
   itemsPerPage,
   page,
   totalPages,
@@ -1440,6 +1547,7 @@ function PembelianContent({
   filtered: PembelianItem[]
   paged: PembelianItem[]
   riwayatList: RiwayatPembelianRow[]
+  activeTab: PembelianTab
   itemsPerPage: number
   page: number
   totalPages: number
@@ -1468,13 +1576,27 @@ function PembelianContent({
       <div className="space-y-4">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <HeaderTitle title="Item Pembelian" subtitle="Pilih toko terlebih dahulu, lalu semua barang fisik toko tersebut akan tampil" />
+            <HeaderTitle
+            title={activeTab === "saldo" ? "Pembelian Saldo Digital" : "Pembelian Barang Fisik"}
+            subtitle={
+              activeTab === "saldo"
+                ? "Pilih sumber saldo, input nominal pembelian, lalu riwayat saldo akan tersimpan."
+                : "Pilih toko terlebih dahulu, lalu semua barang fisik toko tersebut akan tampil."
+            }
+          />
 
 
           </div>
 
           {filtered.length === 0 ? (
-            <EmptyBox label="Pilih toko terlebih dahulu atau data barang toko ini belum tersedia" icon={ShieldAlert} />
+            <EmptyBox
+              label={
+                activeTab === "saldo"
+                  ? "Data saldo digital belum tersedia"
+                  : "Pilih toko terlebih dahulu atau data barang toko ini belum tersedia"
+              }
+              icon={activeTab === "saldo" ? Wallet : ShieldAlert}
+            />
           ) : (
             <>
               <div className="space-y-2 sm:hidden">
@@ -1619,7 +1741,10 @@ function PembelianContent({
 
       <div className="space-y-4">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <HeaderTitle title="Riwayat Terbaru" subtitle="Pembelian barang fisik dan saldo digital" />
+          <HeaderTitle
+            title={activeTab === "saldo" ? "Riwayat Saldo Digital" : "Riwayat Barang Fisik"}
+            subtitle={activeTab === "saldo" ? "Jejak pembelian/top up saldo digital terbaru" : "Jejak pembelian barang fisik terbaru"}
+          />
 
           {riwayatList.length === 0 ? (
             <EmptyBox label="Belum ada riwayat pembelian" icon={Wallet} />

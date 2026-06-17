@@ -68,6 +68,7 @@ import {
   ArrowDownToLine,
   Bell,
   BriefcaseBusiness,
+  ShieldAlert,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -205,6 +206,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-saldo", icon: Wallet, label: "Saldo Digital" },
           { href: "/admin/tambah-provider", icon: Wifi, label: "Provider Digital" },
           { href: "/admin/tambah-barang", icon: Package, label: "Data Barang" },
+          { href: "/admin/barang-rusak", icon: ShieldAlert, label: "Barang Rusak" },
           { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Aset Tetap" },
           { href: "/admin/aturan", icon: ClipboardList, label: "Standar Operasional Prosedur" },
         ],
@@ -386,6 +388,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-saldo") ||
       currentPath.startsWith("/admin/tambah-provider") ||
       currentPath.startsWith("/admin/tambah-barang") ||
+      currentPath.startsWith("/admin/barang-rusak") ||
       currentPath.startsWith("/admin/tambah-kategori") ||
       currentPath.startsWith("/admin/tambah-satuan") ||
       currentPath.startsWith("/admin/tambah-supplier") ||
@@ -586,6 +589,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => {
     if (href === "/admin/tambah-barang") return pathname === "/admin/tambah-barang"
+    if (href === "/admin/barang-rusak") return pathname === "/admin/barang-rusak"
     if (href === "/admin/tambah-saldo") return pathname === "/admin/tambah-saldo"
     if (href === "/admin/tambah-provider") return pathname === "/admin/tambah-provider"
     if (href === "/admin/tambah-kategori") return pathname === "/admin/tambah-kategori"

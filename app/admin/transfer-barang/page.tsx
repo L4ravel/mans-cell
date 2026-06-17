@@ -1002,102 +1002,124 @@ export default function TransferBarangPage() {
     }
   }
 
-  const handleReceiveTransfer = async () => {
-    const user = auth.currentUser
-    if (!user || !receiveTarget) return
+ const handleReceiveTransfer = async () => {
+  const user = auth.currentUser
+  if (!user || !receiveTarget) return
 
-    setActionLoading(receiveTarget.id)
-    setError(null)
+  setActionLoading(receiveTarget.id)
+  setError(null)
 
-    try {
-      const actor = await getUserProfile(user.uid, user.email)
+  try {
+    const actor = await getUserProfile(user.uid, user.email)
 
-      await runTransaction(db, async (transaction) => {
-        const transferRef = doc(db, "transfer_barang", receiveTarget.id)
-        const targetBarangRef = doc(db, "barang", receiveTarget.barangTujuanId)
+    await runTransaction(db, async (transaction) => {
+      const transferRef = doc(db, "transfer_barang", receiveTarget.id)
+      const transferSnap = await transaction.get(transferRef)
 
-        const [transferSnap, targetSnap] = await Promise.all([
-          transaction.get(transferRef),
-          transaction.get(targetBarangRef),
-        ])
+      if (!transferSnap.exists()) throw new Error("Transfer tidak ditemukan")
 
-        if (!transferSnap.exists()) throw new Error("Transfer tidak ditemukan")
+      const latestTransfer = transferSnap.data() as any
+      const latestStatus = (latestTransfer?.status || "DRAFT") as TransferStatus
+      const qty = Number(latestTransfer?.qty || 0)
 
-        const latestTransfer = transferSnap.data() as any
-        const latestStatus = (latestTransfer?.status || "DRAFT") as TransferStatus
-        const qty = Number(latestTransfer?.qty || 0)
+      const kodeBarang = String(latestTransfer?.kodeBarang || "").trim()
+      const tokoTujuanId = String(latestTransfer?.tokoTujuanId || "").trim()
 
-        if (latestStatus !== "DIKIRIM") throw new Error("Transfer belum bisa diterima")
-        if (qty <= 0) throw new Error("Qty transfer tidak valid")
+      if (latestStatus !== "DIKIRIM") throw new Error("Transfer belum bisa diterima")
+      if (qty <= 0) throw new Error("Qty transfer tidak valid")
+      if (!kodeBarang) throw new Error("Kode barang transfer tidak valid")
+      if (!tokoTujuanId) throw new Error("Toko tujuan transfer tidak valid")
 
-        if (targetSnap.exists()) {
-          const targetData = targetSnap.data() as any
-          const currentStock = Number(targetData?.stok || 0)
+      const targetQuerySnap = await getDocs(
+        query(
+          collection(db, "barang"),
+          where("tokoId", "==", tokoTujuanId),
+          where("kodeBarang", "==", kodeBarang),
+          limit(1)
+        )
+      )
 
-          transaction.update(targetBarangRef, {
-            stok: currentStock + qty,
-            updatedAt: serverTimestamp(),
-            updatedBy: user.uid,
-          })
+      const existingTargetDoc = targetQuerySnap.empty ? null : targetQuerySnap.docs[0]
+      const targetBarangRef = existingTargetDoc
+        ? doc(db, "barang", existingTargetDoc.id)
+        : doc(db, "barang", String(latestTransfer?.barangTujuanId || receiveTarget.barangTujuanId))
 
-          transaction.update(transferRef, {
-            status: "DITERIMA",
-            stokTujuanSebelum: currentStock,
-            stokTujuanSesudah: currentStock + qty,
-            catatanPenerimaan: receiveForm.catatanPenerimaan.trim(),
-            receivedBy: actor.uid,
-            receivedByNama: actor.nama,
-            receivedByEmail: actor.email,
-            receivedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        } else {
-          transaction.set(targetBarangRef, {
-            kodeBarang: latestTransfer?.kodeBarang || "",
-            nama: latestTransfer?.namaBarang || "",
-            kategoriId: latestTransfer?.kategoriId || "",
-            kategoriNama: latestTransfer?.kategoriNama || "",
-            tokoId: latestTransfer?.tokoTujuanId || "",
-            tokoNama: latestTransfer?.tokoTujuanNama || "",
-            merk: latestTransfer?.merk || "",
-            supplier: latestTransfer?.supplier || "",
-            satuan: latestTransfer?.satuan || "Pcs",
-            hargaModal: Number(latestTransfer?.hargaModal || 0),
-            hargaJual: Number(latestTransfer?.hargaJual || 0),
-            stok: qty,
-            stokMinimum: Number(latestTransfer?.stokMinimum || 0),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            createdBy: user.uid,
-            updatedBy: user.uid,
-          })
+      const targetSnap = existingTargetDoc
+        ? await transaction.get(targetBarangRef)
+        : await transaction.get(targetBarangRef)
 
-          transaction.update(transferRef, {
-            status: "DITERIMA",
-            stokTujuanSebelum: 0,
-            stokTujuanSesudah: qty,
-            catatanPenerimaan: receiveForm.catatanPenerimaan.trim(),
-            receivedBy: actor.uid,
-            receivedByNama: actor.nama,
-            receivedByEmail: actor.email,
-            receivedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        }
+      if (targetSnap.exists()) {
+        const targetData = targetSnap.data() as any
+        const currentStock = Number(targetData?.stok || 0)
+
+        transaction.update(targetBarangRef, {
+          stok: currentStock + qty,
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+        })
+
+        transaction.update(transferRef, {
+          status: "DITERIMA",
+          barangTujuanId: targetBarangRef.id,
+          stokTujuanSebelum: currentStock,
+          stokTujuanSesudah: currentStock + qty,
+          catatanPenerimaan: receiveForm.catatanPenerimaan.trim(),
+          receivedBy: actor.uid,
+          receivedByNama: actor.nama,
+          receivedByEmail: actor.email,
+          receivedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+
+        return
+      }
+
+      transaction.set(targetBarangRef, {
+        kodeBarang,
+        nama: latestTransfer?.namaBarang || "",
+        kategoriId: latestTransfer?.kategoriId || "",
+        kategoriNama: latestTransfer?.kategoriNama || "",
+        tokoId: tokoTujuanId,
+        tokoNama: latestTransfer?.tokoTujuanNama || "",
+        merk: latestTransfer?.merk || "",
+        supplier: latestTransfer?.supplier || "",
+        satuan: latestTransfer?.satuan || "Pcs",
+        hargaModal: Number(latestTransfer?.hargaModal || 0),
+        hargaJual: Number(latestTransfer?.hargaJual || 0),
+        stok: qty,
+        stokMinimum: Number(latestTransfer?.stokMinimum || 0),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: user.uid,
+        updatedBy: user.uid,
       })
 
-      setReceiveTarget(null)
-      setReceiveForm(EMPTY_RECEIVE_FORM)
-      await fetchAll()
-      setSuccessMsg("Transfer berhasil diterima")
-      setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e: any) {
-      console.error(e)
-      setError(e?.message || "Gagal menerima transfer")
-    } finally {
-      setActionLoading(null)
-    }
+      transaction.update(transferRef, {
+        status: "DITERIMA",
+        barangTujuanId: targetBarangRef.id,
+        stokTujuanSebelum: 0,
+        stokTujuanSesudah: qty,
+        catatanPenerimaan: receiveForm.catatanPenerimaan.trim(),
+        receivedBy: actor.uid,
+        receivedByNama: actor.nama,
+        receivedByEmail: actor.email,
+        receivedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    })
+
+    setReceiveTarget(null)
+    setReceiveForm(EMPTY_RECEIVE_FORM)
+    await fetchAll()
+    setSuccessMsg("Transfer berhasil diterima")
+    setTimeout(() => setSuccessMsg(null), 3000)
+  } catch (e: any) {
+    console.error(e)
+    setError(e?.message || "Gagal menerima transfer")
+  } finally {
+    setActionLoading(null)
   }
+}
 
   const handleCancelTransfer = async () => {
     const user = auth.currentUser
