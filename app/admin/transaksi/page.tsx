@@ -100,12 +100,28 @@ type TransaksiBarang = Omit<Barang, "nominalProduk"> & {
   nominalProduk?: string;
   kodeBarcode?: string;
   barcodeValue?: string;
+  statusUnit?: "tersedia" | "terjual" | "retur" | "rusak" | string;
+  soldAt?: any;
+  soldAtMs?: number;
+  soldBy?: string;
+  soldByNama?: string;
+  soldByEmail?: string;
+  transactionId?: string;
+  nomorTransaksiTerjual?: string;
 };
 
 type TransaksiCartItem = Omit<CartItem, "nominalProduk"> & {
   nominalProduk?: string;
   kodeBarcode?: string;
   barcodeValue?: string;
+  statusUnit?: "tersedia" | "terjual" | "retur" | "rusak" | string;
+  soldAt?: any;
+  soldAtMs?: number;
+  soldBy?: string;
+  soldByNama?: string;
+  soldByEmail?: string;
+  transactionId?: string;
+  nomorTransaksiTerjual?: string;
 };
 
 type PembayaranSplitItem = {
@@ -406,6 +422,41 @@ const splitKodeUnikScanValues = (value: unknown) => {
     .split(/[\n\r,;|/]+/g)
     .map((item) => normalizeBarcode(item))
     .filter(Boolean);
+};
+
+const normalizeStatusUnit = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const isImeiBarang = (item: {
+  jenisBarang?: string;
+  pakaiKodeUnik?: boolean;
+  jenisKodeUnik?: string;
+  kodeUnik?: string;
+}) => {
+  return (
+    (item.jenisBarang || "fisik") === "fisik" &&
+    Boolean(item.pakaiKodeUnik) &&
+    String(item.jenisKodeUnik || "").toLowerCase() === "imei" &&
+    splitKodeUnikScanValues(item.kodeUnik).length > 0
+  );
+};
+
+const isImeiCartItem = (item: {
+  jenisBarang?: string;
+  pakaiKodeUnik?: boolean;
+  jenisKodeUnik?: string;
+  kodeUnik?: string;
+}) => isImeiBarang(item);
+
+const isBarangTerjual = (item: { statusUnit?: string; soldAt?: any; transactionId?: string }) => {
+  const status = normalizeStatusUnit(item.statusUnit);
+  return status === "terjual" || status === "sold";
+};
+
+const shouldHideBarangFromSale = (item: TransaksiBarang) => {
+  return isImeiBarang(item) && isBarangTerjual(item);
 };
 
 const SCANNER_MIN_LENGTH = 3;
@@ -773,6 +824,14 @@ export default function TransaksiPage() {
             pakaiKodeUnik: Boolean(x?.pakaiKodeUnik),
             jenisKodeUnik: x?.jenisKodeUnik || "",
             kodeUnik: x?.kodeUnik || "",
+            statusUnit: x?.statusUnit || "tersedia",
+            soldAt: x?.soldAt || null,
+            soldAtMs: Number(x?.soldAtMs || 0),
+            soldBy: x?.soldBy || "",
+            soldByNama: x?.soldByNama || "",
+            soldByEmail: x?.soldByEmail || "",
+            transactionId: x?.transactionId || "",
+            nomorTransaksiTerjual: x?.nomorTransaksiTerjual || "",
             jenisBarang: (x?.jenisBarang || "fisik") as "fisik" | "digital",
             subJenisDigital: x?.subJenisDigital || "",
             providerId: x?.providerId || "",
@@ -786,6 +845,7 @@ export default function TransaksiPage() {
           };
         })
         .filter((item) => item.nama && item.tokoId === safeTokoId)
+        .filter((item) => !shouldHideBarangFromSale(item))
         .sort((a, b) =>
           a.nama.localeCompare(b.nama, "id-ID", {
             numeric: true,
@@ -1280,6 +1340,7 @@ export default function TransaksiPage() {
 
       if (!sameToko || !sameJenis || !matchSearch) return false;
       if (activeTab === "digital") return item.aktif !== false;
+      if (shouldHideBarangFromSale(item)) return false;
       return true;
     });
   }, [barangList, selectedTokoId, searchBarang, activeTab]);
@@ -1307,6 +1368,7 @@ export default function TransaksiPage() {
       if (!item?.id) continue;
       if ((item.jenisBarang || "fisik") !== "fisik") continue;
       if (selectedTokoId && item.tokoId !== selectedTokoId) continue;
+      if (shouldHideBarangFromSale(item)) continue;
 
       registerScanKey(item.kodeBarcode || "", item, "kodeBarcode");
       registerScanKey(item.barcodeValue || "", item, "barcodeValue");
@@ -1338,6 +1400,11 @@ export default function TransaksiPage() {
     const jenisBarang = (barang.jenisBarang || "fisik") as "fisik" | "digital";
     if (jenisBarang === "fisik" && barang.stok <= 0) {
       setError("Stok barang habis");
+      return { ok: false, reason: "out-of-stock" };
+    }
+
+    if (jenisBarang === "fisik" && shouldHideBarangFromSale(barang)) {
+      setError("Barang IMEI ini sudah terjual");
       return { ok: false, reason: "out-of-stock" };
     }
 
@@ -1379,6 +1446,7 @@ export default function TransaksiPage() {
                   pakaiKodeUnik: barang.pakaiKodeUnik,
                   jenisKodeUnik: barang.jenisKodeUnik || "",
                   kodeUnik: barang.kodeUnik || "",
+                  statusUnit: barang.statusUnit || "tersedia",
                   kodeBarcode: barang.kodeBarcode || barang.barcodeValue || "",
                   barcodeValue: barang.barcodeValue || barang.kodeBarcode || "",
                   providerId: barang.providerId || "",
@@ -1410,6 +1478,7 @@ export default function TransaksiPage() {
                 hargaModal: barang.hargaModal,
                 hargaAsli: barang.hargaJual,
                 hargaSetelahDiskon,
+                statusUnit: barang.statusUnit || "tersedia",
                 kodeBarcode: barang.kodeBarcode || barang.barcodeValue || "",
                 barcodeValue: barang.barcodeValue || barang.kodeBarcode || "",
                 providerId: barang.providerId || "",
@@ -1451,6 +1520,7 @@ export default function TransaksiPage() {
           pakaiKodeUnik: barang.pakaiKodeUnik,
           jenisKodeUnik: barang.jenisKodeUnik || "",
           kodeUnik: barang.kodeUnik || "",
+          statusUnit: barang.statusUnit || "tersedia",
           jenisBarang,
           subJenisDigital: barang.subJenisDigital || "",
           providerId: barang.providerId || "",
@@ -1499,6 +1569,7 @@ export default function TransaksiPage() {
           if (!item?.id) return null;
           if ((item.jenisBarang || "fisik") !== "fisik") return null;
           if (selectedTokoId && item.tokoId !== selectedTokoId) return null;
+          if (shouldHideBarangFromSale(item)) return null;
 
           if (normalizeScannerValue(item.kodeBarcode || "") === kode) {
             return { barang: item, scanType: "kodeBarcode" };
@@ -1530,6 +1601,12 @@ export default function TransaksiPage() {
     const found = foundEntry.barang;
     const barangScan =
       foundEntry.scanType === "kodeUnik" ? { ...found, kodeUnik: kode } : found;
+
+    if (shouldHideBarangFromSale(found)) {
+      setError(`IMEI ${kode} sudah terjual`);
+      setTimeout(() => setError(null), 1800);
+      return { ok: false };
+    }
 
     if (Number(found.stok || 0) <= 0) {
       setError(`Stok ${found.nama} habis`);
@@ -2370,6 +2447,19 @@ export default function TransaksiPage() {
               throw new Error(`Barang ${item.nama} tidak ditemukan`);
             const barangDb = barangSnap.data() as any;
             const stokSekarang = Number(barangDb?.stok || 0);
+            const itemImei = isImeiCartItem(item);
+            const statusUnitDb = normalizeStatusUnit(barangDb?.statusUnit || "tersedia");
+            const kodeUnikDbList = splitKodeUnikScanValues(barangDb?.kodeUnik || "");
+            const kodeUnikCart = normalizeBarcode(item.kodeUnik || "");
+
+            if (itemImei && (statusUnitDb === "terjual" || statusUnitDb === "sold")) {
+              throw new Error(`IMEI ${item.kodeUnik || item.nama} sudah terjual`);
+            }
+
+            if (itemImei && kodeUnikCart && kodeUnikDbList.length > 0 && !kodeUnikDbList.includes(kodeUnikCart)) {
+              throw new Error(`IMEI ${item.kodeUnik || item.nama} tidak cocok dengan data barang`);
+            }
+
             if (stokSekarang < item.qty)
               throw new Error(`Stok ${item.nama} tidak cukup`);
             return {
@@ -2377,6 +2467,7 @@ export default function TransaksiPage() {
               barangRef,
               stokSekarang,
               stokSesudah: stokSekarang - item.qty,
+              itemImei,
             };
           }),
         );
@@ -2434,9 +2525,21 @@ export default function TransaksiPage() {
           ? await transaction.get(pelangganRef)
           : null;
 
-        for (const { barangRef, stokSesudah } of barangReads) {
+        for (const { item, barangRef, stokSesudah, itemImei } of barangReads) {
           transaction.update(barangRef, {
             stok: stokSesudah,
+            ...(itemImei
+              ? {
+                  statusUnit: "terjual",
+                  soldAt: serverTimestamp(),
+                  soldAtMs: nowMs,
+                  soldBy: user.uid,
+                  soldByNama: kasirProfile.nama,
+                  soldByEmail: kasirProfile.email,
+                  transactionId: transaksiRef.id,
+                  nomorTransaksiTerjual: nomorTransaksi,
+                }
+              : {}),
             updatedAt: nowMs,
             updatedBy: user.uid,
           });
@@ -2522,6 +2625,13 @@ export default function TransaksiPage() {
             pakaiKodeUnik: Boolean(item.pakaiKodeUnik),
             jenisKodeUnik: item.jenisKodeUnik || "",
             kodeUnik: item.kodeUnik || "",
+            statusUnit: isImeiCartItem(item) ? "terjual" : item.statusUnit || "",
+            soldAtMs: isImeiCartItem(item) ? nowMs : 0,
+            soldBy: isImeiCartItem(item) ? user.uid : "",
+            soldByNama: isImeiCartItem(item) ? kasirProfile.nama : "",
+            soldByEmail: isImeiCartItem(item) ? kasirProfile.email : "",
+            transactionId: isImeiCartItem(item) ? transaksiRef.id : "",
+            nomorTransaksiTerjual: isImeiCartItem(item) ? nomorTransaksi : "",
             jenisBarang: item.jenisBarang,
             subJenisDigital: item.subJenisDigital || "",
             providerId: item.providerId || "",
@@ -2619,6 +2729,8 @@ export default function TransaksiPage() {
             barangId: item.barangId,
             kodeBarang: item.kodeBarang,
             namaBarang: item.nama,
+            kodeUnik: item.kodeUnik || "",
+            statusUnit: isImeiCartItem(item) ? "terjual" : "",
             qty: item.qty,
             stokSebelum: stokSekarang,
             stokSesudah,
@@ -2823,6 +2935,11 @@ export default function TransaksiPage() {
                 pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
                 jenisKodeUnik: item?.jenisKodeUnik || "",
                 kodeUnik: item?.kodeUnik || "",
+                statusUnit: item?.statusUnit || "",
+                soldAtMs: Number(item?.soldAtMs || 0),
+                soldBy: item?.soldBy || "",
+                transactionId: item?.transactionId || "",
+                nomorTransaksiTerjual: item?.nomorTransaksiTerjual || "",
                 jenisBarang: (item?.jenisBarang || "fisik") as
                   | "fisik"
                   | "digital",
@@ -3165,8 +3282,27 @@ export default function TransaksiPage() {
             const stokSebelum = Number(barangDb?.stok || 0);
             const stokSesudah = stokSebelum + qtyRetur;
 
+            const itemImeiRetur = isImeiCartItem(item);
+
             transaction.update(barangRef, {
               stok: stokSesudah,
+              ...(itemImeiRetur
+                ? {
+                    statusUnit: "tersedia",
+                    soldAt: null,
+                    soldAtMs: 0,
+                    soldBy: "",
+                    soldByNama: "",
+                    soldByEmail: "",
+                    transactionId: "",
+                    nomorTransaksiTerjual: "",
+                    returAt: serverTimestamp(),
+                    returAtMs: nowMs,
+                    returBy: user.uid,
+                    returId: returRef.id,
+                    returNomor: nomorRetur,
+                  }
+                : {}),
               updatedAt: nowMs,
               updatedBy: user.uid,
               lastReturId: returRef.id,
@@ -3187,6 +3323,8 @@ export default function TransaksiPage() {
               barangId: item.barangId || "",
               kodeBarang: item.kodeBarang || "",
               namaBarang: item.nama || "",
+              kodeUnik: item.kodeUnik || "",
+              statusUnit: isImeiCartItem(item) ? "tersedia" : "",
               qty: qtyRetur,
               stokSebelum,
               stokSesudah,

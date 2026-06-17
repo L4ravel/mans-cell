@@ -19,6 +19,7 @@
   - layout barcode dirapikan: kode pendek, harga, dan nama toko rata mengikuti lebar barcode
   - teks bawah barcode digeser tipis ke kanan agar kode, harga, dan nama toko lebih pas sejajar
   - kode barang di atas barcode dibatasi mengikuti lebar barcode dan digeser ke kanan agar rata
+  - barang IMEI/statusUnit terjual disembunyikan dari tampilan utama, tanpa delete dokumen
 */
 
 "use client"
@@ -112,6 +113,7 @@ type Toko = {
 
 type JenisKodeUnik = "imei" | "serial" | "custom"
 type JenisBarang = "fisik" | "digital"
+type StatusUnitBarang = "tersedia" | "terjual" | "retur" | "rusak" | string
 
 type Barang = {
   id: string
@@ -134,6 +136,16 @@ type Barang = {
   pakaiKodeUnik?: boolean
   jenisKodeUnik?: JenisKodeUnik
   kodeUnik?: string
+  statusUnit?: StatusUnitBarang
+  soldAt?: any
+  soldAtMs?: number
+  soldBy?: string
+  soldByNama?: string
+  soldByEmail?: string
+  transactionId?: string
+  transactionNumber?: string
+  returAt?: any
+  returAtMs?: number
 
   jenisBarang?: JenisBarang
   providerId?: string
@@ -286,6 +298,22 @@ function getBarcodePrintValue(item: {
 
 function formatJenisBarangLabel(value?: JenisBarang) {
   return value === "digital" ? "Digital" : "Fisik"
+}
+
+function normalizeStatusUnit(value: unknown): StatusUnitBarang {
+  const clean = String(value || "tersedia").trim().toLowerCase()
+  if (!clean) return "tersedia"
+  return clean as StatusUnitBarang
+}
+
+function isBarangTerjual(item: Partial<Barang>) {
+  return normalizeStatusUnit(item.statusUnit) === "terjual"
+}
+
+function isBarangTampilUtama(item: Partial<Barang>) {
+  // Barang tidak dihapus dari Firestore. Yang terjual hanya disembunyikan
+  // dari halaman Tambah Barang agar kalau retur status bisa dibalik dan muncul lagi.
+  return !isBarangTerjual(item)
 }
 
 function FormInput({
@@ -1907,6 +1935,16 @@ export default function TambahBarangPage() {
           pakaiKodeUnik: Boolean(x?.pakaiKodeUnik),
           jenisKodeUnik: (x?.jenisKodeUnik || "imei") as JenisKodeUnik,
           kodeUnik: x?.kodeUnik || "",
+          statusUnit: normalizeStatusUnit(x?.statusUnit),
+          soldAt: x?.soldAt || null,
+          soldAtMs: Number(x?.soldAtMs || 0),
+          soldBy: x?.soldBy || "",
+          soldByNama: x?.soldByNama || "",
+          soldByEmail: x?.soldByEmail || "",
+          transactionId: x?.transactionId || "",
+          transactionNumber: x?.transactionNumber || "",
+          returAt: x?.returAt || null,
+          returAtMs: Number(x?.returAtMs || 0),
 
           jenisBarang: (x?.jenisBarang || "fisik") as JenisBarang,
           providerId: x?.providerId || "",
@@ -1948,6 +1986,8 @@ export default function TambahBarangPage() {
 
   const filtered = useMemo(() => {
     return data.filter((d) => {
+      if (!isBarangTampilUtama(d)) return false
+
       const q = search.toLowerCase().trim()
       const matchSearch =
         !q ||
@@ -2021,6 +2061,7 @@ export default function TambahBarangPage() {
 
     return data
       .filter((item) => item.tokoId === copySourceTokoId)
+      .filter((item) => isBarangTampilUtama(item))
       .filter((item) => !filterJenisBarang || item.jenisBarang === filterJenisBarang)
       .filter((item) => !filterKategori || item.kategoriId === filterKategori)
       .filter((item) => {
@@ -2425,6 +2466,17 @@ export default function TambahBarangPage() {
               kodeUnik: "",
             }),
 
+        statusUnit: "tersedia" as StatusUnitBarang,
+        soldAt: null,
+        soldAtMs: 0,
+        soldBy: "",
+        soldByNama: "",
+        soldByEmail: "",
+        transactionId: "",
+        transactionNumber: "",
+        returAt: null,
+        returAtMs: 0,
+
         jenisBarang: form.jenisBarang,
         providerId: isDigitalForm ? providerDipilih?.id || "" : "",
         provider: isDigitalForm ? providerDipilih?.nama || "" : "",
@@ -2657,6 +2709,16 @@ export default function TambahBarangPage() {
             pakaiKodeUnik,
             jenisKodeUnik: pakaiKodeUnik ? item.jenisKodeUnik || "imei" : "imei",
             kodeUnik: pakaiKodeUnik ? normalizeKodeUnik(item.kodeUnik || "") : "",
+            statusUnit: "tersedia",
+            soldAt: null,
+            soldAtMs: 0,
+            soldBy: "",
+            soldByNama: "",
+            soldByEmail: "",
+            transactionId: "",
+            transactionNumber: "",
+            returAt: null,
+            returAtMs: 0,
             jenisBarang,
             providerId: isDigital ? item.providerId || "" : "",
             provider: isDigital ? item.provider || "" : "",
@@ -3021,6 +3083,16 @@ export default function TambahBarangPage() {
           pakaiKodeUnik,
           jenisKodeUnik: pakaiKodeUnik ? jenisKodeUnik : "imei",
           kodeUnik: pakaiKodeUnik ? kodeUnik : "",
+          statusUnit: normalizeStatusUnit(editingExisting?.statusUnit || "tersedia"),
+          soldAt: editingExisting?.soldAt || null,
+          soldAtMs: Number(editingExisting?.soldAtMs || 0),
+          soldBy: editingExisting?.soldBy || "",
+          soldByNama: editingExisting?.soldByNama || "",
+          soldByEmail: editingExisting?.soldByEmail || "",
+          transactionId: editingExisting?.transactionId || "",
+          transactionNumber: editingExisting?.transactionNumber || "",
+          returAt: editingExisting?.returAt || null,
+          returAtMs: Number(editingExisting?.returAtMs || 0),
           jenisBarang,
           providerId: jenisBarang === "digital" ? providerDipilih?.id || "" : "",
           provider: jenisBarang === "digital" ? providerDipilih?.nama || "" : "",
@@ -3220,6 +3292,7 @@ export default function TambahBarangPage() {
 
     return data.filter((item) => {
       if (item.jenisBarang === "digital") return false
+      if (!isBarangTampilUtama(item)) return false
       if (item.aktif === false) return false
       if (item.tokoId !== filterToko) return false
       if (!item.kodeBarang) return false
@@ -3245,6 +3318,7 @@ export default function TambahBarangPage() {
     const result: FlattenPrintItem[] = []
     for (const item of data) {
       if (item.jenisBarang === "digital") continue
+      if (!isBarangTampilUtama(item)) continue
       if (item.aktif === false) continue
       if (filterToko && item.tokoId !== filterToko) continue
       const qty = Number(printSelections[item.id] || 0)

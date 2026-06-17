@@ -2,6 +2,8 @@
   Helper, tipe, dan komponen transaksi kasir.
   Berisi util transaksi, struk, riwayat transaksi, serta tampilan detail konfirmasi
   termasuk akun kasir dari koleksi users dan nomor tujuan barang digital.
+  Revisi IMEI/unit: statusUnit disiapkan agar barang IMEI yang sudah terjual
+  tidak dihapus dari Firestore, tapi bisa disembunyikan dari penjualan.
 */
 
 "use client"
@@ -39,6 +41,8 @@ export type Toko = {
   aktif?: boolean
 }
 
+export type StatusUnitBarang = "tersedia" | "terjual" | "retur" | "rusak" | string
+
 export type Barang = {
   id: string
   kodeBarang: string
@@ -60,6 +64,16 @@ export type Barang = {
   pakaiKodeUnik?: boolean
   jenisKodeUnik?: "imei" | "serial" | "custom" | ""
   kodeUnik?: string
+  statusUnit?: StatusUnitBarang
+  soldAt?: any
+  soldAtMs?: number
+  soldBy?: string
+  soldByNama?: string
+  soldByEmail?: string
+  transactionId?: string
+  transactionNumber?: string
+  returAt?: any
+  returAtMs?: number
   jenisBarang?: "fisik" | "digital"
   subJenisDigital?: "pulsa" | "paket_data" | "token_listrik" | "voucher" | "saldo_game" | ""
   providerId?: string
@@ -146,6 +160,16 @@ export type CartItem = {
   pakaiKodeUnik?: boolean
   jenisKodeUnik?: "imei" | "serial" | "custom" | ""
   kodeUnik?: string
+  statusUnit?: StatusUnitBarang
+  soldAt?: any
+  soldAtMs?: number
+  soldBy?: string
+  soldByNama?: string
+  soldByEmail?: string
+  transactionId?: string
+  transactionNumber?: string
+  returAt?: any
+  returAtMs?: number
   jenisBarang: "fisik" | "digital"
   subJenisDigital?: "pulsa" | "paket_data" | "token_listrik" | "voucher" | "saldo_game" | ""
   providerId?: string
@@ -187,6 +211,16 @@ export type StrukItem = {
   pakaiKodeUnik?: boolean
   jenisKodeUnik?: "imei" | "serial" | "custom" | ""
   kodeUnik?: string
+  statusUnit?: StatusUnitBarang
+  soldAt?: any
+  soldAtMs?: number
+  soldBy?: string
+  soldByNama?: string
+  soldByEmail?: string
+  transactionId?: string
+  transactionNumber?: string
+  returAt?: any
+  returAtMs?: number
   jenisBarang: "fisik" | "digital"
   subJenisDigital?: "pulsa" | "paket_data" | "token_listrik" | "voucher" | "saldo_game" | ""
   providerId?: string
@@ -1384,6 +1418,16 @@ export function RiwayatTransaksiPanel() {
                 pakaiKodeUnik: Boolean(item?.pakaiKodeUnik),
                 jenisKodeUnik: item?.jenisKodeUnik || "",
                 kodeUnik: item?.kodeUnik || "",
+                statusUnit: item?.statusUnit || "",
+                soldAt: item?.soldAt || null,
+                soldAtMs: Number(item?.soldAtMs || 0),
+                soldBy: item?.soldBy || "",
+                soldByNama: item?.soldByNama || "",
+                soldByEmail: item?.soldByEmail || "",
+                transactionId: item?.transactionId || "",
+                transactionNumber: item?.transactionNumber || "",
+                returAt: item?.returAt || null,
+                returAtMs: Number(item?.returAtMs || 0),
                 jenisBarang: item?.jenisBarang === "digital" ? "digital" : "fisik",
                 subJenisDigital: item?.subJenisDigital || "",
                 providerId: item?.providerId || "",
