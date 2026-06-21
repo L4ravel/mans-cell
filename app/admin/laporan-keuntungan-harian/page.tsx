@@ -1,8 +1,6 @@
 /*
   Halaman admin laporan keuntungan harian.
-  Revisi layout konsisten dengan laporan keuntungan bulanan:
-  header biru, stat card 2 kolom mobile, ranking popup mobile,
-  tab mobile Chart/Rekap, filter collapse, rekap mobile flat, dan export Excel.
+  Revisi: tab kategori dibuat menjadi Grup Kategori dan Kategori, default Grup Kategori, termasuk pada popup mobile dan panel desktop.
 */
 
 "use client"
@@ -55,6 +53,25 @@ type KategoriBreakdown = {
   namaBarangList?: string[]
 }
 
+type KelompokKategoriBreakdown = {
+  kelompokId: string
+  namaKelompok: string
+  urutan: number
+  tokoId: string
+  tokoNama: string
+  kategoriIds: string[]
+  kategoriNama: string[]
+  jumlahTransaksi: number
+  totalQty: number
+  omzet: number
+  subtotal: number
+  totalDiskon: number
+  totalSetelahDiskon: number
+  totalModal: number
+  totalBiayaAdmin: number
+  totalLabaKotor: number
+}
+
 type LaporanHarian = {
   id: string
   tanggalKey: string
@@ -65,6 +82,7 @@ type LaporanHarian = {
   omzet: number
   jumlahTransaksi: number
   kategoriBreakdown: KategoriBreakdown[]
+  kelompokKategoriBreakdown: KelompokKategoriBreakdown[]
 }
 
 type Pengeluaran = {
@@ -105,6 +123,16 @@ type RankingKategoriBarang = {
   jumlahTransaksi: number
 }
 
+type RankingGrupKategori = {
+  kelompokId: string
+  namaKelompok: string
+  penghasilanKotor: number
+  keuntunganBersih: number
+  omzet: number
+  qtyTerjual: number
+  jumlahTransaksi: number
+}
+
 type RankingSatuanBarang = {
   satuanId: string
   satuanNama: string
@@ -117,6 +145,8 @@ type RankingSatuanBarang = {
 }
 
 type RankingModalType = "toko" | "kategori" | "satuan" | null
+type KategoriRankingTab = "grup" | "kategori"
+type RankingItemType = "toko" | "kategori" | "grupKategori" | "satuan"
 type MobileReportTab = "chart" | "rekap"
 
 type RankingToko = {
@@ -237,6 +267,68 @@ function getNamaBarangRefs(item: KategoriBreakdown) {
   ])
 }
 
+function normalizeNumber(value: unknown) {
+  const numberValue = Number(value ?? 0)
+  return Number.isFinite(numberValue) ? numberValue : 0
+}
+
+function getFirstFilledNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue
+    const numberValue = normalizeNumber(value)
+    if (numberValue !== 0) return numberValue
+  }
+
+  return 0
+}
+
+function getKelompokLabaKotor(item: any) {
+  const directValue = getFirstFilledNumber(
+    item?.totalLabaKotor,
+    item?.labaBersih,
+    item?.estimasiLabaKotor,
+    item?.keuntungan,
+    item?.untung,
+    item?.laba,
+  )
+
+  if (directValue !== 0) return directValue
+
+  const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
+  const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
+
+  if (totalSetelahDiskon !== 0 && totalModal !== 0) {
+    return totalSetelahDiskon - totalModal
+  }
+
+  return 0
+}
+
+function normalizeKelompokBreakdown(value: unknown): KelompokKategoriBreakdown[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item: any) => ({
+      kelompokId: String(item?.kelompokId || item?.id || item?.groupId || "tanpa-kelompok").trim() || "tanpa-kelompok",
+      namaKelompok: String(item?.namaKelompok || item?.kelompokNama || item?.nama || "Tanpa Kelompok").trim() || "Tanpa Kelompok",
+      urutan: normalizeNumber(item?.urutan || 9999),
+      tokoId: String(item?.tokoId || "").trim(),
+      tokoNama: String(item?.tokoNama || "").trim(),
+      kategoriIds: uniqueStringList(Array.isArray(item?.kategoriIds) ? item.kategoriIds : []),
+      kategoriNama: uniqueStringList(Array.isArray(item?.kategoriNama) ? item.kategoriNama : []),
+      jumlahTransaksi: normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi),
+      totalQty: normalizeNumber(item?.totalQty ?? item?.qtyTerjual ?? item?.qty ?? item?.totalItemTerjual),
+      omzet: normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon),
+      subtotal: normalizeNumber(item?.subtotal),
+      totalDiskon: normalizeNumber(item?.totalDiskon),
+      totalSetelahDiskon: normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet),
+      totalModal: normalizeNumber(item?.totalModal ?? item?.modal),
+      totalBiayaAdmin: normalizeNumber(item?.totalBiayaAdmin ?? item?.biayaAdmin),
+      totalLabaKotor: getKelompokLabaKotor(item),
+    }))
+    .filter((item) => item.namaKelompok)
+}
+
 async function downloadWorkbookXlsx(workbook: any, filename: string) {
   const XLSX = await import("xlsx-js-style")
   const ab = XLSX.write(workbook, { type: "array", bookType: "xlsx" })
@@ -329,6 +421,8 @@ export default function LaporanKeuntunganHarianPage() {
   const [tanggalSelesai, setTanggalSelesai] = useState(toDateInputValue(new Date()))
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
   const [rankingModal, setRankingModal] = useState<RankingModalType>(null)
+  const [desktopKategoriTab, setDesktopKategoriTab] = useState<KategoriRankingTab>("grup")
+  const [mobileKategoriTab, setMobileKategoriTab] = useState<KategoriRankingTab>("grup")
   const [mobileReportTab, setMobileReportTab] = useState<MobileReportTab>("chart")
 
   const fetchAll = async () => {
@@ -393,6 +487,8 @@ export default function LaporanKeuntunganHarianPage() {
             })
           : []
 
+        const kelompokKategoriBreakdown = normalizeKelompokBreakdown(x?.kelompokKategoriBreakdown)
+
         return {
           id: d.id,
           tanggalKey: String(x?.tanggalKey || ""),
@@ -403,6 +499,7 @@ export default function LaporanKeuntunganHarianPage() {
           omzet: Number(x?.omzet || 0),
           jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
           kategoriBreakdown,
+          kelompokKategoriBreakdown,
         }
       })
 
@@ -743,6 +840,44 @@ export default function LaporanKeuntunganHarianPage() {
       .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
   }, [laporanHarianList, filterToko, filterKategori, filterSatuan, tanggalMulai, tanggalSelesai, search])
 
+  const rankingGrupKategori = useMemo(() => {
+    const map = new Map<string, RankingGrupKategori>()
+    const q = search.toLowerCase().trim()
+
+    for (const laporan of laporanHarianList) {
+      if (filterToko && laporan.tokoId !== filterToko) continue
+      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue
+      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue
+
+      for (const item of laporan.kelompokKategoriBreakdown || []) {
+        const kelompokKey = item.kelompokId || normalizeKategoriKey(item.namaKelompok)
+        if (!kelompokKey) continue
+
+        const current = map.get(kelompokKey) || {
+          kelompokId: kelompokKey,
+          namaKelompok: item.namaKelompok || "Tanpa Kelompok",
+          penghasilanKotor: 0,
+          keuntunganBersih: 0,
+          omzet: 0,
+          qtyTerjual: 0,
+          jumlahTransaksi: 0,
+        }
+
+        const laba = getKelompokLabaKotor(item)
+        current.penghasilanKotor += laba
+        current.keuntunganBersih += laba
+        current.omzet += normalizeNumber(item.omzet || item.totalSetelahDiskon)
+        current.qtyTerjual += normalizeNumber(item.totalQty)
+        current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
+        map.set(kelompokKey, current)
+      }
+    }
+
+    return Array.from(map.values())
+      .filter((item) => !q || item.namaKelompok.toLowerCase().includes(q))
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
+  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai, search])
+
   const rankingSatuanBarang = useMemo(() => {
     const map = new Map<string, RankingSatuanBarang>()
     const q = search.toLowerCase().trim()
@@ -915,6 +1050,39 @@ export default function LaporanKeuntunganHarianPage() {
 
     return Array.from(map.values()).sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
   }, [todayRekapList])
+
+  const todayRankingGrupKategori = useMemo(() => {
+    const map = new Map<string, RankingGrupKategori>()
+
+    for (const laporan of laporanHarianList) {
+      if (laporan.tanggalKey !== todayKey) continue
+
+      for (const item of laporan.kelompokKategoriBreakdown || []) {
+        const kelompokKey = item.kelompokId || normalizeKategoriKey(item.namaKelompok)
+        if (!kelompokKey) continue
+
+        const current = map.get(kelompokKey) || {
+          kelompokId: kelompokKey,
+          namaKelompok: item.namaKelompok || "Tanpa Kelompok",
+          penghasilanKotor: 0,
+          keuntunganBersih: 0,
+          omzet: 0,
+          qtyTerjual: 0,
+          jumlahTransaksi: 0,
+        }
+
+        const laba = getKelompokLabaKotor(item)
+        current.penghasilanKotor += laba
+        current.keuntunganBersih += laba
+        current.omzet += normalizeNumber(item.omzet || item.totalSetelahDiskon)
+        current.qtyTerjual += normalizeNumber(item.totalQty)
+        current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
+        map.set(kelompokKey, current)
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
+  }, [laporanHarianList, todayKey])
 
   const todayRankingKategoriBarang = useMemo(() => {
     const map = new Map<string, RankingKategoriBarang>()
@@ -1247,7 +1415,7 @@ export default function LaporanKeuntunganHarianPage() {
 
         <div className="grid grid-cols-3 gap-2 sm:hidden">
           <MobileActionButton icon={Store} label="Toko" onClick={() => setRankingModal("toko")} />
-          <MobileActionButton icon={Layers3} label="Kategori" onClick={() => setRankingModal("kategori")} />
+          <MobileActionButton icon={Layers3} label="Kategori" onClick={() => { setMobileKategoriTab("grup"); setRankingModal("kategori") }} />
           <MobileActionButton icon={Ruler} label="Satuan" onClick={() => setRankingModal("satuan")} />
         </div>
 
@@ -1403,7 +1571,12 @@ export default function LaporanKeuntunganHarianPage() {
 
           <div className="hidden space-y-4 xl:col-span-5 xl:block">
             <RankingPanel title="Toko Teratas" description="Ranking toko berdasarkan keuntungan bersih" type="toko" rows={rankingToko} />
-            <RankingPanel title="Ranking Kategori Barang" description="Kategori barang yang paling menguntungkan" type="kategori" rows={rankingKategoriBarang} />
+            <RankingKategoriTabbedPanel
+              activeTab={desktopKategoriTab}
+              setActiveTab={setDesktopKategoriTab}
+              rankingGrupKategori={rankingGrupKategori}
+              rankingKategoriBarang={rankingKategoriBarang}
+            />
             <RankingPanel title="Ranking Satuan" description="Satuan yang paling menguntungkan" type="satuan" rows={rankingSatuanBarang} />
           </div>
         </div>
@@ -1412,8 +1585,11 @@ export default function LaporanKeuntunganHarianPage() {
           type={rankingModal}
           onClose={() => setRankingModal(null)}
           rankingToko={todayRankingToko}
+          rankingGrupKategori={todayRankingGrupKategori}
           rankingKategoriBarang={todayRankingKategoriBarang}
           rankingSatuanBarang={todayRankingSatuanBarang}
+          kategoriTab={mobileKategoriTab}
+          setKategoriTab={setMobileKategoriTab}
         />
       </main>
     </div>
@@ -1704,6 +1880,71 @@ function MetricBox({ label, value, className = "" }: { label: string; value: str
   )
 }
 
+function RankingKategoriTabbedPanel({
+  activeTab,
+  setActiveTab,
+  rankingGrupKategori,
+  rankingKategoriBarang,
+}: {
+  activeTab: KategoriRankingTab
+  setActiveTab: (value: KategoriRankingTab) => void
+  rankingGrupKategori: RankingGrupKategori[]
+  rankingKategoriBarang: RankingKategoriBarang[]
+}) {
+  const rows = activeTab === "grup" ? rankingGrupKategori : rankingKategoriBarang
+  const type: RankingItemType = activeTab === "grup" ? "grupKategori" : "kategori"
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-sm font-black text-slate-800 sm:text-base">Ranking Kategori Barang</h2>
+        <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+          Keuntungan berdasarkan grup kategori atau kategori barang
+        </p>
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5">
+        <RankingTabButton active={activeTab === "grup"} label="Grup Kategori" onClick={() => setActiveTab("grup")} />
+        <RankingTabButton active={activeTab === "kategori"} label="Kategori" onClick={() => setActiveTab("kategori")} />
+      </div>
+
+      {rows.length === 0 ? (
+        <EmptyState label="Belum ada data" />
+      ) : (
+        <div className="space-y-3">
+          {rows.slice(0, 8).map((item: any, idx) => (
+            <RankingItem key={`${type}-${idx}-${item.kelompokId || item.kategoriId || idx}`} type={type} item={item} index={idx} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RankingTabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.08em] transition ${
+        active
+          ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+          : "bg-white text-slate-600 hover:bg-slate-50"
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
 function RankingPanel({
   title,
   description,
@@ -1712,7 +1953,7 @@ function RankingPanel({
 }: {
   title: string
   description: string
-  type: "toko" | "kategori" | "satuan"
+  type: RankingItemType
   rows: any[]
 }) {
   return (
@@ -1735,9 +1976,16 @@ function RankingPanel({
   )
 }
 
-function RankingItem({ type, item, index }: { type: "toko" | "kategori" | "satuan"; item: any; index: number }) {
+function RankingItem({ type, item, index }: { type: RankingItemType; item: any; index: number }) {
   const isNegative = Number(item.keuntunganBersih || 0) < 0
-  const title = type === "toko" ? item.tokoNama : type === "kategori" ? item.kategoriNama : item.satuanNama
+  const title =
+    type === "toko"
+      ? item.tokoNama
+      : type === "grupKategori"
+        ? item.namaKelompok
+        : type === "kategori"
+          ? item.kategoriNama
+          : item.satuanNama
   const subtitle =
     type === "toko"
       ? `${formatCompactNumber(item.hariAktif || 0)} hari aktif`
@@ -1780,17 +2028,44 @@ function RankingModal({
   type,
   onClose,
   rankingToko,
+  rankingGrupKategori,
   rankingKategoriBarang,
   rankingSatuanBarang,
+  kategoriTab,
+  setKategoriTab,
 }: {
   type: RankingModalType
   onClose: () => void
   rankingToko: RankingToko[]
+  rankingGrupKategori: RankingGrupKategori[]
   rankingKategoriBarang: RankingKategoriBarang[]
   rankingSatuanBarang: RankingSatuanBarang[]
+  kategoriTab: KategoriRankingTab
+  setKategoriTab: (value: KategoriRankingTab) => void
 }) {
-  const rows = type === "toko" ? rankingToko : type === "kategori" ? rankingKategoriBarang : rankingSatuanBarang
-  const title = type === "toko" ? "Ranking Toko" : type === "kategori" ? "Ranking Kategori" : "Ranking Satuan"
+  const isKategoriModal = type === "kategori"
+  const rows =
+    type === "toko"
+      ? rankingToko
+      : type === "kategori"
+        ? kategoriTab === "grup"
+          ? rankingGrupKategori
+          : rankingKategoriBarang
+        : rankingSatuanBarang
+  const itemType: RankingItemType =
+    type === "toko"
+      ? "toko"
+      : type === "kategori"
+        ? kategoriTab === "grup"
+          ? "grupKategori"
+          : "kategori"
+        : "satuan"
+  const title =
+    type === "toko"
+      ? "Ranking Toko"
+      : type === "kategori"
+        ? "Ranking Kategori"
+        : "Ranking Satuan"
 
   return (
     <AnimatePresence>
@@ -1811,7 +2086,7 @@ function RankingModal({
               <div className="min-w-0">
                 <h3 className="text-base font-black text-slate-900">{title}</h3>
                 <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-Data hari ini
+                  Data hari ini
                 </p>
               </div>
               <button
@@ -1824,12 +2099,19 @@ Data hari ini
             </div>
 
             <div className="max-h-[calc(82vh-78px)] overflow-y-auto p-4">
+              {isKategoriModal ? (
+                <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5">
+                  <RankingTabButton active={kategoriTab === "grup"} label="Grup Kategori" onClick={() => setKategoriTab("grup")} />
+                  <RankingTabButton active={kategoriTab === "kategori"} label="Kategori" onClick={() => setKategoriTab("kategori")} />
+                </div>
+              ) : null}
+
               {rows.length === 0 ? (
                 <EmptyState label="Belum ada data" />
               ) : (
                 <div className="space-y-3">
                   {rows.slice(0, 20).map((item: any, idx: number) => (
-                    <RankingItem key={`${type}-${idx}-${item.tokoId || item.kategoriId || item.satuanId || idx}`} type={type} item={item} index={idx} />
+                    <RankingItem key={`${itemType}-${idx}-${item.tokoId || item.kelompokId || item.kategoriId || item.satuanId || idx}`} type={itemType} item={item} index={idx} />
                   ))}
                 </div>
               )}

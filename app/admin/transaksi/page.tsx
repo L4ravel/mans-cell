@@ -96,6 +96,46 @@ type UserProfile = {
   tokoNama: string;
 };
 
+type TransaksiMasterSaldoDigital = MasterSaldoDigital & {
+  jumlahMinimum?: number;
+  aksesSemuaToko?: boolean;
+  aksesTokoIds?: string[];
+  aksesTokoNama?: string[];
+};
+
+type KelompokLaporanKategori = {
+  id: string;
+  tokoId: string;
+  tokoNama: string;
+  namaKelompok: string;
+  urutan: number;
+  kategoriIds: string[];
+  kategoriNama: string[];
+  aktif: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+type KelompokKategoriBreakdown = {
+  kelompokId: string;
+  namaKelompok: string;
+  urutan: number;
+  tokoId: string;
+  tokoNama: string;
+  kategoriIds: string[];
+  kategoriNama: string[];
+  jumlahTransaksi: number;
+  qtyTerjual: number;
+  omzet: number;
+  subtotal: number;
+  totalDiskon: number;
+  totalSetelahDiskon: number;
+  totalModal: number;
+  totalBiayaAdmin: number;
+  labaBersih: number;
+  totalLabaKotor: number;
+};
+
 type TransaksiBarang = Omit<Barang, "nominalProduk"> & {
   nominalProduk?: string;
   kodeBarcode?: string;
@@ -417,6 +457,158 @@ const isAdminProfile = (profile: UserProfile | null) => {
   );
 };
 
+const normalizeStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+};
+
+const saldoBisaDiaksesToko = (
+  saldo: {
+    aksesSemuaToko?: boolean;
+    aksesTokoIds?: unknown;
+  },
+  tokoId: string,
+) => {
+  const safeTokoId = String(tokoId || "").trim();
+  const aksesTokoIds = normalizeStringArray(saldo?.aksesTokoIds);
+
+  if (saldo?.aksesSemuaToko === false) {
+    return !!safeTokoId && aksesTokoIds.includes(safeTokoId);
+  }
+
+  return true;
+};
+
+const num = (value: unknown) => Number(value || 0);
+
+const getSignTransaksi = (value: unknown) => {
+  const n = Number(value || 0);
+  if (n < 0) return -1;
+  if (n > 0) return 1;
+  return 0;
+};
+
+const buildKelompokKategoriBreakdownTransaksi = (
+  kategoriBreakdown: Array<any>,
+  kelompokList: KelompokLaporanKategori[],
+  tokoId: string,
+  tokoNama: string,
+): KelompokKategoriBreakdown[] => {
+  const safeTokoId = String(tokoId || "").trim();
+  const activeGroups = kelompokList
+    .filter((item) => item.aktif !== false)
+    .filter((item) => !safeTokoId || item.tokoId === safeTokoId)
+    .sort((a, b) => a.urutan - b.urutan);
+
+  const map = new Map<string, KelompokKategoriBreakdown>();
+
+  for (const kategori of kategoriBreakdown) {
+    const kategoriId = String(kategori?.kategoriId || "tanpa-kategori").trim() || "tanpa-kategori";
+    const kategoriNama = String(kategori?.nama || kategori?.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori";
+    const group = activeGroups.find((item) => normalizeStringArray(item.kategoriIds).includes(kategoriId));
+    const key = group?.id || "tanpa-kelompok";
+    const prev = map.get(key);
+    const sign = getSignTransaksi(kategori?.jumlahTransaksi);
+
+    const nextKategoriIds = Array.from(
+      new Set([...(prev?.kategoriIds || []), kategoriId].filter(Boolean)),
+    );
+    const nextKategoriNama = Array.from(
+      new Set([...(prev?.kategoriNama || []), kategoriNama].filter(Boolean)),
+    );
+
+    map.set(key, {
+      kelompokId: group?.id || "tanpa-kelompok",
+      namaKelompok: group?.namaKelompok || "Tanpa Kelompok",
+      urutan: Number(group?.urutan || 9999),
+      tokoId: group?.tokoId || safeTokoId,
+      tokoNama: group?.tokoNama || tokoNama || "Tanpa Toko",
+      kategoriIds: nextKategoriIds,
+      kategoriNama: nextKategoriNama,
+      jumlahTransaksi: prev ? prev.jumlahTransaksi || sign : sign,
+      qtyTerjual: num(prev?.qtyTerjual) + num(kategori?.qtyTerjual),
+      omzet: num(prev?.omzet) + num(kategori?.omzet),
+      subtotal: num(prev?.subtotal) + num(kategori?.subtotal),
+      totalDiskon: num(prev?.totalDiskon) + num(kategori?.totalDiskon),
+      totalSetelahDiskon: num(prev?.totalSetelahDiskon) + num(kategori?.totalSetelahDiskon),
+      totalModal: num(prev?.totalModal) + num(kategori?.totalModal),
+      totalBiayaAdmin: num(prev?.totalBiayaAdmin) + num(kategori?.totalBiayaAdmin),
+      labaBersih: num(prev?.labaBersih) + num(kategori?.labaBersih),
+      totalLabaKotor:
+        num(prev?.totalLabaKotor) +
+        num(kategori?.totalLabaKotor ?? kategori?.labaBersih),
+    });
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.urutan - b.urutan);
+};
+
+const mergeKelompokKategoriBreakdownTransaksi = (
+  existingValue: unknown,
+  tambahValue: KelompokKategoriBreakdown[],
+): KelompokKategoriBreakdown[] => {
+  const map = new Map<string, KelompokKategoriBreakdown>();
+  const existing = Array.isArray(existingValue) ? existingValue : [];
+
+  const apply = (item: any, mode: "set" | "add") => {
+    const key = String(item?.kelompokId || item?.id || item?.namaKelompok || "tanpa-kelompok").trim() || "tanpa-kelompok";
+    const prev = map.get(key);
+    const kategoriIds = Array.from(new Set([...(prev?.kategoriIds || []), ...normalizeStringArray(item?.kategoriIds)]));
+    const kategoriNama = Array.from(new Set([...(prev?.kategoriNama || []), ...normalizeStringArray(item?.kategoriNama)]));
+
+    map.set(key, {
+      kelompokId: key,
+      namaKelompok: String(item?.namaKelompok || prev?.namaKelompok || "Tanpa Kelompok"),
+      urutan: Number(item?.urutan ?? prev?.urutan ?? 9999),
+      tokoId: String(item?.tokoId || prev?.tokoId || ""),
+      tokoNama: String(item?.tokoNama || prev?.tokoNama || ""),
+      kategoriIds,
+      kategoriNama,
+      jumlahTransaksi: mode === "set" ? num(item?.jumlahTransaksi) : num(prev?.jumlahTransaksi) + num(item?.jumlahTransaksi),
+      qtyTerjual: mode === "set" ? num(item?.qtyTerjual) : num(prev?.qtyTerjual) + num(item?.qtyTerjual),
+      omzet: mode === "set" ? num(item?.omzet) : num(prev?.omzet) + num(item?.omzet),
+      subtotal: mode === "set" ? num(item?.subtotal) : num(prev?.subtotal) + num(item?.subtotal),
+      totalDiskon: mode === "set" ? num(item?.totalDiskon) : num(prev?.totalDiskon) + num(item?.totalDiskon),
+      totalSetelahDiskon: mode === "set" ? num(item?.totalSetelahDiskon) : num(prev?.totalSetelahDiskon) + num(item?.totalSetelahDiskon),
+      totalModal: mode === "set" ? num(item?.totalModal) : num(prev?.totalModal) + num(item?.totalModal),
+      totalBiayaAdmin: mode === "set" ? num(item?.totalBiayaAdmin) : num(prev?.totalBiayaAdmin) + num(item?.totalBiayaAdmin),
+      labaBersih: mode === "set" ? num(item?.labaBersih) : num(prev?.labaBersih) + num(item?.labaBersih),
+      totalLabaKotor:
+        mode === "set"
+          ? num(item?.totalLabaKotor ?? item?.labaBersih)
+          : num(prev?.totalLabaKotor) +
+            num(item?.totalLabaKotor ?? item?.labaBersih),
+    });
+  };
+
+  existing.forEach((item) => apply(item, "set"));
+  tambahValue.forEach((item) => apply(item, "add"));
+
+  return Array.from(map.values())
+    .filter((item) => item.kelompokId && (item.qtyTerjual !== 0 || item.omzet !== 0 || item.subtotal !== 0 || item.totalModal !== 0))
+    .sort((a, b) => a.urutan - b.urutan);
+};
+
+const buildLaporanPayloadWithKelompok = ({
+  payload,
+  existingData,
+  kelompokKategoriBreakdownTambah,
+}: {
+  payload: any;
+  existingData: any;
+  kelompokKategoriBreakdownTambah: KelompokKategoriBreakdown[];
+}) => {
+  return {
+    ...payload,
+    kelompokKategoriBreakdown: mergeKelompokKategoriBreakdownTransaksi(
+      existingData?.kelompokKategoriBreakdown,
+      kelompokKategoriBreakdownTambah,
+    ),
+  };
+};
+
 const splitKodeUnikScanValues = (value: unknown) => {
   return String(value || "")
     .split(/[\n\r,;|/]+/g)
@@ -597,7 +789,8 @@ export default function TransaksiPage() {
   const [barangList, setBarangList] = useState<TransaksiBarang[]>([]);
   const [diskonList, setDiskonList] = useState<Diskon[]>([]);
   const [metodeList, setMetodeList] = useState<MetodePembayaran[]>([]);
-  const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([]);
+  const [saldoList, setSaldoList] = useState<TransaksiMasterSaldoDigital[]>([]);
+  const [kelompokLaporanList, setKelompokLaporanList] = useState<KelompokLaporanKategori[]>([]);
   const [pelangganList, setPelangganList] = useState<PelangganTransaksi[]>([]);
   const [currentUserProfile, setCurrentUserProfile] =
     useState<UserProfile | null>(null);
@@ -619,6 +812,7 @@ export default function TransaksiPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [showSaldoModal, setShowSaldoModal] = useState(false);
   type StrukDataWithPelanggan = Omit<StrukData, "items"> & {
     items: Array<any>;
     pelangganId?: string;
@@ -934,15 +1128,19 @@ export default function TransaksiPage() {
     const snap = await getDocs(
       query(collection(db, "master_saldo_digital"), orderBy("namaSaldo")),
     );
-    const list: MasterSaldoDigital[] = snap.docs
+    const list: TransaksiMasterSaldoDigital[] = snap.docs
       .map((d) => {
         const x = d.data() as any;
         return {
           id: d.id,
           namaSaldo: x?.namaSaldo || "",
           jumlahSaldo: Number(x?.jumlahSaldo || 0),
+          jumlahMinimum: Number(x?.jumlahMinimum || 0),
           aktif: x?.aktif !== false,
           keterangan: x?.keterangan || "",
+          aksesSemuaToko: x?.aksesSemuaToko !== false,
+          aksesTokoIds: normalizeStringArray(x?.aksesTokoIds),
+          aksesTokoNama: normalizeStringArray(x?.aksesTokoNama),
           createdAt:
             typeof x?.createdAt?.toMillis === "function"
               ? x.createdAt.toMillis()
@@ -955,6 +1153,40 @@ export default function TransaksiPage() {
       })
       .filter((item) => item.namaSaldo);
     setSaldoList(list);
+  };
+
+  const fetchKelompokLaporanKategori = async () => {
+    const snap = await getDocs(
+      query(collection(db, "kelompok_laporan_kategori"), orderBy("urutan")),
+    );
+
+    const list: KelompokLaporanKategori[] = snap.docs
+      .map((d) => {
+        const x = d.data() as any;
+        return {
+          id: d.id,
+          tokoId: String(x?.tokoId || "").trim(),
+          tokoNama: String(x?.tokoNama || "").trim(),
+          namaKelompok: String(x?.namaKelompok || "").trim(),
+          urutan: Number(x?.urutan || 1),
+          kategoriIds: normalizeStringArray(x?.kategoriIds),
+          kategoriNama: normalizeStringArray(x?.kategoriNama),
+          aktif: x?.aktif !== false,
+          createdAt: Number(x?.createdAt || 0),
+          updatedAt: Number(x?.updatedAt || 0),
+        };
+      })
+      .filter((item) => item.tokoId && item.namaKelompok)
+      .sort((a, b) => {
+        const tokoCompare = a.tokoNama.localeCompare(b.tokoNama, "id-ID", {
+          numeric: true,
+          sensitivity: "base",
+        });
+        if (tokoCompare !== 0) return tokoCompare;
+        return a.urutan - b.urutan;
+      });
+
+    setKelompokLaporanList(list);
   };
 
   const fetchRiwayatTransaksi = async () => {
@@ -1045,6 +1277,7 @@ export default function TransaksiPage() {
         fetchDiskon(),
         fetchMetode(),
         fetchSaldo(),
+        fetchKelompokLaporanKategori(),
         fetchPelanggan(),
         tokoIdAktif ? fetchBarang(tokoIdAktif) : Promise.resolve(setBarangList([])),
       ]);
@@ -1146,6 +1379,24 @@ export default function TransaksiPage() {
 
     return null;
   }, [tokoList, selectedTokoId, isAdminUser, currentUserProfile]);
+
+  const saldoTokoAktif = useMemo(() => {
+    const tokoIdAktif = String(selectedTokoId || currentUserProfile?.tokoId || "").trim();
+
+    return saldoList
+      .filter((item) => item.aktif !== false)
+      .filter((item) => saldoBisaDiaksesToko(item, tokoIdAktif))
+      .sort((a, b) =>
+        String(a.namaSaldo || "").localeCompare(String(b.namaSaldo || ""), "id-ID", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+      );
+  }, [saldoList, selectedTokoId, currentUserProfile?.tokoId]);
+
+  const saldoTokoMap = useMemo(() => {
+    return new Map(saldoTokoAktif.map((item) => [item.id, item]));
+  }, [saldoTokoAktif]);
 
   const selectedMetode = useMemo(
     () => metodeList.find((m) => m.id === selectedMetodeId) || null,
@@ -1263,6 +1514,16 @@ export default function TransaksiPage() {
   const rawCart = activeTab === "fisik" ? cartFisik : cartDigital;
   const setCart = activeTab === "fisik" ? setCartFisik : setCartDigital;
 
+  useEffect(() => {
+    setCartDigital((prev) =>
+      prev.filter((item) => {
+        const saldoSourceId = String(item.saldoSourceId || "").trim();
+        if (!saldoSourceId) return false;
+        return saldoTokoMap.has(saldoSourceId);
+      }),
+    );
+  }, [saldoTokoMap]);
+
   const cart = useMemo(() => {
     const activeDiskon = diskonList.filter(
       (d) => d.isActive && (!selectedTokoId || d.tokoId === selectedTokoId),
@@ -1339,11 +1600,14 @@ export default function TransaksiPage() {
             kodeUnikList.some((kodeUnik) => kodeUnik.includes(qScan))));
 
       if (!sameToko || !sameJenis || !matchSearch) return false;
-      if (activeTab === "digital") return item.aktif !== false;
+      if (activeTab === "digital") {
+        const saldoSourceId = String(item.saldoSourceId || "").trim();
+        return item.aktif !== false && !!saldoSourceId && saldoTokoMap.has(saldoSourceId);
+      }
       if (shouldHideBarangFromSale(item)) return false;
       return true;
     });
-  }, [barangList, selectedTokoId, searchBarang, activeTab]);
+  }, [barangList, selectedTokoId, searchBarang, activeTab, saldoTokoMap]);
 
   const barangBarcodeMap = useMemo(() => {
     const map = new Map<
@@ -1398,6 +1662,14 @@ export default function TransaksiPage() {
     }
 
     const jenisBarang = (barang.jenisBarang || "fisik") as "fisik" | "digital";
+    if (jenisBarang === "digital") {
+      const saldoSourceId = String(barang.saldoSourceId || "").trim();
+      if (!saldoSourceId || !saldoTokoMap.has(saldoSourceId)) {
+        setError("Sumber saldo produk digital ini tidak tersedia untuk toko ini");
+        return { ok: false, reason: "out-of-stock" };
+      }
+    }
+
     if (jenisBarang === "fisik" && barang.stok <= 0) {
       setError("Stok barang habis");
       return { ok: false, reason: "out-of-stock" };
@@ -2409,6 +2681,10 @@ export default function TransaksiPage() {
       const totalJenisBarangSnapshot = totalJenisBarang;
       const catatanSnapshot = catatan.trim();
       const digitalSaldoUsageSnapshot = buildDigitalSaldoUsageTransaksi(cartSnapshot);
+      const kelompokLaporanSnapshot = kelompokLaporanList
+        .filter((item) => item.aktif !== false)
+        .filter((item) => item.tokoId === selectedToko.id)
+        .sort((a, b) => a.urutan - b.urutan);
 
       let savedTransaksiId = "";
       const itemPayload: any[] = [];
@@ -2416,6 +2692,7 @@ export default function TransaksiPage() {
         string,
         LaporanKategoriBreakdown & {
           kategoriId: string;
+          totalLabaKotor?: number;
           satuanIds?: string[];
           satuanNamaList?: string[];
         }
@@ -2488,6 +2765,11 @@ export default function TransaksiPage() {
             const saldoDb = saldoSnap.data() as any;
             const aktif = saldoDb?.aktif !== false;
             const jumlahSaldo = Number(saldoDb?.jumlahSaldo || 0);
+            if (!saldoBisaDiaksesToko(saldoDb, selectedToko.id)) {
+              throw new Error(
+                `Sumber saldo ${usage.saldoSourceNama} tidak bisa dipakai di toko ini`,
+              );
+            }
             if (!aktif) {
               throw new Error(
                 `Sumber saldo ${usage.saldoSourceNama} sedang nonaktif`,
@@ -2711,6 +2993,8 @@ export default function TransaksiPage() {
               Number(prevKategori?.totalBiayaAdmin || 0) + adminKategori,
             labaBersih:
               Number(prevKategori?.labaBersih || 0) + labaBersihKategori,
+            totalLabaKotor:
+              Number(prevKategori?.totalLabaKotor || 0) + labaBersihKategori,
             satuanIds: nextSatuanIds,
             satuanNamaList: nextSatuanNamaList,
           });
@@ -2740,6 +3024,22 @@ export default function TransaksiPage() {
             createdBy: user.uid,
           });
         }
+
+        const kategoriBreakdownTambah = Array.from(
+          kategoriAccumulator.values(),
+        ).map((item) => ({
+          ...item,
+          jumlahTransaksi: 1,
+          satuanIds: item.satuanIds || [],
+          satuanNamaList: item.satuanNamaList || [],
+        }));
+
+        const kelompokKategoriBreakdownTambah = buildKelompokKategoriBreakdownTransaksi(
+          kategoriBreakdownTambah,
+          kelompokLaporanSnapshot,
+          selectedToko.id,
+          selectedToko.nama,
+        );
 
         transaction.set(transaksiRef, {
           id: transaksiRef.id,
@@ -2805,6 +3105,7 @@ export default function TransaksiPage() {
           jenisTransaksi: activeTab,
           digitalSaldoUsage: digitalSaldoUsageSnapshot,
           digitalSaldoRingkasan: buildDigitalSaldoRingkasanTransaksi(cartSnapshot),
+          kelompokKategoriBreakdown: kelompokKategoriBreakdownTambah,
           items: itemPayload,
           kasirUid: kasirProfile.uid,
           kasirNama: kasirProfile.nama,
@@ -2815,15 +3116,6 @@ export default function TransaksiPage() {
           updatedAt: serverTimestamp(),
           updatedAtMs: nowMs,
         });
-
-        const kategoriBreakdownTambah = Array.from(
-          kategoriAccumulator.values(),
-        ).map((item) => ({
-          ...item,
-          jumlahTransaksi: 1,
-          satuanIds: item.satuanIds || [],
-          satuanNamaList: item.satuanNamaList || [],
-        }));
 
         const sharedLaporanArgs = {
           tokoId: selectedToko.id,
@@ -2844,26 +3136,34 @@ export default function TransaksiPage() {
 
         transaction.set(
           laporanHarianRef,
-          buildLaporanPayload({
+          buildLaporanPayloadWithKelompok({
+            payload: buildLaporanPayload({
+              existingData: laporanHarianData,
+              id: laporanHarianRef.id,
+              periodeKey: tanggalKey,
+              tahun,
+              bulan,
+              hari,
+              ...sharedLaporanArgs,
+            }),
             existingData: laporanHarianData,
-            id: laporanHarianRef.id,
-            periodeKey: tanggalKey,
-            tahun,
-            bulan,
-            hari,
-            ...sharedLaporanArgs,
+            kelompokKategoriBreakdownTambah,
           }),
         );
 
         transaction.set(
           laporanBulananRef,
-          buildLaporanPayload({
+          buildLaporanPayloadWithKelompok({
+            payload: buildLaporanPayload({
+              existingData: laporanBulananData,
+              id: laporanBulananRef.id,
+              periodeKey: bulanKey,
+              tahun,
+              bulan,
+              ...sharedLaporanArgs,
+            }),
             existingData: laporanBulananData,
-            id: laporanBulananRef.id,
-            periodeKey: bulanKey,
-            tahun,
-            bulan,
-            ...sharedLaporanArgs,
+            kelompokKategoriBreakdownTambah,
           }),
         );
       });
@@ -3173,6 +3473,7 @@ export default function TransaksiPage() {
           string,
           LaporanKategoriBreakdown & {
             kategoriId: string;
+            totalLabaKotor?: number;
             satuanIds?: string[];
             satuanNamaList?: string[];
           }
@@ -3257,6 +3558,8 @@ export default function TransaksiPage() {
               Number(prevKategori?.totalBiayaAdmin || 0) - adminKategori,
             labaBersih:
               Number(prevKategori?.labaBersih || 0) - labaBersihKategori,
+            totalLabaKotor:
+              Number(prevKategori?.totalLabaKotor || 0) - labaBersihKategori,
             satuanIds: nextSatuanIds,
             satuanNamaList: nextSatuanNamaList,
           });
@@ -3484,6 +3787,13 @@ export default function TransaksiPage() {
           satuanNamaList: item.satuanNamaList || [],
         }));
 
+        const kelompokKategoriBreakdownRetur = buildKelompokKategoriBreakdownTransaksi(
+          kategoriBreakdownRetur,
+          kelompokLaporanList,
+          transaksiData.tokoId || "",
+          transaksiData.tokoNama || "",
+        );
+
         const sharedLaporanArgs = {
           tokoId: transaksiData.tokoId || "",
           tokoNama: transaksiData.tokoNama || "",
@@ -3503,26 +3813,34 @@ export default function TransaksiPage() {
 
         transaction.set(
           laporanHarianRef,
-          buildLaporanPayload({
+          buildLaporanPayloadWithKelompok({
+            payload: buildLaporanPayload({
+              existingData: laporanHarianData,
+              id: laporanHarianRef.id,
+              periodeKey: tanggalKey,
+              tahun,
+              bulan,
+              hari,
+              ...sharedLaporanArgs,
+            }),
             existingData: laporanHarianData,
-            id: laporanHarianRef.id,
-            periodeKey: tanggalKey,
-            tahun,
-            bulan,
-            hari,
-            ...sharedLaporanArgs,
+            kelompokKategoriBreakdownTambah: kelompokKategoriBreakdownRetur,
           }),
         );
 
         transaction.set(
           laporanBulananRef,
-          buildLaporanPayload({
+          buildLaporanPayloadWithKelompok({
+            payload: buildLaporanPayload({
+              existingData: laporanBulananData,
+              id: laporanBulananRef.id,
+              periodeKey: bulanKey,
+              tahun,
+              bulan,
+              ...sharedLaporanArgs,
+            }),
             existingData: laporanBulananData,
-            id: laporanBulananRef.id,
-            periodeKey: bulanKey,
-            tahun,
-            bulan,
-            ...sharedLaporanArgs,
+            kelompokKategoriBreakdownTambah: kelompokKategoriBreakdownRetur,
           }),
         );
 
@@ -3579,6 +3897,10 @@ export default function TransaksiPage() {
           totalModalBersih,
           estimasiLabaKotorBersih,
           totalItemBersih,
+          kelompokKategoriBreakdown: mergeKelompokKategoriBreakdownTransaksi(
+            transaksiData?.kelompokKategoriBreakdown,
+            kelompokKategoriBreakdownRetur,
+          ),
           items: itemsSetelahRetur,
           lastReturId: returRef.id,
           lastReturNomor: nomorRetur,
@@ -3592,6 +3914,7 @@ export default function TransaksiPage() {
       await Promise.all([
         fetchBarang(selectedTokoId),
         fetchSaldo(),
+        fetchKelompokLaporanKategori(),
         fetchRiwayatTransaksi(),
       ]);
 
@@ -4009,6 +4332,14 @@ export default function TransaksiPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <SaldoDigitalModal
+        show={showSaldoModal}
+        loading={loading}
+        saldoList={saldoTokoAktif}
+        selectedToko={selectedToko}
+        onClose={() => setShowSaldoModal(false)}
+      />
+
       <ReturTransaksiModal
         trx={returModal}
         selections={returSelections}
@@ -4137,6 +4468,15 @@ export default function TransaksiPage() {
 >
   Digital ({digitalCount})
 </button>
+              <button
+                type="button"
+                onClick={() => setShowSaldoModal(true)}
+                className="flex h-10 items-center rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-white/15"
+                title="Lihat Saldo Digital"
+              >
+                <Wallet size={14} strokeWidth={2.5} />
+                <span className="ml-2">Lihat Saldo</span>
+              </button>
               <button
                 type="button"
                 onClick={fetchAll}
@@ -4336,7 +4676,7 @@ export default function TransaksiPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <motion.button
                     whileTap={{ scale: 0.97 }}
                     transition={{ duration: 0.12, ease: "easeOut" }}
@@ -4368,6 +4708,17 @@ export default function TransaksiPage() {
                   >
                     <Smartphone size={14} strokeWidth={2.6} />
                     Digital ({digitalCount})
+                  </motion.button>
+
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ duration: 0.12, ease: "easeOut" }}
+                    type="button"
+                    onClick={() => setShowSaldoModal(true)}
+                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2.5 text-[9px] font-black uppercase tracking-[0.05em] text-sky-700 transition hover:bg-sky-100"
+                  >
+                    <Wallet size={13} strokeWidth={2.6} />
+                    Lihat Saldo
                   </motion.button>
                 </div>
 
@@ -5190,6 +5541,7 @@ export default function TransaksiPage() {
                   </div>
                 </div>
               )}
+
 
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -6048,6 +6400,187 @@ function RiwayatTransaksiReturPanel({
         </div>
       )}
     </div>
+  );
+}
+
+
+function SaldoDigitalModal({
+  show,
+  loading,
+  saldoList,
+  selectedToko,
+  onClose,
+}: {
+  show: boolean;
+  loading: boolean;
+  saldoList: TransaksiMasterSaldoDigital[];
+  selectedToko: { nama?: string } | null;
+  onClose: () => void;
+}) {
+  const totalSaldo = saldoList.reduce(
+    (sum, item) => sum + Number(item.jumlahSaldo || 0),
+    0,
+  );
+  const restockCount = saldoList.filter(
+    (item) =>
+      Number(item.jumlahMinimum || 0) > 0 &&
+      Number(item.jumlahSaldo || 0) <= Number(item.jumlahMinimum || 0),
+  ).length;
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="relative overflow-hidden bg-gradient-to-br from-sky-500 via-sky-600 to-blue-500 px-4 py-4 text-white sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+                    <Wallet size={23} strokeWidth={2.6} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-50/80">
+                      Saldo Digital
+                    </p>
+                    <h2 className="mt-1 truncate text-lg font-black leading-tight sm:text-xl">
+                      {selectedToko?.nama || "Toko belum dipilih"}
+                    </h2>
+                    <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85">
+                      Sumber saldo yang bisa dipakai oleh toko ini.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white transition hover:bg-white/25"
+                  title="Tutup"
+                >
+                  <X size={18} strokeWidth={2.7} />
+                </button>
+              </div>
+
+              <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/10 blur-3xl" />
+            </div>
+
+            <div className="border-b border-slate-100 bg-slate-50/80 p-4">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <p className="text-[8px] font-black uppercase tracking-[0.12em] text-slate-400 sm:text-[10px]">
+                    Total Saldo
+                  </p>
+                  <p className="mt-1 truncate text-sm font-black text-slate-800 sm:text-base">
+                    {formatRupiah(totalSaldo)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <p className="text-[8px] font-black uppercase tracking-[0.12em] text-slate-400 sm:text-[10px]">
+                    Sumber
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-800 sm:text-base">
+                    {saldoList.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <p className="text-[8px] font-black uppercase tracking-[0.12em] text-slate-400 sm:text-[10px]">
+                    Restock
+                  </p>
+                  <p className={`mt-1 text-sm font-black sm:text-base ${restockCount > 0 ? "text-rose-600" : "text-slate-800"}`}>
+                    {restockCount}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {loading ? (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-sm font-bold text-slate-500">
+                  <RefreshCw size={16} className="animate-spin" strokeWidth={2.5} />
+                  Memuat saldo...
+                </div>
+              ) : saldoList.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-300 shadow-sm">
+                    <Wallet size={28} strokeWidth={2.2} />
+                  </div>
+                  <p className="mt-3 text-sm font-black text-slate-700">
+                    Belum ada saldo untuk toko ini
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-slate-400">
+                    Cek pengaturan akses toko di Master Saldo.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {saldoList.map((item) => {
+                    const jumlahSaldo = Number(item.jumlahSaldo || 0);
+                    const jumlahMinimum = Number(item.jumlahMinimum || 0);
+                    const perluRestock = jumlahMinimum > 0 && jumlahSaldo <= jumlahMinimum;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-100/70"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-black text-slate-800">
+                                {item.namaSaldo || "Tanpa Nama"}
+                              </p>
+                              <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${perluRestock ? "bg-rose-50 text-rose-700" : "bg-sky-50 text-sky-700"}`}>
+                                {perluRestock ? "Restock" : "Aman"}
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-slate-500">
+                              {item.keterangan || "Tidak ada keterangan."}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <p className={`text-sm font-black sm:text-base ${perluRestock ? "text-rose-600" : "text-slate-800"}`}>
+                              {formatRupiah(jumlahSaldo)}
+                            </p>
+                            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                              Min {formatRupiah(jumlahMinimum)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-10 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-xs font-black uppercase tracking-wide text-white shadow-sm shadow-sky-500/15"
+              >
+                Tutup
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

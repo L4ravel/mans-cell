@@ -1,7 +1,4 @@
-/*
-  Halaman admin master saldo digital.
-  Layout konsisten dengan halaman master data terbaru: tema biru muda, stat card 2 kolom mobile, filter collapse mobile, tabel desktop, card mobile, toast fixed, dan update local state tanpa reload penuh.
-*/
+/* app/admin/tambah-saldo/page.tsx */
 
 "use client"
 
@@ -41,12 +38,22 @@ import {
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
+type TokoOption = {
+  id: string
+  nama: string
+  kode: string
+  aktif: boolean
+}
+
 type MasterSaldoDigital = {
   id: string
   namaSaldo: string
   jumlahSaldo: number
   jumlahMinimum: number
   aktif: boolean
+  aksesSemuaToko: boolean
+  aksesTokoIds: string[]
+  aksesTokoNama: string[]
   keterangan: string
   createdAt?: number
   updatedAt?: number
@@ -57,6 +64,8 @@ type FormState = {
   jumlahSaldo: string
   jumlahMinimum: string
   aktif: boolean
+  aksesSemuaToko: boolean
+  aksesTokoIds: string[]
   keterangan: string
 }
 
@@ -73,6 +82,8 @@ const EMPTY_FORM: FormState = {
   jumlahSaldo: "",
   jumlahMinimum: "",
   aktif: true,
+  aksesSemuaToko: true,
+  aksesTokoIds: [],
   keterangan: "",
 }
 
@@ -97,10 +108,26 @@ function normalizeText(value: unknown) {
   return String(value || "").trim()
 }
 
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+}
+
+function formatAksesToko(item: Pick<MasterSaldoDigital, "aksesSemuaToko" | "aksesTokoNama" | "aksesTokoIds">) {
+  if (item.aksesSemuaToko) return "Semua toko"
+  if (item.aksesTokoNama.length > 0) return item.aksesTokoNama.join(", ")
+  if (item.aksesTokoIds.length > 0) return `${item.aksesTokoIds.length} toko`
+  return "Belum dipilih"
+}
+
 export default function TambahSaldoPage() {
   const router = useRouter()
 
   const [data, setData] = useState<MasterSaldoDigital[]>([])
+  const [tokoList, setTokoList] = useState<TokoOption[]>([])
   const [loading, setLoading] = useState(true)
   const [submitLoading, setSubmitLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
@@ -134,6 +161,32 @@ export default function TambahSaldoPage() {
     setTimeout(() => setErrorMsg(null), 3500)
   }
 
+  const fetchToko = async () => {
+    try {
+      const snap = await getDocs(query(collection(db, "toko"), orderBy("nama")))
+      const list: TokoOption[] = snap.docs
+        .map((item) => {
+          const x = item.data() as any
+
+          return {
+            id: item.id,
+            nama: normalizeText(x?.nama),
+            kode: normalizeText(x?.kode),
+            aktif: x?.aktif !== false,
+          }
+        })
+        .filter((item) => item.nama && item.aktif)
+
+      setTokoList(list)
+      return list
+    } catch (e) {
+      console.error(e)
+      setTokoList([])
+      showError("Gagal memuat data toko")
+      return []
+    }
+  }
+
   const fetchData = async () => {
     setLoading(true)
 
@@ -150,6 +203,9 @@ export default function TambahSaldoPage() {
           jumlahSaldo: Number(x?.jumlahSaldo || 0),
           jumlahMinimum: Number(x?.jumlahMinimum || 0),
           aktif: x?.aktif !== false,
+          aksesSemuaToko: x?.aksesSemuaToko !== false,
+          aksesTokoIds: normalizeStringArray(x?.aksesTokoIds),
+          aksesTokoNama: normalizeStringArray(x?.aksesTokoNama),
           keterangan: normalizeText(x?.keterangan),
           createdAt:
             typeof x?.createdAt?.toMillis === "function"
@@ -172,9 +228,15 @@ export default function TambahSaldoPage() {
     }
   }
 
+  const refreshAll = async () => {
+    setLoading(true)
+    await Promise.all([fetchToko(), fetchData()])
+    setLoading(false)
+  }
+
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
-      if (u) await fetchData()
+      if (u) await refreshAll()
       else setLoading(false)
     })
 
@@ -189,6 +251,7 @@ export default function TambahSaldoPage() {
         !q ||
         item.namaSaldo.toLowerCase().includes(q) ||
         item.keterangan.toLowerCase().includes(q) ||
+        formatAksesToko(item).toLowerCase().includes(q) ||
         String(item.jumlahSaldo || "").includes(q) ||
         String(item.jumlahMinimum || "").includes(q)
 
@@ -244,6 +307,8 @@ export default function TambahSaldoPage() {
       jumlahSaldo: item.jumlahSaldo ? String(item.jumlahSaldo) : "",
       jumlahMinimum: item.jumlahMinimum ? String(item.jumlahMinimum) : "",
       aktif: item.aktif !== false,
+      aksesSemuaToko: item.aksesSemuaToko !== false,
+      aksesTokoIds: item.aksesTokoIds || [],
       keterangan: item.keterangan || "",
     })
     setError(null)
@@ -268,6 +333,7 @@ export default function TambahSaldoPage() {
     if (!form.jumlahMinimum.trim()) return "Jumlah minimum wajib diisi"
     if (Number.isNaN(jumlahSaldo) || jumlahSaldo < 0) return "Jumlah saldo tidak valid"
     if (Number.isNaN(jumlahMinimum) || jumlahMinimum < 0) return "Jumlah minimum tidak valid"
+    if (!form.aksesSemuaToko && form.aksesTokoIds.length === 0) return "Pilih minimal satu toko yang boleh mengakses saldo"
 
     const duplicateNama = data.find((item) => {
       const sameName = item.namaSaldo.trim().toLowerCase() === namaSaldo.toLowerCase()
@@ -297,11 +363,21 @@ export default function TambahSaldoPage() {
 
     try {
       const now = Date.now()
+      const aksesTokoIds = form.aksesSemuaToko ? [] : form.aksesTokoIds
+      const aksesTokoNama = form.aksesSemuaToko
+        ? []
+        : tokoList
+            .filter((toko) => aksesTokoIds.includes(toko.id))
+            .map((toko) => toko.nama)
+
       const payload = {
         namaSaldo: form.namaSaldo.trim(),
         jumlahSaldo: Number(form.jumlahSaldo),
         jumlahMinimum: Number(form.jumlahMinimum),
         aktif: Boolean(form.aktif),
+        aksesSemuaToko: Boolean(form.aksesSemuaToko),
+        aksesTokoIds,
+        aksesTokoNama,
         keterangan: form.keterangan.trim(),
       }
 
@@ -377,7 +453,6 @@ export default function TambahSaldoPage() {
   return (
     <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
       <main className="relative w-full space-y-4 pb-28">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
@@ -395,7 +470,7 @@ export default function TambahSaldoPage() {
                   Master Saldo
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Multi sumber saldo digital, batas minimum, dan status restock.
+                  Multi sumber saldo digital, akses toko, batas minimum, dan status restock.
                 </p>
               </div>
             </div>
@@ -405,7 +480,7 @@ export default function TambahSaldoPage() {
               <HeaderButton icon={Plus} label="Tambah" onClick={openAdd} />
               <button
                 type="button"
-                onClick={fetchData}
+                onClick={refreshAll}
                 disabled={loading}
                 className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:opacity-60"
                 title="Refresh"
@@ -420,8 +495,6 @@ export default function TambahSaldoPage() {
             <Cpu size={150} className="text-white" strokeWidth={1} />
           </div>
         </motion.div>
-
-        {/* Toast */}
         <AnimatePresence>
           {(successMsg || errorMsg) && (
             <motion.div
@@ -443,8 +516,6 @@ export default function TambahSaldoPage() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Stats */}
 <div className="space-y-2 sm:space-y-3">
   <SaldoStatCard
     label="Total Saldo Aktif"
@@ -475,8 +546,6 @@ export default function TambahSaldoPage() {
     />
   </div>
 </div>
-
-        {/* Search & Filter */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -633,6 +702,7 @@ export default function TambahSaldoPage() {
           form={form}
           error={error}
           submitLoading={submitLoading}
+          tokoList={tokoList}
           setForm={setForm}
           closeModal={closeModal}
           handleSubmit={handleSubmit}
@@ -876,6 +946,10 @@ function SaldoSection({
                       <span className="truncate">Minimum: {formatRupiah(item.jumlahMinimum)}</span>
                     </p>
                     <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-relaxed text-slate-600">
+                      <Store size={13} className="mt-0.5 shrink-0 text-slate-400" strokeWidth={2.5} />
+                      <span className="line-clamp-2">Akses: {formatAksesToko(item)}</span>
+                    </p>
+                    <p className="flex min-w-0 items-start gap-2 text-xs font-semibold leading-relaxed text-slate-600">
                       <AlertCircle size={13} className="mt-0.5 shrink-0 text-slate-400" strokeWidth={2.5} />
                       <span className="line-clamp-2">{item.keterangan || "-"}</span>
                     </p>
@@ -926,7 +1000,7 @@ function SaldoSection({
           <table className="w-full text-xs">
             <thead className="border-b border-slate-100 bg-slate-50/70">
               <tr>
-                {["No", "Nama Saldo", "Jumlah", "Minimum", "Status", "Keterangan", "Update", "Aksi"].map((head) => (
+                {["No", "Nama Saldo", "Jumlah", "Minimum", "Status", "Akses Toko", "Keterangan", "Update", "Aksi"].map((head) => (
                   <th
                     key={head}
                     className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
@@ -961,6 +1035,9 @@ function SaldoSection({
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="max-w-[220px] px-3 py-3 font-semibold text-slate-600">
+                      <p className="line-clamp-2">{formatAksesToko(item)}</p>
                     </td>
                     <td className="max-w-[280px] px-3 py-3 font-semibold text-slate-600">
                       <p className="line-clamp-2">{item.keterangan || "-"}</p>
@@ -1054,6 +1131,7 @@ function SaldoFormModal({
   form,
   error,
   submitLoading,
+  tokoList,
   setForm,
   closeModal,
   handleSubmit,
@@ -1063,6 +1141,7 @@ function SaldoFormModal({
   form: FormState
   error: string | null
   submitLoading: boolean
+  tokoList: TokoOption[]
   setForm: React.Dispatch<React.SetStateAction<FormState>>
   closeModal: () => void
   handleSubmit: (e: React.FormEvent) => void
@@ -1164,6 +1243,93 @@ function SaldoFormModal({
                     <p className="mt-1 text-xs font-black text-sky-700">
                       Saldo {formatRupiah(Number(form.jumlahSaldo || 0))} · Minimum {formatRupiah(Number(form.jumlahMinimum || 0))}
                     </p>
+                  </div>
+
+                  <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 sm:col-span-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          Akses Toko
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                          Tentukan toko mana saja yang boleh melihat dan memakai saldo digital ini.
+                        </p>
+                      </div>
+
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-sky-700 shadow-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.aksesSemuaToko}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              aksesSemuaToko: e.target.checked,
+                              aksesTokoIds: e.target.checked ? [] : prev.aksesTokoIds,
+                            }))
+                          }
+                          className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                        />
+                        Semua Toko
+                      </label>
+                    </div>
+
+                    {!form.aksesSemuaToko && (
+                      <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
+                        {tokoList.length === 0 ? (
+                          <p className="px-2 py-3 text-center text-[11px] font-bold text-slate-400">
+                            Data toko belum tersedia.
+                          </p>
+                        ) : (
+                          tokoList.map((toko) => {
+                            const checked = form.aksesTokoIds.includes(toko.id)
+
+                            return (
+                              <label
+                                key={toko.id}
+                                className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2 transition ${
+                                  checked
+                                    ? "border-sky-200 bg-sky-50 text-sky-700"
+                                    : "border-slate-100 bg-white text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate text-xs font-black">{toko.nama}</span>
+                                  <span className="block truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                    {toko.kode || "Tanpa Kode"}
+                                  </span>
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    setForm((prev) => ({
+                                      ...prev,
+                                      aksesTokoIds: e.target.checked
+                                        ? Array.from(new Set([...prev.aksesTokoIds, toko.id]))
+                                        : prev.aksesTokoIds.filter((id) => id !== toko.id),
+                                    }))
+                                  }}
+                                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                />
+                              </label>
+                            )
+                          })
+                        )}
+                      </div>
+                    )}
+
+                    <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                        Preview Akses
+                      </p>
+                      <p className="mt-0.5 text-xs font-black text-sky-700">
+                        {form.aksesSemuaToko
+                          ? "Semua toko dapat melihat saldo ini"
+                          : form.aksesTokoIds.length > 0
+                            ? `${form.aksesTokoIds.length} toko dipilih`
+                            : "Belum ada toko yang dipilih"}
+                      </p>
+                    </div>
                   </div>
 
                   <FieldTextarea

@@ -64,6 +64,26 @@ type KategoriBreakdown = {
   satuanNamaList?: string[]
 }
 
+type KelompokKategoriBreakdown = {
+  kelompokId: string
+  namaKelompok: string
+  urutan: number
+  tokoId: string
+  tokoNama: string
+  kategoriIds: string[]
+  kategoriNama: string[]
+  jumlahTransaksi: number
+  qtyTerjual: number
+  omzet: number
+  subtotal: number
+  totalDiskon: number
+  totalSetelahDiskon: number
+  totalModal: number
+  totalBiayaAdmin: number
+  labaKotor: number
+  labaBersih: number
+}
+
 type LaporanBulanan = {
   id: string
   bulanKey: string
@@ -74,6 +94,7 @@ type LaporanBulanan = {
   omzet: number
   jumlahTransaksi: number
   kategoriBreakdown: KategoriBreakdown[]
+  kelompokKategoriBreakdown: KelompokKategoriBreakdown[]
 }
 
 type Pengeluaran = {
@@ -114,6 +135,21 @@ type RankingKategoriBarang = {
   jumlahTransaksi: number
 }
 
+type RankingGrupKategoriBarang = {
+  kelompokId: string
+  namaKelompok: string
+  tokoId: string
+  tokoNama: string
+  kategoriIds: string[]
+  kategoriNama: string[]
+  penghasilanKotor: number
+  pengeluaran: number
+  keuntunganBersih: number
+  omzet: number
+  qtyTerjual: number
+  jumlahTransaksi: number
+}
+
 type RankingSatuanBarang = {
   satuanId: string
   satuanNama: string
@@ -126,6 +162,7 @@ type RankingSatuanBarang = {
 }
 
 type RankingModalType = "toko" | "kategori" | "satuan" | null
+type RankingKategoriTab = "grup" | "kategori"
 type MobileReportTab = "chart" | "rekap"
 
 function formatRupiah(value: number) {
@@ -179,6 +216,42 @@ function uniqueStringList(values: any[]): string[] {
   }
 
   return Array.from(map.values())
+}
+
+function normalizeNumber(value: unknown) {
+  const n = Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function getFirstFilledNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue
+    const n = normalizeNumber(value)
+    if (n !== 0) return n
+  }
+  return 0
+}
+
+function getKelompokLabaBersih(item: any) {
+  const direct = getFirstFilledNumber(
+    item?.labaBersih,
+    item?.totalLabaKotor,
+    item?.labaKotor,
+    item?.estimasiLabaKotor,
+    item?.keuntungan,
+    item?.untung,
+    item?.laba,
+  )
+
+  if (direct !== 0) return direct
+
+  const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
+  const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
+  const totalBiayaAdmin = normalizeNumber(item?.totalBiayaAdmin ?? item?.biayaAdmin)
+
+  if (totalSetelahDiskon !== 0 && totalModal !== 0) return totalSetelahDiskon - totalModal - totalBiayaAdmin
+
+  return 0
 }
 
 
@@ -539,6 +612,7 @@ export default function LaporanKeuntunganBersihPage() {
   const [bulanSelesai, setBulanSelesai] = useState(toMonthInputValue(new Date()))
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
   const [rankingModal, setRankingModal] = useState<RankingModalType>(null)
+  const [kategoriRankingTab, setKategoriRankingTab] = useState<RankingKategoriTab>("grup")
   const [mobileReportTab, setMobileReportTab] = useState<MobileReportTab>("chart")
 
   const fetchAll = async () => {
@@ -610,6 +684,37 @@ export default function LaporanKeuntunganBersihPage() {
             })
           : []
 
+        const kelompokKategoriBreakdown: KelompokKategoriBreakdown[] = Array.isArray(x?.kelompokKategoriBreakdown)
+          ? x.kelompokKategoriBreakdown.map((item: any) => {
+              const namaKelompok = String(item?.namaKelompok || item?.kelompokNama || item?.nama || "Tanpa Kelompok").trim()
+              const kelompokId = String(item?.kelompokId || item?.id || namaKelompok || "tanpa-kelompok").trim().toLowerCase()
+              const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
+              const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
+              const totalBiayaAdmin = normalizeNumber(item?.totalBiayaAdmin ?? item?.biayaAdmin)
+              const labaBersih = getKelompokLabaBersih(item)
+
+              return {
+                kelompokId: kelompokId || "tanpa-kelompok",
+                namaKelompok: namaKelompok || "Tanpa Kelompok",
+                urutan: normalizeNumber(item?.urutan || 9999),
+                tokoId: String(item?.tokoId || x?.tokoId || ""),
+                tokoNama: String(item?.tokoNama || x?.tokoNama || ""),
+                kategoriIds: uniqueStringList(Array.isArray(item?.kategoriIds) ? item.kategoriIds : []),
+                kategoriNama: uniqueStringList(Array.isArray(item?.kategoriNama) ? item.kategoriNama : []),
+                jumlahTransaksi: normalizeNumber(item?.jumlahTransaksi || item?.transaksi),
+                qtyTerjual: normalizeNumber(item?.qtyTerjual ?? item?.totalQty ?? item?.qty ?? item?.totalItemTerjual),
+                omzet: normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon),
+                subtotal: normalizeNumber(item?.subtotal),
+                totalDiskon: normalizeNumber(item?.totalDiskon),
+                totalSetelahDiskon,
+                totalModal,
+                totalBiayaAdmin,
+                labaKotor: getFirstFilledNumber(item?.labaKotor, item?.totalLabaKotor, totalSetelahDiskon - totalModal),
+                labaBersih,
+              }
+            })
+          : []
+
         return {
           id: d.id,
           bulanKey: String(x?.bulanKey || ""),
@@ -620,6 +725,7 @@ export default function LaporanKeuntunganBersihPage() {
           omzet: Number(x?.omzet || 0),
           jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
           kategoriBreakdown,
+          kelompokKategoriBreakdown,
         }
       })
 
@@ -1033,6 +1139,65 @@ export default function LaporanKeuntunganBersihPage() {
       .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
   }, [laporanBulananList, filterToko, filterKategori, filterSatuan, bulanMulai, bulanSelesai, search])
 
+  const rankingGrupKategoriBarang = useMemo(() => {
+    const map = new Map<string, RankingGrupKategoriBarang>()
+    const q = search.toLowerCase().trim()
+
+    for (const laporan of laporanBulananList) {
+      if (filterToko && laporan.tokoId !== filterToko) continue
+      if (bulanMulai && laporan.bulanKey < bulanMulai) continue
+      if (bulanSelesai && laporan.bulanKey > bulanSelesai) continue
+
+      for (const item of laporan.kelompokKategoriBreakdown || []) {
+        const kelompokKey = String(item.kelompokId || item.namaKelompok || "tanpa-kelompok").trim().toLowerCase() || "tanpa-kelompok"
+        if (!kelompokKey) continue
+
+        if (filterKategori) {
+          const kategoriIds = uniqueStringList(item.kategoriIds || []).map((value) => normalizeKategoriKey(value))
+          const kategoriNames = uniqueStringList(item.kategoriNama || []).map((value) => normalizeKategoriKey(value))
+          if (!kategoriIds.includes(normalizeKategoriKey(filterKategori)) && !kategoriNames.includes(normalizeKategoriKey(filterKategori))) continue
+        }
+
+        const current = map.get(kelompokKey) || {
+          kelompokId: kelompokKey,
+          namaKelompok: item.namaKelompok || "Tanpa Kelompok",
+          tokoId: item.tokoId || laporan.tokoId,
+          tokoNama: item.tokoNama || laporan.tokoNama,
+          kategoriIds: [],
+          kategoriNama: [],
+          penghasilanKotor: 0,
+          pengeluaran: 0,
+          keuntunganBersih: 0,
+          omzet: 0,
+          qtyTerjual: 0,
+          jumlahTransaksi: 0,
+        }
+
+        current.kategoriIds = uniqueStringList([...(current.kategoriIds || []), ...(item.kategoriIds || [])])
+        current.kategoriNama = uniqueStringList([...(current.kategoriNama || []), ...(item.kategoriNama || [])])
+        current.penghasilanKotor += Number(item.labaBersih || item.labaKotor || 0)
+        current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0)
+        current.qtyTerjual += Number(item.qtyTerjual || 0)
+        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
+        map.set(kelompokKey, current)
+      }
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
+      }))
+      .filter((item) => {
+        if (!q) return true
+        return (
+          item.namaKelompok.toLowerCase().includes(q) ||
+          item.kategoriNama.some((nama) => nama.toLowerCase().includes(q))
+        )
+      })
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
+  }, [laporanBulananList, filterToko, filterKategori, bulanMulai, bulanSelesai, search])
+
   const rankingSatuanBarang = useMemo(() => {
     const map = new Map<string, RankingSatuanBarang>()
     const q = search.toLowerCase().trim()
@@ -1256,6 +1421,30 @@ export default function LaporanKeuntunganBersihPage() {
         wb,
         makeExcelTableSheet<any>({
           XLSX,
+          title: "RANKING GRUP KATEGORI",
+          subtitle,
+          columns: [
+            { key: "namaKelompok", label: "Grup Kategori", width: 30 },
+            { key: "tokoNama", label: "Toko", width: 24 },
+            { key: "kategoriText", label: "Kategori Terkait", width: 42 },
+            { key: "penghasilanKotor", label: "Penghasilan Kotor", width: 20, money: true },
+            { key: "keuntunganBersih", label: "Keuntungan Bersih", width: 20, money: true },
+            { key: "omzet", label: "Omzet", width: 18, money: true },
+            { key: "qtyTerjual", label: "Qty Terjual", width: 14, number: true },
+            { key: "jumlahTransaksi", label: "Transaksi", width: 14, number: true },
+          ],
+          rows: rankingGrupKategoriBarang.map((item) => ({
+            ...item,
+            kategoriText: item.kategoriNama.join(", "),
+          })),
+        }),
+        "Ranking Grup"
+      )
+
+      XLSX.utils.book_append_sheet(
+        wb,
+        makeExcelTableSheet<any>({
+          XLSX,
           title: "RANKING KATEGORI BARANG",
           subtitle,
           columns: [
@@ -1388,7 +1577,7 @@ export default function LaporanKeuntunganBersihPage() {
 
         <div className="grid grid-cols-3 gap-2 sm:hidden">
           <MobileActionButton icon={Store} label="Toko" onClick={() => setRankingModal("toko")} />
-          <MobileActionButton icon={Layers3} label="Kategori" onClick={() => setRankingModal("kategori")} />
+          <MobileActionButton icon={Layers3} label="Kategori" onClick={() => { setKategoriRankingTab("grup"); setRankingModal("kategori") }} />
           <MobileActionButton icon={Ruler} label="Satuan" onClick={() => setRankingModal("satuan")} />
         </div>
 
@@ -1541,7 +1730,15 @@ export default function LaporanKeuntunganBersihPage() {
 
           <div className="hidden space-y-4 xl:col-span-5 xl:block">
             <RankingPanel title="Toko Teratas" description="Ranking toko berdasarkan keuntungan bersih" type="toko" rows={rankingToko} />
-            <RankingPanel title="Ranking Kategori Barang" description="Kategori barang yang paling menguntungkan" type="kategori" rows={rankingKategoriBarang} />
+            <RankingPanel
+              title="Ranking Kategori Barang"
+              description="Ranking berdasarkan grup kategori dan kategori barang"
+              type="kategori"
+              rows={rankingKategoriBarang}
+              grupRows={rankingGrupKategoriBarang}
+              kategoriTab={kategoriRankingTab}
+              setKategoriTab={setKategoriRankingTab}
+            />
             <RankingPanel title="Ranking Satuan" description="Satuan yang paling menguntungkan" type="satuan" rows={rankingSatuanBarang} />
           </div>
         </div>
@@ -1551,7 +1748,10 @@ export default function LaporanKeuntunganBersihPage() {
           onClose={() => setRankingModal(null)}
           rankingToko={rankingToko}
           rankingKategoriBarang={rankingKategoriBarang}
+          rankingGrupKategoriBarang={rankingGrupKategoriBarang}
           rankingSatuanBarang={rankingSatuanBarang}
+          kategoriTab={kategoriRankingTab}
+          setKategoriTab={setKategoriRankingTab}
         />
       </main>
     </div>
@@ -1884,37 +2084,83 @@ function RankingPanel({
   description,
   type,
   rows,
+  grupRows = [],
+  kategoriTab = "grup",
+  setKategoriTab,
 }: {
   title: string
   description: string
   type: "toko" | "kategori" | "satuan"
   rows: any[]
+  grupRows?: any[]
+  kategoriTab?: RankingKategoriTab
+  setKategoriTab?: (value: RankingKategoriTab) => void
 }) {
+  const activeRows = type === "kategori" && kategoriTab === "grup" ? grupRows : rows
+  const listType = type === "kategori" && kategoriTab === "grup" ? "grupKategori" : type
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
         <h2 className="text-sm font-black text-slate-800 sm:text-base">{title}</h2>
         <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{description}</p>
       </div>
-      <RankingList type={type} rows={rows} />
+      {type === "kategori" && setKategoriTab ? (
+        <RankingKategoriTabs active={kategoriTab} onChange={setKategoriTab} />
+      ) : null}
+      <RankingList type={listType as "toko" | "kategori" | "satuan" | "grupKategori"} rows={activeRows} />
     </div>
   )
 }
 
-function RankingList({ type, rows }: { type: "toko" | "kategori" | "satuan"; rows: any[] }) {
-  if (rows.length === 0) return <EmptyState label={type === "satuan" ? "Belum ada data satuan" : "Belum ada data"} />
+function RankingKategoriTabs({ active, onChange }: { active: RankingKategoriTab; onChange: (value: RankingKategoriTab) => void }) {
+  return (
+    <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5">
+      <button
+        type="button"
+        onClick={() => onChange("grup")}
+        className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-[0.08em] transition ${
+          active === "grup"
+            ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+            : "bg-white text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        Grup Kategori
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("kategori")}
+        className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-[0.08em] transition ${
+          active === "kategori"
+            ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-sm shadow-sky-500/15"
+            : "bg-white text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        Kategori
+      </button>
+    </div>
+  )
+}
+
+function RankingList({ type, rows }: { type: "toko" | "kategori" | "satuan" | "grupKategori"; rows: any[] }) {
+  if (rows.length === 0) {
+    const label = type === "satuan" ? "Belum ada data satuan" : type === "grupKategori" ? "Belum ada data grup kategori" : "Belum ada data"
+    return <EmptyState label={label} />
+  }
 
   return (
     <div className="space-y-3">
       {rows.slice(0, 8).map((item, idx) => {
         const isNegative = Number(item.keuntunganBersih || 0) < 0
-        const name = type === "toko" ? item.tokoNama : type === "kategori" ? item.kategoriNama : item.satuanNama
+        const name = type === "toko" ? item.tokoNama : type === "kategori" ? item.kategoriNama : type === "grupKategori" ? item.namaKelompok : item.satuanNama
         const subtitle =
           type === "toko"
             ? `${item.bulanAktif || 0} bulan aktif`
-            : type === "kategori"
+            : type === "grupKategori"
               ? `${item.qtyTerjual || 0} item • ${item.jumlahTransaksi || 0} transaksi`
-              : `${item.qtyTerjual || 0} item • ${item.jumlahTransaksi || 0} transaksi`
+              : type === "kategori"
+                ? `${item.qtyTerjual || 0} item • ${item.jumlahTransaksi || 0} transaksi`
+                : `${item.qtyTerjual || 0} item • ${item.jumlahTransaksi || 0} transaksi`
 
         return (
           <div key={`${type}-${name}-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
@@ -1956,16 +2202,23 @@ function RankingModal({
   onClose,
   rankingToko,
   rankingKategoriBarang,
+  rankingGrupKategoriBarang,
   rankingSatuanBarang,
+  kategoriTab,
+  setKategoriTab,
 }: {
   type: RankingModalType
   onClose: () => void
   rankingToko: any[]
   rankingKategoriBarang: any[]
+  rankingGrupKategoriBarang: any[]
   rankingSatuanBarang: any[]
+  kategoriTab: RankingKategoriTab
+  setKategoriTab: (value: RankingKategoriTab) => void
 }) {
   const title = type === "toko" ? "Toko Teratas" : type === "kategori" ? "Ranking Kategori" : "Ranking Satuan"
-  const rows = type === "toko" ? rankingToko : type === "kategori" ? rankingKategoriBarang : rankingSatuanBarang
+  const rows = type === "toko" ? rankingToko : type === "kategori" ? (kategoriTab === "grup" ? rankingGrupKategoriBarang : rankingKategoriBarang) : rankingSatuanBarang
+  const listType = type === "kategori" && kategoriTab === "grup" ? "grupKategori" : type
 
   return (
     <AnimatePresence>
@@ -2000,7 +2253,8 @@ function RankingModal({
               </button>
             </div>
             <div className="max-h-[calc(84vh-58px)] overflow-y-auto p-4">
-              <RankingList type={type} rows={rows} />
+              {type === "kategori" ? <RankingKategoriTabs active={kategoriTab} onChange={setKategoriTab} /> : null}
+              <RankingList type={listType as "toko" | "kategori" | "satuan" | "grupKategori"} rows={rows} />
             </div>
           </motion.div>
         </motion.div>
