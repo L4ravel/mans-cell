@@ -16,6 +16,7 @@
   - tombol Akun Karyawan tidak tampil jika akun memiliki role owner
   - logo brand sidebar/header mengambil dari public/logo-icon.png dengan tag img agar stabil di mobile
   - fallback auth/route checking dibuat putih penuh agar tidak muncul blank hitam
+  - tambah menu Daftar Hutang di grup Transaksi Kasir
 */
 
 "use client"
@@ -230,6 +231,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: "/admin/tambah-diskon", icon: Percent, label: "Tambah Diskon" },
           { href: "/admin/tambah-metode-pembayaran", icon: Wallet, label: "Metode Pembayaran" },
           { href: "/admin/riwayat-transaksi", icon: Receipt, label: "Riwayat Transaksi" },
+          { href: "/admin/hutang", icon: Wallet, label: "Daftar Hutang" },
           { href: "/admin/laporan-harian", icon: BarChart3, label: "Laporan Harian Kasir" },
           { href: "/admin/laporan-bulanan", icon: BarChart3, label: "Laporan Bulanan Kasir" },
         ],
@@ -413,6 +415,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       currentPath.startsWith("/admin/tambah-diskon") ||
       currentPath.startsWith("/admin/tambah-metode-pembayaran") ||
       currentPath.startsWith("/admin/riwayat-transaksi") ||
+      currentPath.startsWith("/admin/hutang") ||
       currentPath.startsWith("/admin/laporan-harian") ||
       currentPath.startsWith("/admin/laporan-bulanan")
     ) {
@@ -599,6 +602,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     if (href === "/admin/dashboard-absensi") return pathname === "/admin/dashboard-absensi"
     if (href === "/admin/transaksi") return pathname === "/admin/transaksi"
+    if (href === "/admin/hutang") return pathname === "/admin/hutang"
 
     return pathname === href
   }

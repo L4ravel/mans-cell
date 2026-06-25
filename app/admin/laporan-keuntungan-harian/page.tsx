@@ -282,6 +282,41 @@ function getFirstFilledNumber(...values: unknown[]) {
   return 0
 }
 
+function hasNumberValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return false
+  return Number.isFinite(Number(value))
+}
+
+function getBersihNumber({
+  bersih,
+  lama,
+  retur,
+  fallback = 0,
+}: {
+  bersih?: unknown[]
+  lama?: unknown[]
+  retur?: unknown[]
+  fallback?: number
+}) {
+  const bersihList = bersih || []
+  for (const value of bersihList) {
+    if (hasNumberValue(value)) return Math.max(0, normalizeNumber(value))
+  }
+
+  const nilaiLama = getFirstFilledNumber(...(lama || []))
+  const nilaiRetur = getFirstFilledNumber(...(retur || []))
+
+  if (nilaiRetur > 0) return Math.max(0, nilaiLama - nilaiRetur)
+  if (nilaiLama > 0) return Math.max(0, nilaiLama)
+
+  return Math.max(0, fallback)
+}
+
+function getSafeRatio(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(1, value))
+}
+
 function getKelompokLabaKotor(item: any) {
   const directValue = getFirstFilledNumber(
     item?.totalLabaKotor,
@@ -308,25 +343,523 @@ function normalizeKelompokBreakdown(value: unknown): KelompokKategoriBreakdown[]
   if (!Array.isArray(value)) return []
 
   return value
-    .map((item: any) => ({
-      kelompokId: String(item?.kelompokId || item?.id || item?.groupId || "tanpa-kelompok").trim() || "tanpa-kelompok",
-      namaKelompok: String(item?.namaKelompok || item?.kelompokNama || item?.nama || "Tanpa Kelompok").trim() || "Tanpa Kelompok",
-      urutan: normalizeNumber(item?.urutan || 9999),
-      tokoId: String(item?.tokoId || "").trim(),
-      tokoNama: String(item?.tokoNama || "").trim(),
-      kategoriIds: uniqueStringList(Array.isArray(item?.kategoriIds) ? item.kategoriIds : []),
-      kategoriNama: uniqueStringList(Array.isArray(item?.kategoriNama) ? item.kategoriNama : []),
-      jumlahTransaksi: normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi),
-      totalQty: normalizeNumber(item?.totalQty ?? item?.qtyTerjual ?? item?.qty ?? item?.totalItemTerjual),
-      omzet: normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon),
-      subtotal: normalizeNumber(item?.subtotal),
-      totalDiskon: normalizeNumber(item?.totalDiskon),
-      totalSetelahDiskon: normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet),
-      totalModal: normalizeNumber(item?.totalModal ?? item?.modal),
-      totalBiayaAdmin: normalizeNumber(item?.totalBiayaAdmin ?? item?.biayaAdmin),
-      totalLabaKotor: getKelompokLabaKotor(item),
-    }))
+    .map((item: any) => {
+      const omzet = normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon)
+      const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
+      const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
+      const jumlahTransaksi = omzet > 0 || totalSetelahDiskon > 0 || totalModal > 0
+        ? normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi)
+        : 0
+
+      return {
+        kelompokId: String(item?.kelompokId || item?.id || item?.groupId || "tanpa-kelompok").trim() || "tanpa-kelompok",
+        namaKelompok: String(item?.namaKelompok || item?.kelompokNama || item?.nama || "Tanpa Kelompok").trim() || "Tanpa Kelompok",
+        urutan: normalizeNumber(item?.urutan || 9999),
+        tokoId: String(item?.tokoId || "").trim(),
+        tokoNama: String(item?.tokoNama || "").trim(),
+        kategoriIds: uniqueStringList(Array.isArray(item?.kategoriIds) ? item.kategoriIds : []),
+        kategoriNama: uniqueStringList(Array.isArray(item?.kategoriNama) ? item.kategoriNama : []),
+        jumlahTransaksi,
+        totalQty: normalizeNumber(item?.totalQty ?? item?.qtyTerjual ?? item?.qty ?? item?.totalItemTerjual),
+        omzet,
+        subtotal: normalizeNumber(item?.subtotal),
+        totalDiskon: normalizeNumber(item?.totalDiskon),
+        totalSetelahDiskon,
+        totalModal,
+        totalBiayaAdmin: normalizeNumber(item?.totalBiayaAdmin ?? item?.biayaAdmin),
+        totalLabaKotor: getKelompokLabaKotor(item),
+      }
+    })
     .filter((item) => item.namaKelompok)
+}
+
+
+function getMillisFromUnknown(value: any) {
+  if (!value) return 0
+  if (typeof value === "number") return value
+  if (typeof value?.toMillis === "function") return Number(value.toMillis() || 0)
+  if (typeof value?.seconds === "number") return Number(value.seconds * 1000)
+  return 0
+}
+
+function getTransaksiTanggalKey(raw: any) {
+  const direct = String(raw?.tanggalKey || "").trim()
+  if (direct) return direct
+
+  const createdAtMs = getFirstFilledNumber(raw?.createdAtMs, getMillisFromUnknown(raw?.createdAt), getMillisFromUnknown(raw?.tanggal))
+  if (createdAtMs > 0) return toDateInputValue(new Date(createdAtMs))
+
+  return getTanggalKeyFromUnknown(raw)
+}
+
+function getTransaksiUpdatedAtMs(raw: any) {
+  return getFirstFilledNumber(raw?.updatedAtMs, getMillisFromUnknown(raw?.updatedAt), raw?.createdAtMs, getMillisFromUnknown(raw?.createdAt), getMillisFromUnknown(raw?.tanggal))
+}
+
+function getPembayaranItemsNominal(value: unknown) {
+  if (!Array.isArray(value)) return 0
+  return value.reduce((acc, item: any) => {
+    const nominal = getFirstFilledNumber(item?.nominal, item?.totalDenganAdmin, item?.jumlah, item?.amount)
+    return acc + Math.max(0, nominal)
+  }, 0)
+}
+
+function getTransaksiBiayaAdmin(raw: any) {
+  return getBersihNumber({
+    bersih: [raw?.biayaAdminBersih, raw?.adminBersih],
+    lama: [raw?.biayaAdminNominal, raw?.totalBiayaAdmin, raw?.admin],
+    retur: [raw?.totalReturBiayaAdmin, raw?.returBiayaAdmin],
+  })
+}
+
+function getTransaksiSubtotalItems(raw: any) {
+  const items = Array.isArray(raw?.items) ? raw.items : []
+  return items.reduce((acc: number, item: any) => {
+    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
+    const hargaAsli = getFirstFilledNumber(item?.hargaAsli, item?.hargaNormal, item?.hargaJual, item?.harga)
+    return acc + hargaAsli * qty
+  }, 0)
+}
+
+function getTransaksiTotalSetelahDiskonItems(raw: any) {
+  const items = Array.isArray(raw?.items) ? raw.items : []
+  return items.reduce((acc: number, item: any) => {
+    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
+    const hargaSetelahDiskon = getFirstFilledNumber(item?.hargaSetelahDiskon, item?.hargaJual, item?.hargaAsli, item?.harga)
+    return acc + hargaSetelahDiskon * qty
+  }, 0)
+}
+
+function getTransaksiModalItems(raw: any) {
+  const items = Array.isArray(raw?.items) ? raw.items : []
+  return items.reduce((acc: number, item: any) => {
+    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
+    const modal = getFirstFilledNumber(item?.hargaModal, item?.modal, item?.hargaBeli)
+    return acc + modal * qty
+  }, 0)
+}
+
+function getTransaksiGrandTotalValid(raw: any) {
+  const totalBarang = getTransaksiTotalBarangValid(raw)
+  const admin = getTransaksiBiayaAdmin(raw)
+
+  const explicit = getBersihNumber({
+    bersih: [raw?.grandTotalBersih, raw?.totalBayarBersih, raw?.totalBersih],
+    lama: [raw?.grandTotal, raw?.totalBayar, raw?.total],
+    retur: [
+      raw?.totalReturNominal,
+      raw?.totalReturGrandTotal,
+      raw?.returNominal,
+      getFirstFilledNumber(raw?.totalReturSetelahDiskon) + getFirstFilledNumber(raw?.totalReturBiayaAdmin),
+    ],
+    fallback: totalBarang + admin,
+  })
+
+  return Math.max(0, explicit)
+}
+
+function getTransaksiTotalDibayarValid(raw: any) {
+  const grandTotal = getTransaksiGrandTotalValid(raw)
+  const isHutang = Boolean(raw?.isHutang) || normalizeNumber(raw?.sisaHutang) > 0 || normalizeNumber(raw?.totalHutang) > 0 || normalizeNumber(raw?.kurangBayar) > 0
+
+  if (!isHutang) return grandTotal
+
+  const explicitPaid = getFirstFilledNumber(raw?.totalDibayar, raw?.totalTerbayar, raw?.dibayar)
+  if (explicitPaid > 0) return Math.min(grandTotal, explicitPaid)
+
+  const splitPaid = getPembayaranItemsNominal(raw?.pembayaranItems)
+  if (splitPaid > 0) return Math.min(grandTotal, splitPaid)
+
+  const sisaHutang = getFirstFilledNumber(raw?.sisaHutang, raw?.totalHutang, raw?.kurangBayar)
+  if (sisaHutang > 0) return Math.max(0, Math.min(grandTotal, grandTotal - sisaHutang))
+
+  const uangBayar = normalizeNumber(raw?.uangBayar)
+  const kembalian = normalizeNumber(raw?.kembalian)
+  if (uangBayar > 0) return Math.max(0, Math.min(grandTotal, uangBayar - Math.max(0, kembalian)))
+
+  return 0
+}
+
+function getTransaksiSisaHutangValid(raw: any, totalDibayar: number) {
+  if (hasNumberValue(raw?.sisaHutang)) return Math.max(0, normalizeNumber(raw?.sisaHutang))
+  if (getTransaksiGrandTotalValid(raw) <= 0) return 0
+
+  const direct = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar)
+  if (direct > 0) return Math.max(0, Math.min(getTransaksiGrandTotalValid(raw), direct))
+  if (Boolean(raw?.isHutang)) return Math.max(0, getTransaksiGrandTotalValid(raw) - totalDibayar)
+  return 0
+}
+
+function getTransaksiAdminDibayarValid(raw: any, totalDibayar: number) {
+  const grandTotal = getTransaksiGrandTotalValid(raw)
+  const totalAdmin = getTransaksiBiayaAdmin(raw)
+  if (grandTotal <= 0 || totalAdmin <= 0) return 0
+  return Math.max(0, Math.min(totalAdmin, totalAdmin * (totalDibayar / grandTotal)))
+}
+
+function getTransaksiTotalBarangValid(raw: any) {
+  return getBersihNumber({
+    bersih: [raw?.totalSetelahDiskonBersih, raw?.omzetBersih, raw?.totalBarangBersih],
+    lama: [raw?.totalSetelahDiskon, raw?.omzet, getTransaksiTotalSetelahDiskonItems(raw)],
+    retur: [raw?.totalReturSetelahDiskon, raw?.totalReturBarang, raw?.returSetelahDiskon],
+  })
+}
+
+function getTransaksiSubtotalValid(raw: any) {
+  return getBersihNumber({
+    bersih: [raw?.subtotalBersih],
+    lama: [raw?.subtotal, getTransaksiSubtotalItems(raw), getTransaksiTotalBarangValid(raw)],
+    retur: [raw?.totalReturSubtotal, raw?.returSubtotal],
+    fallback: getTransaksiTotalBarangValid(raw),
+  })
+}
+
+function getTransaksiModalValid(raw: any) {
+  return getBersihNumber({
+    bersih: [raw?.totalModalBersih, raw?.modalBersih],
+    lama: [raw?.totalModal, raw?.modal, getTransaksiModalItems(raw)],
+    retur: [raw?.totalReturModal, raw?.returModal],
+  })
+}
+
+function getTransaksiTotalItemValid(raw: any) {
+  return getBersihNumber({
+    bersih: [raw?.totalItemBersih],
+    lama: [
+      raw?.totalItem,
+      raw?.totalItemTerjual,
+      Array.isArray(raw?.items)
+        ? raw.items.reduce((acc: number, item: any) => acc + Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1)), 0)
+        : 0,
+    ],
+    retur: [raw?.totalReturQty, raw?.returQty],
+  })
+}
+
+function getTransaksiModalRatio(raw: any) {
+  const modalLama = Math.max(0, getFirstFilledNumber(raw?.totalModal, raw?.modal, getTransaksiModalItems(raw)))
+  const modalBersih = getTransaksiModalValid(raw)
+  if (modalLama <= 0) return modalBersih > 0 ? 1 : 0
+  return getSafeRatio(modalBersih / modalLama)
+}
+
+function getTransaksiQtyRatio(raw: any) {
+  const qtyLama = Math.max(
+    0,
+    getFirstFilledNumber(
+      raw?.totalItem,
+      raw?.totalItemTerjual,
+      Array.isArray(raw?.items)
+        ? raw.items.reduce((acc: number, item: any) => acc + Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1)), 0)
+        : 0,
+    ),
+  )
+  const qtyBersih = getTransaksiTotalItemValid(raw)
+  if (qtyLama <= 0) return qtyBersih > 0 ? 1 : 0
+  return getSafeRatio(qtyBersih / qtyLama)
+}
+
+function getTransaksiDiskonValid(raw: any) {
+  const subtotal = getTransaksiSubtotalValid(raw)
+  const totalBarang = getTransaksiTotalBarangValid(raw)
+
+  return getBersihNumber({
+    bersih: [raw?.totalDiskonBersih],
+    lama: [raw?.totalDiskon, Math.max(0, subtotal - totalBarang)],
+    retur: [raw?.totalReturDiskon, raw?.returDiskon],
+    fallback: Math.max(0, subtotal - totalBarang),
+  })
+}
+
+function getPaidNetBarangRatio(raw: any, totalDibayar: number, adminDibayar: number) {
+  const totalBarang = getTransaksiTotalBarangValid(raw)
+  if (totalBarang <= 0) return 1
+  return Math.max(0, Math.min(1, Math.max(0, totalDibayar - adminDibayar) / totalBarang))
+}
+
+function normalizeTransaksiItem(item: any) {
+  const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
+  const hargaAsli = getFirstFilledNumber(item?.hargaAsli, item?.hargaNormal, item?.hargaJual, item?.harga)
+  const hargaSetelahDiskon = getFirstFilledNumber(item?.hargaSetelahDiskon, item?.hargaJual, item?.hargaAsli, item?.harga)
+  const hargaModal = getFirstFilledNumber(item?.hargaModal, item?.modal, item?.hargaBeli)
+  const kategoriNama = String(item?.kategoriNama || item?.kategori || item?.namaKategori || "Tanpa Kategori").trim() || "Tanpa Kategori"
+  const kategoriId = String(item?.kategoriId || item?.kategoriID || kategoriNama).trim().toLowerCase() || "tanpa-kategori"
+  const satuanNama = String(item?.satuanNama || item?.satuan || item?.unit || "Tanpa Satuan").trim() || "Tanpa Satuan"
+  const satuanId = String(item?.satuanId || item?.satuanID || satuanNama).trim().toLowerCase() || "tanpa-satuan"
+  const namaBarang = String(item?.nama || item?.namaBarang || item?.barangNama || item?.produkNama || item?.productName || "").trim()
+
+  return {
+    qty,
+    hargaAsli,
+    hargaSetelahDiskon,
+    hargaModal,
+    kategoriId,
+    kategoriNama,
+    satuanId,
+    satuanNama,
+    namaBarang,
+    subtotal: hargaAsli * qty,
+    totalSetelahDiskon: hargaSetelahDiskon * qty,
+    totalModal: hargaModal * qty,
+  }
+}
+
+function buildKategoriBreakdownFromTransaksi(raw: any, paidNetRatio: number, modalRatio = 1, qtyRatio = 1): KategoriBreakdown[] {
+  const existing = Array.isArray(raw?.kategoriBreakdown) ? raw.kategoriBreakdown : []
+  if (existing.length > 0) {
+    return existing
+      .map((item: any) => {
+        const kategoriNama = String(item?.nama || item?.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori"
+        const kategoriId = String(item?.kategoriId || kategoriNama).trim().toLowerCase() || "tanpa-kategori"
+        const nilaiJual = getFirstFilledNumber(item?.totalSetelahDiskon, item?.omzet, item?.subtotal)
+        const pendapatanDiterima = Math.max(0, nilaiJual * paidNetRatio)
+        const totalModal = Math.max(0, normalizeNumber(item?.totalModal ?? item?.modal) * modalRatio)
+        const labaValid = pendapatanDiterima - totalModal
+
+        return {
+          kategoriId,
+          kategoriNama,
+          jumlahTransaksi: normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi),
+          qtyTerjual: normalizeNumber(item?.qtyTerjual ?? item?.totalQty ?? item?.qty) * qtyRatio,
+          omzet: pendapatanDiterima,
+          subtotal: normalizeNumber(item?.subtotal),
+          totalDiskon: normalizeNumber(item?.totalDiskon),
+          totalSetelahDiskon: pendapatanDiterima,
+          totalModal,
+          totalBiayaAdmin: 0,
+          labaKotor: labaValid,
+          labaBersih: labaValid,
+          satuanIds: uniqueStringList(Array.isArray(item?.satuanIds) ? item.satuanIds : []),
+          satuanNamaList: uniqueStringList(Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : []),
+          namaBarangList: uniqueStringList([
+            ...(Array.isArray(item?.namaBarangList) ? item.namaBarangList : []),
+            ...(Array.isArray(item?.barangNamaList) ? item.barangNamaList : []),
+            ...(Array.isArray(item?.produkNamaList) ? item.produkNamaList : []),
+          ]),
+        }
+      })
+      .filter((item: KategoriBreakdown) => item.kategoriNama)
+  }
+
+  const items = Array.isArray(raw?.items) ? raw.items : []
+  const map = new Map<string, KategoriBreakdown>()
+
+  for (const item of items) {
+    const row = normalizeTransaksiItem(item)
+    const pendapatanDiterima = row.totalSetelahDiskon * paidNetRatio
+    const totalDiskon = Math.max(0, row.subtotal - row.totalSetelahDiskon)
+    const current = map.get(row.kategoriId) || {
+      kategoriId: row.kategoriId,
+      kategoriNama: row.kategoriNama,
+      jumlahTransaksi: 0,
+      qtyTerjual: 0,
+      omzet: 0,
+      subtotal: 0,
+      totalDiskon: 0,
+      totalSetelahDiskon: 0,
+      totalModal: 0,
+      totalBiayaAdmin: 0,
+      labaKotor: 0,
+      labaBersih: 0,
+      satuanIds: [],
+      satuanNamaList: [],
+      namaBarangList: [],
+    }
+
+    current.jumlahTransaksi = pendapatanDiterima > 0 || row.totalModal * modalRatio > 0 ? 1 : 0
+    current.qtyTerjual += row.qty * qtyRatio
+    current.omzet += pendapatanDiterima
+    current.subtotal += row.subtotal
+    current.totalDiskon += totalDiskon
+    current.totalSetelahDiskon += pendapatanDiterima
+    current.totalModal += row.totalModal * modalRatio
+    current.labaKotor += pendapatanDiterima - row.totalModal * modalRatio
+    current.labaBersih += pendapatanDiterima - row.totalModal * modalRatio
+    current.satuanIds = uniqueStringList([...(current.satuanIds || []), row.satuanId])
+    current.satuanNamaList = uniqueStringList([...(current.satuanNamaList || []), row.satuanNama])
+    current.namaBarangList = uniqueStringList([...(current.namaBarangList || []), row.namaBarang].filter(Boolean))
+    map.set(row.kategoriId, current)
+  }
+
+  return Array.from(map.values())
+}
+
+function buildKelompokBreakdownFromTransaksi(raw: any, paidNetRatio: number, modalRatio = 1, qtyRatio = 1): KelompokKategoriBreakdown[] {
+  const kelompokData = normalizeKelompokBreakdown(raw?.kelompokKategoriBreakdown)
+
+  return kelompokData.map((item) => {
+    const nilaiJual = getFirstFilledNumber(item.totalSetelahDiskon, item.omzet, item.subtotal)
+    const pendapatanDiterima = Math.max(0, nilaiJual * paidNetRatio)
+    const totalModal = normalizeNumber(item.totalModal) * modalRatio
+    const labaValid = pendapatanDiterima - totalModal
+
+    return {
+      ...item,
+      omzet: pendapatanDiterima,
+      totalQty: normalizeNumber(item.totalQty) * qtyRatio,
+      jumlahTransaksi: pendapatanDiterima > 0 || totalModal > 0 ? normalizeNumber(item.jumlahTransaksi) : 0,
+      totalSetelahDiskon: pendapatanDiterima,
+      totalModal,
+      totalBiayaAdmin: 0,
+      totalLabaKotor: labaValid,
+    }
+  })
+}
+
+function mergeKategoriBreakdown(target: KategoriBreakdown[], tambah: KategoriBreakdown[]) {
+  const map = new Map<string, KategoriBreakdown>()
+
+  for (const item of target) {
+    map.set(item.kategoriId || normalizeKategoriKey(item.kategoriNama), { ...item })
+  }
+
+  for (const item of tambah) {
+    const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
+    const current = map.get(key) || {
+      kategoriId: key,
+      kategoriNama: item.kategoriNama || "Tanpa Kategori",
+      jumlahTransaksi: 0,
+      qtyTerjual: 0,
+      omzet: 0,
+      subtotal: 0,
+      totalDiskon: 0,
+      totalSetelahDiskon: 0,
+      totalModal: 0,
+      totalBiayaAdmin: 0,
+      labaKotor: 0,
+      labaBersih: 0,
+      satuanIds: [],
+      satuanNamaList: [],
+      namaBarangList: [],
+    }
+
+    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
+    current.qtyTerjual += normalizeNumber(item.qtyTerjual)
+    current.omzet += normalizeNumber(item.omzet)
+    current.subtotal += normalizeNumber(item.subtotal)
+    current.totalDiskon += normalizeNumber(item.totalDiskon)
+    current.totalSetelahDiskon += normalizeNumber(item.totalSetelahDiskon)
+    current.totalModal += normalizeNumber(item.totalModal)
+    current.totalBiayaAdmin += normalizeNumber(item.totalBiayaAdmin)
+    current.labaKotor += normalizeNumber(item.labaKotor)
+    current.labaBersih += normalizeNumber(item.labaBersih)
+    current.satuanIds = uniqueStringList([...(current.satuanIds || []), ...(item.satuanIds || [])])
+    current.satuanNamaList = uniqueStringList([...(current.satuanNamaList || []), ...(item.satuanNamaList || [])])
+    current.namaBarangList = uniqueStringList([...(current.namaBarangList || []), ...(item.namaBarangList || [])])
+    map.set(key, current)
+  }
+
+  return Array.from(map.values())
+}
+
+function mergeKelompokBreakdown(target: KelompokKategoriBreakdown[], tambah: KelompokKategoriBreakdown[]) {
+  const map = new Map<string, KelompokKategoriBreakdown>()
+
+  for (const item of target) {
+    map.set(item.kelompokId || normalizeKategoriKey(item.namaKelompok), { ...item })
+  }
+
+  for (const item of tambah) {
+    const key = item.kelompokId || normalizeKategoriKey(item.namaKelompok)
+    const current = map.get(key) || {
+      kelompokId: key,
+      namaKelompok: item.namaKelompok || "Tanpa Kelompok",
+      urutan: normalizeNumber(item.urutan || 9999),
+      tokoId: item.tokoId,
+      tokoNama: item.tokoNama,
+      kategoriIds: [],
+      kategoriNama: [],
+      jumlahTransaksi: 0,
+      totalQty: 0,
+      omzet: 0,
+      subtotal: 0,
+      totalDiskon: 0,
+      totalSetelahDiskon: 0,
+      totalModal: 0,
+      totalBiayaAdmin: 0,
+      totalLabaKotor: 0,
+    }
+
+    current.kategoriIds = uniqueStringList([...(current.kategoriIds || []), ...(item.kategoriIds || [])])
+    current.kategoriNama = uniqueStringList([...(current.kategoriNama || []), ...(item.kategoriNama || [])])
+    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
+    current.totalQty += normalizeNumber(item.totalQty)
+    current.omzet += normalizeNumber(item.omzet)
+    current.subtotal += normalizeNumber(item.subtotal)
+    current.totalDiskon += normalizeNumber(item.totalDiskon)
+    current.totalSetelahDiskon += normalizeNumber(item.totalSetelahDiskon)
+    current.totalModal += normalizeNumber(item.totalModal)
+    current.totalBiayaAdmin += normalizeNumber(item.totalBiayaAdmin)
+    current.totalLabaKotor += normalizeNumber(item.totalLabaKotor)
+    map.set(key, current)
+  }
+
+  return Array.from(map.values()).sort((a, b) => normalizeNumber(a.urutan) - normalizeNumber(b.urutan))
+}
+
+function buildLaporanHarianValidFromTransaksi(docs: Array<{ id: string; data: any }>): LaporanHarian[] {
+  const map = new Map<string, LaporanHarian>()
+
+  for (const docItem of docs) {
+    const raw = docItem.data || {}
+    if (String(raw?.status || "").toLowerCase() !== "selesai") continue
+
+    const tanggalKey = getTransaksiTanggalKey(raw)
+    if (!tanggalKey) continue
+
+    const tokoId = String(raw?.tokoId || "").trim()
+    const tokoNama = String(raw?.tokoNama || "Tanpa Toko").trim() || "Tanpa Toko"
+    const key = `${tanggalKey}__${tokoId || tokoNama}`
+    const totalDibayar = getTransaksiTotalDibayarValid(raw)
+    const totalAdminDibayar = getTransaksiAdminDibayarValid(raw, totalDibayar)
+    const pendapatanBarangDiterima = Math.max(0, totalDibayar - totalAdminDibayar)
+    const paidNetRatio = getPaidNetBarangRatio(raw, totalDibayar, totalAdminDibayar)
+    const totalModal = getTransaksiModalValid(raw)
+    const modalRatio = getTransaksiModalRatio(raw)
+    const qtyRatio = getTransaksiQtyRatio(raw)
+    const labaValid = pendapatanBarangDiterima - totalModal
+    const kategoriBreakdown = buildKategoriBreakdownFromTransaksi(raw, paidNetRatio, modalRatio, qtyRatio)
+    const kelompokKategoriBreakdown = buildKelompokBreakdownFromTransaksi(raw, paidNetRatio, modalRatio, qtyRatio)
+    const totalQty = kategoriBreakdown.reduce((acc, item) => acc + normalizeNumber(item.qtyTerjual), 0)
+
+    if (
+      totalDibayar <= 0 &&
+      totalModal <= 0 &&
+      getTransaksiTotalBarangValid(raw) <= 0 &&
+      String(raw?.returStatus || "").toLowerCase() === "penuh"
+    ) {
+      continue
+    }
+
+    const current = map.get(key) || {
+      id: key,
+      tanggalKey,
+      tokoId,
+      tokoNama,
+      totalLabaKotor: 0,
+      totalKeuntunganBersih: 0,
+      omzet: 0,
+      jumlahTransaksi: 0,
+      kategoriBreakdown: [],
+      kelompokKategoriBreakdown: [],
+    }
+
+    current.jumlahTransaksi += 1
+    current.omzet += totalDibayar
+    current.totalLabaKotor += labaValid
+    current.totalKeuntunganBersih += labaValid
+    current.kategoriBreakdown = mergeKategoriBreakdown(current.kategoriBreakdown, kategoriBreakdown)
+    current.kelompokKategoriBreakdown = mergeKelompokBreakdown(current.kelompokKategoriBreakdown, kelompokKategoriBreakdown)
+
+    if (totalQty <= 0 && Array.isArray(raw?.items)) {
+      const fallbackKategori = buildKategoriBreakdownFromTransaksi(raw, paidNetRatio, modalRatio, qtyRatio)
+      current.kategoriBreakdown = mergeKategoriBreakdown(current.kategoriBreakdown, fallbackKategori)
+    }
+
+    map.set(key, current)
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.tanggalKey.localeCompare(a.tanggalKey))
 }
 
 async function downloadWorkbookXlsx(workbook: any, filename: string) {
@@ -430,9 +963,10 @@ export default function LaporanKeuntunganHarianPage() {
     setError(null)
 
     try {
-      const [tokoSnap, laporanSnap, pengeluaranSnap] = await Promise.all([
+      const [tokoSnap, laporanSnap, transaksiSnap, pengeluaranSnap] = await Promise.all([
         getDocs(query(collection(db, "toko"), orderBy("nama"))),
         getDocs(query(collection(db, "laporan_harian"), orderBy("tanggalKey", "desc"))),
+        getDocs(collection(db, "transaksi")),
         getDocs(query(collection(db, "pengeluaran"), orderBy("createdAtMs", "desc"))),
       ])
 
@@ -445,7 +979,7 @@ export default function LaporanKeuntunganHarianPage() {
         }
       })
 
-      const laporanData: LaporanHarian[] = laporanSnap.docs.map((d) => {
+      const laporanFallbackData: LaporanHarian[] = laporanSnap.docs.map((d) => {
         const x = d.data() as any
         const kategoriBreakdown: KategoriBreakdown[] = Array.isArray(x?.kategoriBreakdown)
           ? x.kategoriBreakdown.map((item: any) => {
@@ -459,27 +993,23 @@ export default function LaporanKeuntunganHarianPage() {
                 ...(Array.isArray(item?.produkNamaList) ? item.produkNamaList : []),
               ])
 
+              const pendapatanDiterima = normalizeNumber(item?.totalDibayar ?? item?.uangMasuk ?? item?.omzet ?? item?.totalSetelahDiskon)
+              const totalModal = normalizeNumber(item?.totalModal || item?.modal)
+              const labaValid = pendapatanDiterima - totalModal
+
               return {
                 kategoriId: kategoriKey,
                 kategoriNama: namaKategori || "Tanpa Kategori",
                 jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
                 qtyTerjual: Number(item?.qtyTerjual || 0),
-                omzet: Number(item?.omzet || 0),
+                omzet: pendapatanDiterima,
                 subtotal: Number(item?.subtotal || 0),
                 totalDiskon: Number(item?.totalDiskon || 0),
-                totalSetelahDiskon: Number(item?.totalSetelahDiskon || 0),
-                totalModal: Number(item?.totalModal || 0),
+                totalSetelahDiskon: pendapatanDiterima,
+                totalModal,
                 totalBiayaAdmin: Number(item?.totalBiayaAdmin || 0),
-                labaKotor: Number(
-                  item?.labaKotor ?? Number(item?.totalSetelahDiskon || 0) - Number(item?.totalModal || 0)
-                ),
-                labaBersih: Number(
-                  item?.labaBersih ??
-                    item?.labaKotor ??
-                    Number(item?.totalSetelahDiskon || 0) -
-                      Number(item?.totalModal || 0) -
-                      Number(item?.totalBiayaAdmin || 0)
-                ),
+                labaKotor: labaValid,
+                labaBersih: labaValid,
                 satuanIds,
                 satuanNamaList,
                 namaBarangList,
@@ -487,21 +1017,39 @@ export default function LaporanKeuntunganHarianPage() {
             })
           : []
 
-        const kelompokKategoriBreakdown = normalizeKelompokBreakdown(x?.kelompokKategoriBreakdown)
+        const kelompokKategoriBreakdown = normalizeKelompokBreakdown(x?.kelompokKategoriBreakdown).map((item) => {
+          const pendapatanDiterima = normalizeNumber((item as any)?.totalDibayar ?? item.omzet ?? item.totalSetelahDiskon)
+          const labaValid = pendapatanDiterima - normalizeNumber(item.totalModal)
+          return {
+            ...item,
+            omzet: pendapatanDiterima,
+            totalSetelahDiskon: pendapatanDiterima,
+            totalLabaKotor: labaValid,
+          }
+        })
+
+        const totalPendapatan = Number(x?.totalDibayar ?? x?.uangMasuk ?? x?.omzet ?? 0)
+        const totalModal = normalizeNumber(x?.totalModal ?? x?.modal)
+        const totalLabaValid = getFirstFilledNumber(x?.labaCash, x?.labaDibayar, totalPendapatan - totalModal, x?.totalKeuntunganBersih, x?.totalLabaKotor)
 
         return {
           id: d.id,
           tanggalKey: String(x?.tanggalKey || ""),
           tokoId: String(x?.tokoId || ""),
           tokoNama: String(x?.tokoNama || ""),
-          totalLabaKotor: Number(x?.totalLabaKotor || 0),
-          totalKeuntunganBersih: Number(x?.totalKeuntunganBersih ?? x?.totalLabaKotor ?? 0),
-          omzet: Number(x?.omzet || 0),
+          totalLabaKotor: totalLabaValid,
+          totalKeuntunganBersih: totalLabaValid,
+          omzet: totalPendapatan,
           jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
           kategoriBreakdown,
           kelompokKategoriBreakdown,
         }
       })
+
+      const transaksiData = buildLaporanHarianValidFromTransaksi(
+        transaksiSnap.docs.map((d) => ({ id: d.id, data: d.data() }))
+      )
+      const laporanData = transaksiData.length > 0 ? transaksiData : laporanFallbackData
 
       const pengeluaranData: Pengeluaran[] = pengeluaranSnap.docs.map((d) => {
         const x = d.data() as any

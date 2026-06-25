@@ -1,12 +1,8 @@
-/*
-  app/admin/laporan-bulanan/page.tsx
-  Halaman admin laporan bulanan.
-  Keuntungan bersih hanya terlihat untuk role admin dan owner.
-*/
+/* app/admin/laporan-bulanan/page.tsx */
 
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { auth, db } from "@/lib/firebase"
 import { collection, doc, getDoc, getDocs, orderBy, query } from "firebase/firestore"
 import {
@@ -62,6 +58,8 @@ type LaporanBulanan = {
   totalItemTerjual: number
   totalJenisBarangTerjual: number
   rataRataBelanja: number
+  totalDibayar: number
+  totalHutang: number
   metodePembayaranBreakdown: BreakdownMetode[]
   updatedAtMs: number
 }
@@ -149,6 +147,311 @@ function formatProfit(value: number, canViewProfit: boolean) {
   return canViewProfit ? formatRupiah(value) : "-"
 }
 
+
+function normalizeNumber(value: unknown) {
+  const numberValue = Number(value ?? 0)
+  return Number.isFinite(numberValue) ? numberValue : 0
+}
+
+function pickFirstString(...values: unknown[]) {
+  for (const value of values) {
+    const clean = String(value || "").trim()
+    if (clean) return clean
+  }
+  return ""
+}
+
+function getFirstFilledNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue
+    const numberValue = normalizeNumber(value)
+    if (numberValue !== 0) return numberValue
+  }
+  return 0
+}
+
+function getCreatedAtMs(raw: any) {
+  if (typeof raw?.createdAtMs === "number" && raw.createdAtMs > 0) return raw.createdAtMs
+  if (typeof raw?.createdAt?.toMillis === "function") return raw.createdAt.toMillis()
+  if (typeof raw?.createdAt === "number" && raw.createdAt > 0) return raw.createdAt
+  if (typeof raw?.updatedAtMs === "number" && raw.updatedAtMs > 0) return raw.updatedAtMs
+  if (typeof raw?.updatedAt?.toMillis === "function") return raw.updatedAt.toMillis()
+  return 0
+}
+
+function getBulanKeyFromMs(ms: number) {
+  if (!ms) return ""
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ""
+  const y = date.getFullYear()
+  const m = `${date.getMonth() + 1}`.padStart(2, "0")
+  return `${y}-${m}`
+}
+
+function hasNumberValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return false
+  return Number.isFinite(Number(value))
+}
+
+function getNumberValue(value: unknown) {
+  return hasNumberValue(value) ? normalizeNumber(value) : 0
+}
+
+function getFirstNumberIncludingZero(...values: unknown[]) {
+  for (const value of values) {
+    if (hasNumberValue(value)) return normalizeNumber(value)
+  }
+  return 0
+}
+
+function getReturNominal(raw: any) {
+  if (hasNumberValue(raw?.totalReturNominal)) return Math.max(0, getNumberValue(raw?.totalReturNominal))
+  if (hasNumberValue(raw?.totalReturGrandTotal)) return Math.max(0, getNumberValue(raw?.totalReturGrandTotal))
+
+  const returBarang = getNumberValue(raw?.totalReturSetelahDiskon)
+  const returAdmin = getNumberValue(raw?.totalReturBiayaAdmin)
+  return Math.max(0, returBarang + returAdmin)
+}
+
+function getNilaiBersihAtauKurangiRetur(raw: any, bersihKey: string, normalKeys: string[], returKeys: string[] = []) {
+  if (hasNumberValue(raw?.[bersihKey])) return Math.max(0, getNumberValue(raw?.[bersihKey]))
+
+  const nilaiAwal = getFirstFilledNumber(...normalKeys.map((key) => raw?.[key]))
+  const totalRetur = returKeys.reduce((acc, key) => acc + getNumberValue(raw?.[key]), 0)
+
+  return Math.max(0, nilaiAwal - totalRetur)
+}
+
+function isReturPenuh(raw: any) {
+  const returStatus = String(raw?.returStatus || "").trim().toLowerCase()
+  if (["penuh", "full", "retur_penuh"].includes(returStatus)) return true
+
+  const totalItemAwal = getFirstFilledNumber(raw?.totalItem, raw?.totalItemTerjual)
+  const totalReturQty = getNumberValue(raw?.totalReturQty)
+  return totalItemAwal > 0 && totalReturQty >= totalItemAwal
+}
+
+function getTransaksiGrandTotal(raw: any) {
+  if (isReturPenuh(raw)) return 0
+
+  if (hasNumberValue(raw?.grandTotalBersih)) {
+    return Math.max(0, getNumberValue(raw?.grandTotalBersih))
+  }
+
+  const grandTotalAwal = getFirstFilledNumber(raw?.grandTotal, raw?.totalBayar, raw?.total)
+  if (grandTotalAwal > 0) return Math.max(0, grandTotalAwal - getReturNominal(raw))
+
+  const totalSetelahDiskon = getTransaksiTotalSetelahDiskon(raw)
+  const biayaAdmin = getTransaksiBiayaAdmin(raw)
+  return Math.max(0, totalSetelahDiskon + biayaAdmin)
+}
+
+function getPembayaranNominal(raw: any) {
+  if (Array.isArray(raw?.pembayaranItems) && raw.pembayaranItems.length > 0) {
+    return raw.pembayaranItems.reduce((acc: number, item: any) => acc + normalizeNumber(item?.nominal), 0)
+  }
+
+  const uangBayar = normalizeNumber(raw?.uangBayar)
+  const kembalian = normalizeNumber(raw?.kembalian)
+  if (uangBayar > 0) return Math.max(0, uangBayar - Math.max(0, kembalian))
+
+  return 0
+}
+
+function getTransaksiTotalDibayar(raw: any) {
+  const grandTotal = getTransaksiGrandTotal(raw)
+  if (grandTotal <= 0) return 0
+
+  const isHutang =
+    Boolean(raw?.isHutang) ||
+    normalizeNumber(raw?.sisaHutang) > 0 ||
+    normalizeNumber(raw?.totalHutang) > 0 ||
+    normalizeNumber(raw?.kurangBayar) > 0
+
+  if (!isHutang) return grandTotal
+
+  const explicitPaid = getFirstNumberIncludingZero(raw?.totalDibayar, raw?.dibayar, raw?.totalTerbayar)
+  const pembayaranMasuk = getPembayaranNominal(raw)
+  const nilaiDibayarAwal = explicitPaid > 0 ? explicitPaid : pembayaranMasuk
+
+  const sisaHutangBersih = hasNumberValue(raw?.sisaHutang) ? Math.max(0, getNumberValue(raw?.sisaHutang)) : 0
+  if (sisaHutangBersih > 0) return Math.max(0, Math.min(grandTotal, grandTotal - sisaHutangBersih))
+
+  if (nilaiDibayarAwal > 0) return Math.max(0, Math.min(grandTotal, nilaiDibayarAwal))
+
+  const hutangAwal = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar)
+  if (hutangAwal > 0) return Math.max(0, Math.min(grandTotal, grandTotal - hutangAwal))
+
+  return Math.max(0, Math.min(grandTotal, normalizeNumber(raw?.uangBayar)))
+}
+
+function getTransaksiSisaHutang(raw: any, totalDibayar: number) {
+  const grandTotal = getTransaksiGrandTotal(raw)
+  if (grandTotal <= 0 || isReturPenuh(raw)) return 0
+
+  if (hasNumberValue(raw?.sisaHutang)) return Math.max(0, Math.min(grandTotal, getNumberValue(raw?.sisaHutang)))
+
+  const direct = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar)
+  if (direct > 0) return Math.max(0, Math.min(grandTotal, direct))
+
+  if (Boolean(raw?.isHutang)) return Math.max(0, grandTotal - totalDibayar)
+  return 0
+}
+
+function getTransaksiAdminDibayar(raw: any, totalDibayar: number) {
+  const grandTotal = getTransaksiGrandTotal(raw)
+  const totalAdmin = getTransaksiBiayaAdmin(raw)
+  if (grandTotal <= 0 || totalAdmin <= 0) return 0
+  return Math.min(totalAdmin, totalAdmin * (totalDibayar / grandTotal))
+}
+
+function getTransaksiBiayaAdmin(raw: any) {
+  return getNilaiBersihAtauKurangiRetur(raw, "biayaAdminBersih", ["biayaAdminNominal", "totalBiayaAdmin"], ["totalReturBiayaAdmin"])
+}
+
+function getTransaksiModal(raw: any) {
+  return getNilaiBersihAtauKurangiRetur(raw, "totalModalBersih", ["totalModal", "modal"], ["totalReturModal"])
+}
+
+function getTransaksiSubtotal(raw: any) {
+  return getNilaiBersihAtauKurangiRetur(raw, "subtotalBersih", ["subtotal"], ["totalReturSubtotal"])
+}
+
+function getTransaksiTotalDiskon(raw: any) {
+  return getNilaiBersihAtauKurangiRetur(raw, "totalDiskonBersih", ["totalDiskon"], ["totalReturDiskon"])
+}
+
+function getTransaksiTotalSetelahDiskon(raw: any) {
+  return getNilaiBersihAtauKurangiRetur(raw, "totalSetelahDiskonBersih", ["totalSetelahDiskon", "subtotal"], ["totalReturSetelahDiskon"])
+}
+
+function getTransaksiTotalItem(raw: any) {
+  return getNilaiBersihAtauKurangiRetur(raw, "totalItemBersih", ["totalItem", "totalItemTerjual"], ["totalReturQty"])
+}
+
+function getTransaksiTotalJenisBarang(raw: any) {
+  if (isReturPenuh(raw)) return 0
+  return Math.max(0, normalizeNumber(raw?.totalJenisBarang ?? raw?.totalJenisBarangTerjual ?? (Array.isArray(raw?.items) ? raw.items.length : 0)))
+}
+
+function buildMetodeBreakdownFromTransaksi(raw: any, totalDibayar: number, totalAdminDibayar: number): BreakdownMetode[] {
+  if (Array.isArray(raw?.pembayaranItems) && raw.pembayaranItems.length > 0) {
+    const totalNominal = raw.pembayaranItems.reduce((acc: number, item: any) => acc + normalizeNumber(item?.nominal), 0)
+
+    return raw.pembayaranItems
+      .map((item: any) => {
+        const nominal = normalizeNumber(item?.nominal)
+        const porsi = totalNominal > 0 ? nominal / totalNominal : 1 / raw.pembayaranItems.length
+        return {
+          nama: pickFirstString(item?.metodePembayaranNama, item?.nama, "Tanpa Nama"),
+          jumlahTransaksi: 1,
+          omzet: totalDibayar * porsi,
+          admin: totalAdminDibayar * porsi,
+        }
+      })
+      .filter((item: BreakdownMetode) => item.nama)
+  }
+
+  return [
+    {
+      nama: pickFirstString(raw?.metodePembayaranNama, raw?.metodeNama, "Tanpa Nama"),
+      jumlahTransaksi: 1,
+      omzet: totalDibayar,
+      admin: totalAdminDibayar,
+    },
+  ]
+}
+
+function mergeMetodeBreakdown(target: BreakdownMetode[], tambah: BreakdownMetode[]) {
+  const map = new Map<string, BreakdownMetode>()
+
+  for (const item of target) {
+    const key = item.nama || "Tanpa Nama"
+    map.set(key, { ...item })
+  }
+
+  for (const item of tambah) {
+    const key = item.nama || "Tanpa Nama"
+    const current = map.get(key) || { nama: key, jumlahTransaksi: 0, omzet: 0, admin: 0 }
+    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
+    current.omzet += normalizeNumber(item.omzet)
+    current.admin += normalizeNumber(item.admin)
+    map.set(key, current)
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.omzet - a.omzet)
+}
+
+function aggregateTransaksiToLaporanBulanan(docs: Array<{ id: string; data: any }>): LaporanBulanan[] {
+  const map = new Map<string, LaporanBulanan>()
+
+  for (const docItem of docs) {
+    const raw = docItem.data || {}
+    if (String(raw?.status || "").toLowerCase() !== "selesai") continue
+
+    const createdAtMs = getCreatedAtMs(raw)
+    const bulanKey = pickFirstString(raw?.bulanKey, getBulanKeyFromMs(createdAtMs))
+    if (!bulanKey) continue
+
+    const totalDibayar = getTransaksiTotalDibayar(raw)
+    const totalHutang = getTransaksiSisaHutang(raw, totalDibayar)
+    const totalAdminDibayar = getTransaksiAdminDibayar(raw, totalDibayar)
+    const totalModal = getTransaksiModal(raw)
+    const omzetBarangDibayar = Math.max(0, totalDibayar - totalAdminDibayar)
+    const tokoId = pickFirstString(raw?.tokoId, "tanpa-toko")
+    const tokoNama = pickFirstString(raw?.tokoNama, "Tanpa Toko")
+    const key = `${bulanKey}-${tokoId}`
+    const [tahunRaw, bulanRaw] = bulanKey.split("-")
+
+    const current = map.get(key) || {
+      id: key,
+      bulanKey,
+      tahun: Number(tahunRaw || 0),
+      bulan: Number(bulanRaw || 0),
+      tokoId,
+      tokoNama,
+      jumlahTransaksi: 0,
+      omzet: 0,
+      subtotal: 0,
+      totalDiskon: 0,
+      totalSetelahDiskon: 0,
+      totalBiayaAdmin: 0,
+      totalModal: 0,
+      totalLabaKotor: 0,
+      totalItemTerjual: 0,
+      totalJenisBarangTerjual: 0,
+      rataRataBelanja: 0,
+      totalDibayar: 0,
+      totalHutang: 0,
+      metodePembayaranBreakdown: [],
+      updatedAtMs: 0,
+    }
+
+    current.jumlahTransaksi += 1
+    current.omzet += totalDibayar
+    current.subtotal += getTransaksiSubtotal(raw)
+    current.totalDiskon += getTransaksiTotalDiskon(raw)
+    current.totalSetelahDiskon += getTransaksiTotalSetelahDiskon(raw)
+    current.totalBiayaAdmin += totalAdminDibayar
+    current.totalModal += totalModal
+    current.totalLabaKotor += omzetBarangDibayar - totalModal
+    current.totalItemTerjual += getTransaksiTotalItem(raw)
+    current.totalJenisBarangTerjual += getTransaksiTotalJenisBarang(raw)
+    current.totalDibayar += totalDibayar
+    current.totalHutang += totalHutang
+    current.rataRataBelanja = current.jumlahTransaksi > 0 ? current.omzet / current.jumlahTransaksi : 0
+    current.updatedAtMs = Math.max(current.updatedAtMs, normalizeNumber(raw?.updatedAtMs), createdAtMs)
+    current.metodePembayaranBreakdown = mergeMetodeBreakdown(
+      current.metodePembayaranBreakdown,
+      buildMetodeBreakdownFromTransaksi(raw, totalDibayar, totalAdminDibayar),
+    )
+
+    map.set(key, current)
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.bulanKey.localeCompare(a.bulanKey))
+}
+
 export default function LaporanBulananPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -217,8 +520,8 @@ export default function LaporanBulananPage() {
       ? raw.metodePembayaranBreakdown.map((item: any) => ({
           nama: item?.nama || "Tanpa Nama",
           jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-          omzet: Number(item?.omzet || 0),
-          admin: Number(item?.admin || 0),
+          omzet: Number(item?.totalDibayar ?? item?.uangMasuk ?? item?.omzet ?? 0),
+          admin: Number(item?.adminDibayar ?? item?.admin ?? 0),
         }))
       : []
 
@@ -230,16 +533,18 @@ export default function LaporanBulananPage() {
       tokoId: raw?.tokoId || "",
       tokoNama: raw?.tokoNama || "",
       jumlahTransaksi: Number(raw?.jumlahTransaksi || 0),
-      omzet: Number(raw?.omzet || 0),
-      subtotal: Number(raw?.subtotal || 0),
+      omzet: Number(raw?.totalDibayar ?? raw?.uangMasuk ?? raw?.omzet ?? 0),
+      subtotal: Number(raw?.totalDibayar ?? raw?.uangMasuk ?? raw?.subtotal ?? 0),
       totalDiskon: Number(raw?.totalDiskon || 0),
-      totalSetelahDiskon: Number(raw?.totalSetelahDiskon || 0),
-      totalBiayaAdmin: Number(raw?.totalBiayaAdmin || 0),
+      totalSetelahDiskon: Number(raw?.totalDibayar ?? raw?.uangMasuk ?? raw?.totalSetelahDiskon ?? 0),
+      totalBiayaAdmin: Number(raw?.adminDibayar ?? raw?.totalBiayaAdmin ?? 0),
       totalModal: Number(raw?.totalModal || 0),
-      totalLabaKotor: Number(raw?.totalLabaKotor || 0),
+      totalLabaKotor: Number(raw?.labaCash ?? raw?.labaDibayar ?? raw?.totalLabaKotor ?? 0),
       totalItemTerjual: Number(raw?.totalItemTerjual || 0),
       totalJenisBarangTerjual: Number(raw?.totalJenisBarangTerjual || 0),
       rataRataBelanja: Number(raw?.rataRataBelanja || 0),
+      totalDibayar: Number(raw?.totalDibayar ?? raw?.uangMasuk ?? raw?.omzet ?? 0),
+      totalHutang: Number(raw?.totalHutang ?? raw?.sisaHutang ?? 0),
       metodePembayaranBreakdown: breakdown,
       updatedAtMs: Number(raw?.updatedAtMs || 0),
     }
@@ -261,14 +566,16 @@ export default function LaporanBulananPage() {
     setError(null)
 
     try {
-      const laporanPromise = getDocs(query(collection(db, "laporan_bulanan"), orderBy("bulanKey", "desc")))
+      const tokoPromise = admin ? getDocs(query(collection(db, "toko"), orderBy("nama"))) : null
+      const transaksiPromise = getDocs(query(collection(db, "transaksi"), orderBy("createdAtMs", "desc")))
+      const laporanFallbackPromise = getDocs(query(collection(db, "laporan_bulanan"), orderBy("bulanKey", "desc")))
+      const [tokoSnap, transaksiSnap, laporanFallbackSnap] = await Promise.all([
+        tokoPromise,
+        transaksiPromise,
+        laporanFallbackPromise,
+      ])
 
-      if (admin) {
-        const [tokoSnap, laporanSnap] = await Promise.all([
-          getDocs(query(collection(db, "toko"), orderBy("nama"))),
-          laporanPromise,
-        ])
-
+      if (admin && tokoSnap) {
         const tokoData: Toko[] = tokoSnap.docs
           .map((item) => {
             const x = item.data() as any
@@ -280,18 +587,8 @@ export default function LaporanBulananPage() {
           })
           .filter((item) => item.nama)
 
-        const laporanData = laporanSnap.docs
-          .map((item) => mapLaporanDoc(item.id, item.data()))
-          .filter((item) => item.bulanKey)
-
         setTokoList(tokoData)
-        setLaporanList(laporanData)
       } else {
-        const laporanSnap = await laporanPromise
-        const laporanData = laporanSnap.docs
-          .map((item) => mapLaporanDoc(item.id, item.data()))
-          .filter((item) => item.bulanKey && item.tokoId === tokoIdUser)
-
         setTokoList([
           {
             id: tokoIdUser,
@@ -299,8 +596,14 @@ export default function LaporanBulananPage() {
             aktif: true,
           },
         ])
-        setLaporanList(laporanData)
       }
+
+      const transaksiDocs = transaksiSnap.docs.map((item) => ({ id: item.id, data: item.data() }))
+      const laporanDariTransaksi = aggregateTransaksiToLaporanBulanan(transaksiDocs)
+      const laporanFallback = laporanFallbackSnap.docs.map((item) => mapLaporanDoc(item.id, item.data())).filter((item) => item.bulanKey)
+      const laporanData = laporanDariTransaksi.length > 0 ? laporanDariTransaksi : laporanFallback
+
+      setLaporanList(admin ? laporanData : laporanData.filter((item) => item.tokoId === tokoIdUser))
     } catch (err) {
       console.error(err)
       setTokoList([])
@@ -353,6 +656,7 @@ export default function LaporanBulananPage() {
   const totalDiskon = filteredLaporan.reduce((acc, item) => acc + item.totalDiskon, 0)
   const totalAdmin = filteredLaporan.reduce((acc, item) => acc + item.totalBiayaAdmin, 0)
   const totalLabaKotor = filteredLaporan.reduce((acc, item) => acc + item.totalLabaKotor, 0)
+  const totalHutang = filteredLaporan.reduce((acc, item) => acc + item.totalHutang, 0)
   const totalItemTerjual = filteredLaporan.reduce((acc, item) => acc + item.totalItemTerjual, 0)
   const rataRataBelanja = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0
 
@@ -437,7 +741,7 @@ export default function LaporanBulananPage() {
                   Laporan Bulanan
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Rekap bulanan omzet, metode pembayaran, toko, dan keuntungan bersih.
+                  Rekap bulanan uang masuk, hutang, metode pembayaran, toko, dan keuntungan bersih.
                 </p>
               </div>
             </div>
@@ -601,7 +905,7 @@ export default function LaporanBulananPage() {
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <StatCard
               icon={CircleDollarSign}
-              label="Omzet"
+              label="Uang Masuk"
               value={formatRupiah(totalOmzet)}
               subValue={`${totalTransaksi} transaksi`}
               tone="sky"
@@ -630,10 +934,10 @@ export default function LaporanBulananPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-            <StatCard icon={TrendingUp} label="Bulan Ini" value={formatRupiah(omzetBulanIni)} tone="sky" />
+            <StatCard icon={TrendingUp} label="Masuk Bulan Ini" value={formatRupiah(omzetBulanIni)} tone="sky" />
             <StatCard icon={ShoppingCart} label="Bulan Direkap" value={String(filteredLaporan.length)} tone="blue" />
             <StatCard icon={Store} label="Toko Aktif" value={String(tokoBreakdown.length)} tone="slate" />
-            <StatCard icon={Wallet} label="Metode Aktif" value={String(metodeBreakdown.length)} tone="rose" />
+            <StatCard icon={Wallet} label="Sisa Hutang" value={formatRupiah(totalHutang)} tone="rose" />
           </div>
         </div>
 
@@ -644,6 +948,7 @@ export default function LaporanBulananPage() {
           metodeBreakdown={metodeBreakdown}
           tokoBreakdown={tokoBreakdown}
           totalOmzet={totalOmzet}
+          totalHutang={totalHutang}
           itemsPerPage={itemsPerPage}
           setItemsPerPage={setItemsPerPage}
           page={page}
@@ -673,7 +978,7 @@ function FieldBox({
   className = "",
 }: {
   label: string
-  children: React.ReactNode
+  children: ReactNode
   className?: string
 }) {
   return (
@@ -723,7 +1028,7 @@ function FilterSelect({
 }: {
   value: string
   onChange: (value: string) => void
-  children: React.ReactNode
+  children: ReactNode
   label: string
   icon?: any
 }) {
@@ -797,6 +1102,7 @@ function LaporanContent({
   metodeBreakdown,
   tokoBreakdown,
   totalOmzet,
+  totalHutang,
   itemsPerPage,
   setItemsPerPage,
   page,
@@ -810,6 +1116,7 @@ function LaporanContent({
   metodeBreakdown: { nama: string; jumlahTransaksi: number; omzet: number; admin: number }[]
   tokoBreakdown: { tokoId: string; tokoNama: string; bulanAktif: number; transaksi: number; omzet: number }[]
   totalOmzet: number
+  totalHutang: number
   itemsPerPage: number
   setItemsPerPage: (value: number) => void
   page: number
@@ -838,7 +1145,7 @@ function LaporanContent({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <div className="space-y-4 xl:col-span-7">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <HeaderTitle title="Metode Pembayaran" subtitle="Breakdown omzet berdasarkan metode bayar" />
+          <HeaderTitle title="Metode Pembayaran" subtitle="Breakdown uang masuk berdasarkan metode bayar" />
 
           {metodeBreakdown.length === 0 ? (
             <EmptyBox label="Belum ada data metode" icon={Wallet} />
@@ -873,7 +1180,7 @@ function LaporanContent({
                         />
                       </div>
                       <p className="mt-1 text-[10px] font-bold text-slate-500">
-                        {persenOmzet.toFixed(1)}% dari omzet
+                        {persenOmzet.toFixed(1)}% dari uang masuk
                       </p>
                     </div>
                   </div>
@@ -937,9 +1244,9 @@ function LaporanContent({
                         </div>
 
                         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
-                          <MiniInfo label="Omzet" value={formatRupiah(item.omzet)} />
+                          <MiniInfo label="Uang Masuk" value={formatRupiah(item.omzet)} />
                           <MiniInfo label="Untung" value={formatProfit(item.totalLabaKotor, canViewProfit)} />
-                          <MiniInfo label="Diskon" value={formatRupiah(item.totalDiskon)} />
+                          <MiniInfo label="Hutang" value={formatRupiah(item.totalHutang)} />
                           <MiniInfo label="Item" value={String(item.totalItemTerjual)} />
                         </div>
                       </div>
@@ -958,7 +1265,7 @@ function LaporanContent({
                   <table className="w-full text-xs">
                     <thead className="border-b border-slate-100 bg-slate-50/70">
                       <tr>
-                        {["No", "Bulan", "Toko", "Transaksi", "Omzet", "Diskon", "Admin", "Untung", "Update"].map((head) => (
+                        {["No", "Bulan", "Toko", "Transaksi", "Uang Masuk", "Hutang", "Admin", "Untung", "Update"].map((head) => (
                           <th
                             key={head}
                             className={`whitespace-nowrap px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 ${
@@ -988,8 +1295,8 @@ function LaporanContent({
                           <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">
                             {formatRupiah(item.omzet)}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
-                            {formatRupiah(item.totalDiskon)}
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-amber-700">
+                            {formatRupiah(item.totalHutang)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">
                             {formatRupiah(item.totalBiayaAdmin)}
@@ -1017,7 +1324,7 @@ function LaporanContent({
 
       <div className="space-y-4 xl:col-span-5">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <HeaderTitle title="Toko Teratas" subtitle="Ranking toko berdasarkan omzet" />
+          <HeaderTitle title="Toko Teratas" subtitle="Ranking toko berdasarkan uang masuk" />
 
           {tokoBreakdown.length === 0 ? (
             <EmptyBox label="Belum ada data toko" icon={Store} />

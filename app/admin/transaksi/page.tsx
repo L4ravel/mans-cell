@@ -216,6 +216,13 @@ type RiwayatTransaksiItem = {
   estimasiLabaKotor: number;
   uangBayar?: number;
   kembalian?: number;
+  kurangBayar?: number;
+  isHutang?: boolean;
+  hutangStatus?: "tidak" | "belum_lunas" | "lunas" | string;
+  namaPenghutang?: string;
+  totalHutang?: number;
+  sisaHutang?: number;
+  totalDibayar?: number;
   pelangganId?: string;
   pelangganNama?: string;
   pelangganKode?: string;
@@ -312,6 +319,13 @@ const normalizeTransaksiHistory = (
   estimasiLabaKotor: Number(data?.estimasiLabaKotor || 0),
   uangBayar: Number(data?.uangBayar || 0),
   kembalian: Number(data?.kembalian || 0),
+  kurangBayar: Number(data?.kurangBayar || 0),
+  isHutang: Boolean(data?.isHutang),
+  hutangStatus: String(data?.hutangStatus || (data?.isHutang ? "belum_lunas" : "tidak")),
+  namaPenghutang: String(data?.namaPenghutang || ""),
+  totalHutang: Number(data?.totalHutang || 0),
+  sisaHutang: Number(data?.sisaHutang || 0),
+  totalDibayar: Number(data?.totalDibayar || data?.uangBayar || 0),
   pelangganId: String(data?.pelangganId || ""),
   pelangganNama: String(data?.pelangganNama || ""),
   pelangganKode: String(data?.pelangganKode || ""),
@@ -798,6 +812,8 @@ export default function TransaksiPage() {
   const [selectedTokoId, setSelectedTokoId] = useState("");
   const [selectedMetodeId, setSelectedMetodeId] = useState("");
   const [splitPaymentMode, setSplitPaymentMode] = useState(false);
+  const [hutangMode, setHutangMode] = useState(false);
+  const [namaPenghutang, setNamaPenghutang] = useState("");
   const [uangBayar, setUangBayar] = useState("");
   const [pembayaranSplit, setPembayaranSplit] = useState<PembayaranSplitItem[]>([
     { id: "pay-1", metodeId: "", nominal: "" },
@@ -823,6 +839,13 @@ export default function TransaksiPage() {
     diskonPelangganNominal?: number;
     pembayaranItems?: PembayaranSplitPayload[];
     jumlahMetodePembayaran?: number;
+    kurangBayar?: number;
+    isHutang?: boolean;
+    hutangStatus?: string;
+    namaPenghutang?: string;
+    totalHutang?: number;
+    sisaHutang?: number;
+    totalDibayar?: number;
   };
 
   const [strukModal, setStrukModal] = useState<StrukDataWithPelanggan | null>(
@@ -2371,6 +2394,9 @@ export default function TransaksiPage() {
   const totalPembayaranNominal = uangBayarNumber;
   const kembalian = Math.max(0, uangBayarNumber - grandTotal);
   const kurangBayar = Math.max(0, grandTotal - uangBayarNumber);
+  const namaPenghutangClean = namaPenghutang.trim();
+  const isTransaksiHutang = hutangMode && kurangBayar > 0;
+  const isHutangInputValid = !hutangMode || !!namaPenghutangClean;
   const totalItem = useMemo(
     () => cart.reduce((acc, item) => acc + item.qty, 0),
     [cart],
@@ -2378,12 +2404,13 @@ export default function TransaksiPage() {
   const totalJenisBarang = cart.length;
 
   const isPembayaranValid = splitPaymentMode
-    ? pembayaranPayload.length >= 2 && uangBayarNumber >= grandTotal
-    : !!selectedMetodeId && uangBayarNumber >= grandTotal;
+    ? pembayaranPayload.length >= 2 && (uangBayarNumber >= grandTotal || (hutangMode && uangBayarNumber > 0))
+    : !!selectedMetodeId && (uangBayarNumber >= grandTotal || (hutangMode && uangBayarNumber > 0));
 
   const isBisaCheckout =
     !!selectedTokoId &&
     isPembayaranValid &&
+    isHutangInputValid &&
     cart.length > 0 &&
     !submitLoading;
 
@@ -2586,10 +2613,85 @@ export default function TransaksiPage() {
     </div>
   );
 
+  const renderHutangFields = () => (
+    <div
+      className={`space-y-3 rounded-2xl border p-3 transition ${
+        hutangMode
+          ? "border-amber-200 bg-amber-50/70"
+          : "border-slate-200 bg-white"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          setHutangMode((prev) => !prev);
+          setNamaPenghutang((prev) => (hutangMode ? "" : prev));
+        }}
+        className="inline-flex w-full items-center justify-between gap-3 text-left"
+      >
+        <span>
+          <span className="block text-xs font-black uppercase tracking-[0.12em] text-amber-700">
+            Aktifkan Hutang
+          </span>
+          <span className="mt-0.5 block text-[10px] font-semibold text-slate-500">
+            {hutangMode
+              ? "Aktif: pembayaran boleh kurang dari grand total."
+              : "Nonaktif: pembayaran harus lunas seperti biasa."}
+          </span>
+        </span>
+        <span
+          className={`relative h-6 w-11 rounded-full transition ${
+            hutangMode ? "bg-amber-500" : "bg-slate-200"
+          }`}
+        >
+          <span
+            className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${
+              hutangMode ? "left-6" : "left-1"
+            }`}
+          />
+        </span>
+      </button>
+
+      {hutangMode && (
+        <div className="space-y-2">
+          <div>
+            <FieldLabel icon={User2} label="Nama yang Berhutang" />
+            <input
+              value={namaPenghutang}
+              onChange={(e) => setNamaPenghutang(e.target.value)}
+              placeholder="Udin"
+              className="w-full rounded-xl border-2 border-amber-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:border-amber-300 focus:border-amber-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white p-3 ring-1 ring-amber-100">
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Dibayar
+              </p>
+              <p className="mt-1 text-sm font-black text-slate-800">
+                {formatRupiah(uangBayarNumber)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Hutang
+              </p>
+              <p className="mt-1 text-sm font-black text-amber-700">
+                {formatRupiah(kurangBayar)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const renderPaymentFields = () => (
     <div className="space-y-3">
       {renderPembayaranModeToggle()}
       {splitPaymentMode ? renderPembayaranSplitFields() : renderSinglePaymentFields()}
+      {renderHutangFields()}
     </div>
   );
 
@@ -2600,8 +2702,12 @@ export default function TransaksiPage() {
     if (splitPaymentMode && pembayaranPayload.length < 2)
       return void setError("Isi 2 metode pembayaran dan nominalnya");
     if (cart.length === 0) return void setError("Keranjang masih kosong");
-    if (uangBayarNumber < grandTotal)
+    if (hutangMode && !namaPenghutangClean)
+      return void setError("Isi nama yang berhutang terlebih dahulu");
+    if (uangBayarNumber < grandTotal && !hutangMode)
       return void setError("Uang bayar masih kurang");
+    if (hutangMode && uangBayarNumber <= 0)
+      return void setError("Uang bayar untuk transaksi hutang harus lebih dari 0");
     if (!selectedToko) return void setError("Data toko tidak ditemukan");
 
     if (activeTab === "digital") {
@@ -2630,8 +2736,12 @@ export default function TransaksiPage() {
     if (splitPaymentMode && pembayaranPayload.length < 2)
       return void setError("Isi 2 metode pembayaran dan nominalnya");
     if (cart.length === 0) return void setError("Keranjang masih kosong");
-    if (uangBayarNumber < grandTotal)
+    if (hutangMode && !namaPenghutangClean)
+      return void setError("Isi nama yang berhutang terlebih dahulu");
+    if (uangBayarNumber < grandTotal && !hutangMode)
       return void setError("Uang bayar masih kurang");
+    if (hutangMode && uangBayarNumber <= 0)
+      return void setError("Uang bayar untuk transaksi hutang harus lebih dari 0");
     if (!selectedToko) return void setError("Data toko tidak ditemukan");
 
     if (activeTab === "digital") {
@@ -2677,6 +2787,9 @@ export default function TransaksiPage() {
       const estimasiLabaKotorSnapshot = estimasiLabaKotor;
       const uangBayarSnapshot = uangBayarNumber;
       const kembalianSnapshot = kembalian;
+      const kurangBayarSnapshot = Math.max(0, grandTotalSnapshot - uangBayarSnapshot);
+      const isHutangSnapshot = hutangMode && kurangBayarSnapshot > 0;
+      const namaPenghutangSnapshot = namaPenghutangClean;
       const totalItemSnapshot = totalItem;
       const totalJenisBarangSnapshot = totalJenisBarang;
       const catatanSnapshot = catatan.trim();
@@ -3097,7 +3210,15 @@ export default function TransaksiPage() {
           totalItemBersih: totalItemSnapshot,
           uangBayar: uangBayarSnapshot,
           kembalian: kembalianSnapshot,
-          kurangBayar: 0,
+          kurangBayar: kurangBayarSnapshot,
+          isHutang: isHutangSnapshot,
+          hutangStatus: isHutangSnapshot ? "belum_lunas" : "tidak",
+          namaPenghutang: isHutangSnapshot ? namaPenghutangSnapshot : "",
+          totalHutang: isHutangSnapshot ? kurangBayarSnapshot : 0,
+          sisaHutang: isHutangSnapshot ? kurangBayarSnapshot : 0,
+          totalDibayar: uangBayarSnapshot,
+          hutangCreatedAt: isHutangSnapshot ? serverTimestamp() : null,
+          hutangCreatedAtMs: isHutangSnapshot ? nowMs : 0,
           totalItem: totalItemSnapshot,
           totalJenisBarang: totalJenisBarangSnapshot,
           status: "selesai",
@@ -3194,6 +3315,13 @@ export default function TransaksiPage() {
           estimasiLabaKotor: Number(x?.estimasiLabaKotor || 0),
           uangBayar: Number(x?.uangBayar || 0),
           kembalian: Number(x?.kembalian || 0),
+          kurangBayar: Number(x?.kurangBayar || 0),
+          isHutang: Boolean(x?.isHutang),
+          hutangStatus: String(x?.hutangStatus || (x?.isHutang ? "belum_lunas" : "tidak")),
+          namaPenghutang: String(x?.namaPenghutang || ""),
+          totalHutang: Number(x?.totalHutang || 0),
+          sisaHutang: Number(x?.sisaHutang || 0),
+          totalDibayar: Number(x?.totalDibayar || x?.uangBayar || 0),
           totalItem: Number(x?.totalItem || 0),
           totalJenisBarang: Number(x?.totalJenisBarang || 0),
           status: x?.status || "",
@@ -3287,6 +3415,8 @@ export default function TransaksiPage() {
       if (activeTab === "fisik") setCartFisik([]);
       else setCartDigital([]);
       setUangBayar("");
+      setHutangMode(false);
+      setNamaPenghutang("");
       setPembayaranSplit([
         { id: "pay-1", metodeId: metodeTunaiDefault?.id || metodeList[0]?.id || "", nominal: "" },
         { id: "pay-2", metodeId: "", nominal: "" },
@@ -3747,6 +3877,57 @@ export default function TransaksiPage() {
           totalReturLabaKotorBaru;
         const totalItemBersih = Math.max(0, totalQtyTerjual - totalQtySudahReturBaru);
 
+        const hutangSebelumRetur = Math.max(
+          0,
+          Number(
+            transaksiData?.sisaHutang ??
+              transaksiData?.totalHutang ??
+              transaksiData?.kurangBayar ??
+              0,
+          ),
+        );
+        const pembayaranSplitTerdeteksi = Array.isArray(transaksiData?.pembayaranItems)
+          ? transaksiData.pembayaranItems.reduce(
+              (sum: number, item: any) =>
+                sum + Math.max(0, Number(item?.nominal ?? item?.totalDenganAdmin ?? 0)),
+              0,
+            )
+          : 0;
+        const pembayaranTunaiTerdeteksi = Math.max(
+          0,
+          Number(transaksiData?.uangBayar || 0) -
+            Math.max(0, Number(transaksiData?.kembalian || 0)),
+        );
+        const totalDibayarRaw = transaksiData?.totalDibayar;
+        const totalDibayarSebelumRetur =
+          totalDibayarRaw !== undefined &&
+          totalDibayarRaw !== null &&
+          totalDibayarRaw !== ""
+            ? Math.max(0, Number(totalDibayarRaw || 0))
+            : Math.max(
+                0,
+                pembayaranSplitTerdeteksi > 0
+                  ? pembayaranSplitTerdeteksi
+                  : pembayaranTunaiTerdeteksi,
+              );
+        const totalDibayarBersih = Math.max(
+          0,
+          Math.min(grandTotalBersih, totalDibayarSebelumRetur),
+        );
+        const sisaHutangBersih = Boolean(transaksiData?.isHutang)
+          ? Math.max(0, grandTotalBersih - totalDibayarBersih)
+          : 0;
+        const isHutangBersih =
+          Boolean(transaksiData?.isHutang) &&
+          returStatus !== "penuh" &&
+          grandTotalBersih > 0 &&
+          sisaHutangBersih > 0;
+        const hutangStatusBersih = isHutangBersih
+          ? "belum_lunas"
+          : Boolean(transaksiData?.isHutang)
+            ? "lunas"
+            : "tidak";
+
         const itemsSetelahRetur = originalItems.map((item: any, index: number) => {
           const key = getReturKey(item, index);
           const qtyTerjualItem = Number(item?.qty || 0);
@@ -3867,6 +4048,12 @@ export default function TransaksiPage() {
           labaKotorRetur,
           totalItemRetur,
           totalJenisBarangRetur: selectedItems.length,
+          isHutangAsal: Boolean(transaksiData?.isHutang),
+          namaPenghutang: String(transaksiData?.namaPenghutang || ""),
+          hutangSebelumRetur,
+          sisaHutangSetelahRetur: sisaHutangBersih,
+          totalDibayarSetelahRetur: totalDibayarBersih,
+          hutangStatusSetelahRetur: hutangStatusBersih,
           periodeAsalTanggal: tanggalKey,
           periodeAsalBulan: bulanKey,
           kasirUid: transaksiData.kasirUid || "",
@@ -3897,6 +4084,24 @@ export default function TransaksiPage() {
           totalModalBersih,
           estimasiLabaKotorBersih,
           totalItemBersih,
+          totalDibayar: totalDibayarBersih,
+          kurangBayar: sisaHutangBersih,
+          isHutang: isHutangBersih,
+          hutangStatus: hutangStatusBersih,
+          totalHutang: sisaHutangBersih,
+          sisaHutang: sisaHutangBersih,
+          hutangSebelumRetur,
+          hutangTerpotongRetur: Math.max(0, hutangSebelumRetur - sisaHutangBersih),
+          hutangUpdatedAt: Boolean(transaksiData?.isHutang) ? serverTimestamp() : null,
+          hutangUpdatedAtMs: Boolean(transaksiData?.isHutang) ? nowMs : 0,
+          hutangLunasAt:
+            Boolean(transaksiData?.isHutang) && sisaHutangBersih <= 0
+              ? serverTimestamp()
+              : transaksiData?.hutangLunasAt || null,
+          hutangLunasAtMs:
+            Boolean(transaksiData?.isHutang) && sisaHutangBersih <= 0
+              ? nowMs
+              : Number(transaksiData?.hutangLunasAtMs || 0),
           kelompokKategoriBreakdown: mergeKelompokKategoriBreakdownTransaksi(
             transaksiData?.kelompokKategoriBreakdown,
             kelompokKategoriBreakdownRetur,
@@ -3956,6 +4161,13 @@ export default function TransaksiPage() {
       estimasiLabaKotor: Number(trx.estimasiLabaKotor || 0),
       uangBayar: Number(trx.uangBayar || 0),
       kembalian: Number(trx.kembalian || 0),
+      kurangBayar: Number(trx.kurangBayar || 0),
+      isHutang: Boolean(trx.isHutang),
+      hutangStatus: String(trx.hutangStatus || (trx.isHutang ? "belum_lunas" : "tidak")),
+      namaPenghutang: String(trx.namaPenghutang || ""),
+      totalHutang: Number(trx.totalHutang || 0),
+      sisaHutang: Number(trx.sisaHutang || 0),
+      totalDibayar: Number(trx.totalDibayar || trx.uangBayar || 0),
       totalItem: Number(trx.totalItem || 0),
       totalJenisBarang: Number(trx.totalJenisBarang || 0),
       status: trx.status || "selesai",
@@ -4208,6 +4420,22 @@ export default function TransaksiPage() {
                       </span>
                     </div>
 
+                    {isTransaksiHutang && (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-black uppercase tracking-[0.12em] text-amber-700">
+                            Hutang
+                          </span>
+                          <span className="text-sm font-black text-amber-700">
+                            {formatRupiah(kurangBayar)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs font-bold text-slate-600">
+                          Atas nama: {namaPenghutangClean || "-"}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="rounded-2xl bg-white px-3 py-2">
                       <div className="space-y-1.5">
                         {pembayaranPayload.map((item, index) => (
@@ -4308,7 +4536,7 @@ export default function TransaksiPage() {
                 <button
                   type="button"
                   onClick={handleProsesTransaksi}
-                  disabled={submitLoading || kurangBayar > 0}
+                  disabled={submitLoading || (kurangBayar > 0 && !hutangMode)}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-sm shadow-sky-200/50 transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitLoading ? (
@@ -5987,17 +6215,11 @@ export default function TransaksiPage() {
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
-                      <span>Kurang Bayar</span>
-                      <span className="font-black text-red-600">
+                      <span>{isTransaksiHutang ? "Hutang" : "Kurang Bayar"}</span>
+                      <span className={`font-black ${isTransaksiHutang ? "text-amber-700" : "text-red-600"}`}>
                         {formatRupiah(kurangBayar)}
                       </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-600">
-                      <span>Estimasi Laba Kotor</span>
-                      <span className="font-black text-slate-800">
-                        {formatRupiah(estimasiLabaKotor)}
-                      </span>
-                    </div>
+                    </div>                                   
                   </div>
 
                   <button
@@ -6318,6 +6540,11 @@ function RiwayatTransaksiReturPanel({
                       >
                         {trx.jenisTransaksi === "digital" ? "Digital" : "Fisik"}
                       </span>
+                      {trx.isHutang && Number(trx.sisaHutang || trx.totalHutang || 0) > 0 ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700">
+                          Hutang
+                        </span>
+                      ) : null}
                       {trx.returStatus && trx.returStatus !== "belum" ? (
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${
@@ -6337,7 +6564,7 @@ function RiwayatTransaksiReturPanel({
                       <span>{trx.kasirNama}</span>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
                       <div className="rounded-xl bg-slate-50 px-3 py-2">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                           Total
@@ -6345,6 +6572,19 @@ function RiwayatTransaksiReturPanel({
                         <p className="mt-0.5 text-xs font-black text-slate-800">
                           {formatRupiah(trx.grandTotal)}
                         </p>
+                      </div>
+                      <div className="rounded-xl bg-amber-50 px-3 py-2">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">
+                          Hutang
+                        </p>
+                        <p className="mt-0.5 text-xs font-black text-amber-700">
+                          {trx.isHutang ? formatRupiah(Number(trx.sisaHutang || trx.totalHutang || 0)) : "-"}
+                        </p>
+                        {trx.isHutang && trx.namaPenghutang ? (
+                          <p className="mt-0.5 truncate text-[10px] font-bold text-amber-700">
+                            {trx.namaPenghutang}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="rounded-xl bg-slate-50 px-3 py-2">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">

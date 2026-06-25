@@ -1,4 +1,4 @@
-/* app/admin/laporan-harian/page.tsx */
+/* app/admin/laporan-harian/page.tsx - retur-aware */
 
 "use client"
 
@@ -36,6 +36,8 @@ type BreakdownMetode = {
   jumlahTransaksi: number
   omzet: number
   admin: number
+  totalDibayar: number
+  totalHutang: number
 }
 
 type KelompokKategoriBreakdown = {
@@ -55,6 +57,8 @@ type KelompokKategoriBreakdown = {
   omzet: number
   totalModal: number
   totalLabaKotor: number
+  totalDibayar: number
+  totalHutang: number
 }
 
 type LaporanHarian = {
@@ -77,6 +81,10 @@ type LaporanHarian = {
   totalBiayaAdmin: number
   totalModal: number
   totalLabaKotor: number
+  totalDibayar: number
+  totalHutang: number
+  sisaHutang: number
+  jumlahTransaksiHutang: number
   totalItemTerjual: number
   totalJenisBarangTerjual: number
   rataRataBelanja: number
@@ -164,26 +172,42 @@ function getFirstFilledNumber(...values: unknown[]) {
   return 0
 }
 
-function getKelompokLabaKotor(item: any) {
-  const directValue = getFirstFilledNumber(
-    item?.totalLabaKotor,
-    item?.labaBersih,
-    item?.estimasiLabaKotor,
-    item?.keuntungan,
-    item?.untung,
-    item?.laba,
-  )
+function hasNumberValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return false
+  return Number.isFinite(Number(value))
+}
 
-  if (directValue !== 0) return directValue
-
-  const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
-  const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
-
-  if (totalSetelahDiskon !== 0 && totalModal !== 0) {
-    return totalSetelahDiskon - totalModal
+function getFirstExistingNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (!hasNumberValue(value)) continue
+    return normalizeNumber(value)
   }
 
   return 0
+}
+
+function getNilaiBersihRetur(raw: any, bersihKey: string, normalKey: string, returKey = "") {
+  const bersihValue = raw?.[bersihKey]
+  if (hasNumberValue(bersihValue)) return Math.max(0, normalizeNumber(bersihValue))
+
+  const normalValue = raw?.[normalKey]
+  const normal = hasNumberValue(normalValue) ? normalizeNumber(normalValue) : 0
+  const retur = returKey && hasNumberValue(raw?.[returKey]) ? normalizeNumber(raw?.[returKey]) : 0
+
+  if (normal !== 0 || retur !== 0) return Math.max(0, normal - retur)
+  return 0
+}
+
+function getKelompokLabaKotorValid(item: any, totalDibayar?: number, totalModal?: number) {
+  const pendapatanMasuk = normalizeNumber(totalDibayar ?? item?.totalDibayar ?? item?.uangMasuk ?? item?.pendapatanDiterima)
+  const modalPenuh = normalizeNumber(totalModal ?? item?.totalModal ?? item?.modal)
+
+  if (pendapatanMasuk !== 0 || modalPenuh !== 0) {
+    return pendapatanMasuk - modalPenuh
+  }
+
+  const nilaiJual = getFirstFilledNumber(item?.totalSetelahDiskon, item?.omzet, item?.subtotal)
+  return nilaiJual - modalPenuh
 }
 
 function isAdminProfile(profile: UserProfile | null) {
@@ -223,29 +247,317 @@ function getLaporanOwnerUid(raw: any) {
   )
 }
 
-function mapKelompokBreakdown(value: unknown): KelompokKategoriBreakdown[] {
+function getTanggalKeyFromMs(value: number) {
+  if (!value) return ""
+  return toDateInputValue(new Date(value))
+}
+
+function getFirestoreMillis(value: any) {
+  if (!value) return 0
+  if (typeof value?.toMillis === "function") return Number(value.toMillis() || 0)
+  if (typeof value?.seconds === "number") return Number(value.seconds * 1000)
+  return normalizeNumber(value)
+}
+
+function getPembayaranItemsTotal(value: unknown) {
+  if (!Array.isArray(value)) return 0
+  return value.reduce((acc, item: any) => {
+    const nominal = getFirstFilledNumber(item?.nominal, item?.totalDenganAdmin, item?.jumlah, item?.amount)
+    return acc + Math.max(0, nominal)
+  }, 0)
+}
+
+function getTransaksiGrandTotal(raw: any) {
+  if (hasNumberValue(raw?.grandTotalBersih)) return Math.max(0, normalizeNumber(raw?.grandTotalBersih))
+
+  const grandTotal = getFirstFilledNumber(raw?.grandTotal, raw?.totalBayar, raw?.total)
+  if (grandTotal > 0) {
+    const totalRetur = getFirstExistingNumber(raw?.totalReturNominal, raw?.totalReturSetelahDiskon)
+    return Math.max(0, grandTotal - totalRetur)
+  }
+
+  const totalSetelahDiskon = getNilaiBersihRetur(raw, "totalSetelahDiskonBersih", "totalSetelahDiskon", "totalReturSetelahDiskon")
+  const biayaAdmin = getNilaiBersihRetur(raw, "biayaAdminBersih", "biayaAdminNominal", "totalReturBiayaAdmin")
+  return Math.max(0, totalSetelahDiskon + biayaAdmin)
+}
+
+function getTransaksiTotalDibayar(raw: any) {
+  const grandTotal = getTransaksiGrandTotal(raw)
+  if (grandTotal <= 0) return 0
+
+  const isHutang = Boolean(raw?.isHutang) || normalizeNumber(raw?.sisaHutang) > 0 || normalizeNumber(raw?.totalHutang) > 0 || normalizeNumber(raw?.kurangBayar) > 0
+
+  if (!isHutang) return grandTotal
+
+  const explicitPaid = getFirstFilledNumber(raw?.totalDibayarBersih, raw?.totalDibayar, raw?.totalTerbayar, raw?.dibayar)
+  if (explicitPaid > 0) return Math.max(0, Math.min(grandTotal, explicitPaid))
+
+  const sisaHutang = hasNumberValue(raw?.sisaHutang) ? normalizeNumber(raw?.sisaHutang) : 0
+  if (sisaHutang > 0) return Math.max(0, Math.min(grandTotal, grandTotal - sisaHutang))
+
+  const totalHutang = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar)
+  if (totalHutang > 0) return Math.max(0, Math.min(grandTotal, grandTotal - totalHutang))
+
+  const splitPaid = getPembayaranItemsTotal(raw?.pembayaranItems)
+  if (splitPaid > 0) return Math.max(0, Math.min(grandTotal, splitPaid))
+
+  const uangBayar = normalizeNumber(raw?.uangBayar)
+  const kembalian = normalizeNumber(raw?.kembalian)
+  return Math.max(0, Math.min(grandTotal, uangBayar - Math.max(0, kembalian)))
+}
+
+function getTransaksiHutang(raw: any) {
+  const grandTotal = getTransaksiGrandTotal(raw)
+  if (grandTotal <= 0) return 0
+
+  if (hasNumberValue(raw?.sisaHutang)) return Math.max(0, Math.min(grandTotal, normalizeNumber(raw?.sisaHutang)))
+
+  const paid = getTransaksiTotalDibayar(raw)
+  const explicitHutang = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar)
+  const hasil = explicitHutang > 0 ? Math.min(grandTotal, explicitHutang) : grandTotal - paid
+  return Math.max(0, hasil)
+}
+
+function getPaidRatio(raw: any) {
+  const grandTotal = getTransaksiGrandTotal(raw)
+  if (grandTotal <= 0) return 0
+  return Math.max(0, Math.min(1, getTransaksiTotalDibayar(raw) / grandTotal))
+}
+
+function getOriginalTotalSetelahDiskon(raw: any, itemsFallback = 0) {
+  return Math.max(0, getFirstFilledNumber(raw?.totalSetelahDiskon, raw?.subtotal, itemsFallback))
+}
+
+function getTransaksiKasirUid(raw: any) {
+  return pickFirstString(raw?.ownerUid, raw?.kasirUid, raw?.kasirId, raw?.userId, raw?.uid, raw?.createdBy, raw?.createdByUid)
+}
+
+function getTransaksiKasirNama(raw: any) {
+  return pickFirstString(raw?.kasirNama, raw?.userNama, raw?.createdByNama, raw?.adminNama, raw?.namaKasir, raw?.pelayanNama, "Tanpa Nama")
+}
+
+function getTransaksiKasirEmail(raw: any) {
+  return pickFirstString(raw?.kasirEmail, raw?.userEmail, raw?.createdByEmail, raw?.adminEmail, raw?.emailKasir, "-")
+}
+
+function scaleNumber(value: unknown, ratio: number) {
+  return normalizeNumber(value) * ratio
+}
+
+function getKelompokNilaiJual(item: any) {
+  return getFirstFilledNumber(item?.totalSetelahDiskon, item?.omzet, item?.subtotal)
+}
+
+function getKelompokTotalDibayar(item: any, ratio = 1) {
+  const explicitPaid = getFirstFilledNumber(item?.totalDibayar, item?.uangMasuk, item?.pendapatanDiterima)
+  if (explicitPaid > 0) return explicitPaid
+  return getKelompokNilaiJual(item) * ratio
+}
+
+function getKelompokTotalHutang(item: any, ratio = 1) {
+  const explicitHutang = getFirstFilledNumber(item?.totalHutang, item?.sisaHutang, item?.kurangBayar)
+  if (explicitHutang > 0) return explicitHutang
+  return Math.max(0, getKelompokNilaiJual(item) - getKelompokTotalDibayar(item, ratio))
+}
+
+function mapKelompokBreakdown(value: unknown, ratio = 1): KelompokKategoriBreakdown[] {
   if (!Array.isArray(value)) return []
 
   return value
-    .map((item: any) => ({
-      kelompokId: pickFirstString(item?.kelompokId, item?.id, item?.groupId),
-      namaKelompok: pickFirstString(item?.namaKelompok, item?.kelompokNama, item?.nama, "Tanpa Kelompok"),
-      urutan: Number(item?.urutan || 999),
-      tokoId: pickFirstString(item?.tokoId),
-      tokoNama: pickFirstString(item?.tokoNama),
-      kategoriIds: normalizeStringArray(item?.kategoriIds),
-      kategoriNama: normalizeStringArray(item?.kategoriNama),
-      jumlahTransaksi: Number(item?.jumlahTransaksi || item?.transaksi || 0),
-      totalItem: Number(item?.totalItem || item?.totalJenisBarang || 0),
-      totalQty: normalizeNumber(item?.totalQty ?? item?.qtyTerjual ?? item?.qty ?? item?.totalItemTerjual),
-      subtotal: normalizeNumber(item?.subtotal),
-      totalDiskon: normalizeNumber(item?.totalDiskon),
-      totalSetelahDiskon: normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet),
-      omzet: normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon),
-      totalModal: normalizeNumber(item?.totalModal ?? item?.modal),
-      totalLabaKotor: getKelompokLabaKotor(item),
-    }))
+    .map((item: any) => {
+      const nilaiJual = getKelompokNilaiJual(item)
+      const totalDibayar = getKelompokTotalDibayar(item, ratio)
+      const totalHutang = getKelompokTotalHutang(item, ratio)
+
+      return {
+        kelompokId: pickFirstString(item?.kelompokId, item?.id, item?.groupId),
+        namaKelompok: pickFirstString(item?.namaKelompok, item?.kelompokNama, item?.nama, "Tanpa Kelompok"),
+        urutan: Number(item?.urutan || 999),
+        tokoId: pickFirstString(item?.tokoId),
+        tokoNama: pickFirstString(item?.tokoNama),
+        kategoriIds: normalizeStringArray(item?.kategoriIds),
+        kategoriNama: normalizeStringArray(item?.kategoriNama),
+        jumlahTransaksi: Number(item?.jumlahTransaksi || item?.transaksi || 0),
+        totalItem: Number(item?.totalItem || item?.totalJenisBarang || 0),
+        totalQty: normalizeNumber(item?.totalQty ?? item?.qtyTerjual ?? item?.qty ?? item?.totalItemTerjual),
+        subtotal: normalizeNumber(item?.subtotal),
+        totalDiskon: normalizeNumber(item?.totalDiskon),
+        totalSetelahDiskon: nilaiJual,
+        omzet: totalDibayar,
+        totalModal: normalizeNumber(item?.totalModal ?? item?.modal),
+        totalLabaKotor: getKelompokLabaKotorValid(item, totalDibayar, normalizeNumber(item?.totalModal ?? item?.modal)),
+        totalDibayar,
+        totalHutang,
+      }
+    })
     .filter((item) => item.namaKelompok)
+}
+
+
+function buildKelompokFromTransaksi(raw: any, ratio: number, _tokoId?: string, _tokoNama?: string): KelompokKategoriBreakdown[] {
+  return mapKelompokBreakdown(raw?.kelompokKategoriBreakdown, ratio)
+}
+function buildLaporanFromTransaksiDocs(docs: Array<{ id: string; data: any }>): LaporanHarian[] {
+  const map = new Map<string, LaporanHarian>()
+
+  for (const docItem of docs) {
+    const raw = docItem.data || {}
+    if (String(raw?.status || "").toLowerCase() !== "selesai") continue
+
+    const createdAtMs = getFirstFilledNumber(raw?.createdAtMs, getFirestoreMillis(raw?.createdAt), getFirestoreMillis(raw?.tanggal))
+    const tanggalKey = pickFirstString(raw?.tanggalKey, getTanggalKeyFromMs(createdAtMs))
+    if (!tanggalKey) continue
+
+    const tokoId = pickFirstString(raw?.tokoId)
+    const tokoNama = pickFirstString(raw?.tokoNama, "Tanpa Toko")
+    const kasirUid = getTransaksiKasirUid(raw)
+    const kasirNama = getTransaksiKasirNama(raw)
+    const kasirEmail = getTransaksiKasirEmail(raw)
+    const key = `${tanggalKey}__${tokoId || tokoNama}__${kasirUid || kasirEmail}`
+
+    const grandTotal = getTransaksiGrandTotal(raw)
+    const totalDibayar = getTransaksiTotalDibayar(raw)
+    const sisaHutang = getTransaksiHutang(raw)
+    const paidRatio = getPaidRatio(raw)
+    const items = Array.isArray(raw?.items) ? raw.items : []
+    const itemsSubtotal = items.reduce((acc: number, item: any) => acc + normalizeNumber(item?.hargaAsli ?? item?.hargaJual) * normalizeNumber(item?.qty), 0)
+    const itemsTotalSetelahDiskon = items.reduce((acc: number, item: any) => acc + normalizeNumber(item?.hargaSetelahDiskon ?? item?.hargaJual ?? item?.hargaAsli) * normalizeNumber(item?.qty), 0)
+    const itemsModal = items.reduce((acc: number, item: any) => acc + normalizeNumber(item?.hargaModal) * normalizeNumber(item?.qty), 0)
+    const itemsQty = items.reduce((acc: number, item: any) => acc + normalizeNumber(item?.qty), 0)
+    const originalTotalSetelahDiskon = getOriginalTotalSetelahDiskon(raw, itemsTotalSetelahDiskon)
+    const subtotal = getNilaiBersihRetur(raw, "subtotalBersih", "subtotal", "totalReturSubtotal") || itemsSubtotal
+    const totalSetelahDiskon = getNilaiBersihRetur(raw, "totalSetelahDiskonBersih", "totalSetelahDiskon", "totalReturSetelahDiskon") || Math.max(0, grandTotal - getNilaiBersihRetur(raw, "biayaAdminBersih", "biayaAdminNominal", "totalReturBiayaAdmin"))
+    const totalDiskon = hasNumberValue(raw?.totalDiskonBersih)
+      ? Math.max(0, normalizeNumber(raw?.totalDiskonBersih))
+      : Math.max(0, getFirstFilledNumber(raw?.totalDiskon, subtotal - totalSetelahDiskon) - normalizeNumber(raw?.totalReturDiskon))
+    const totalBiayaAdmin = Math.min(totalDibayar, getNilaiBersihRetur(raw, "biayaAdminBersih", "biayaAdminNominal", "totalReturBiayaAdmin") * paidRatio)
+    const totalModal = getNilaiBersihRetur(raw, "totalModalBersih", "totalModal", "totalReturModal") || itemsModal
+    const pendapatanBersihDiterima = Math.max(0, totalDibayar - totalBiayaAdmin)
+    const labaKotorDiterima = pendapatanBersihDiterima - totalModal
+    const totalItem = hasNumberValue(raw?.totalItemBersih)
+      ? Math.max(0, normalizeNumber(raw?.totalItemBersih))
+      : Math.max(0, getFirstFilledNumber(raw?.totalItem, itemsQty) - normalizeNumber(raw?.totalReturQty))
+    const totalJenis = totalItem <= 0 ? 0 : getFirstFilledNumber(raw?.totalJenisBarang, items.length)
+    const kelompokRatio = originalTotalSetelahDiskon > 0
+      ? Math.max(0, Math.min(1, pendapatanBersihDiterima / originalTotalSetelahDiskon))
+      : 0
+    const [tahun, bulan, hari] = tanggalKey.split("-").map(Number)
+
+    const current = map.get(key) || {
+      id: key,
+      tanggalKey,
+      tahun: tahun || 0,
+      bulan: bulan || 0,
+      hari: hari || 0,
+      tokoId,
+      tokoNama,
+      ownerUid: kasirUid,
+      kasirUid,
+      kasirNama,
+      kasirEmail,
+      jumlahTransaksi: 0,
+      omzet: 0,
+      subtotal: 0,
+      totalDiskon: 0,
+      totalSetelahDiskon: 0,
+      totalBiayaAdmin: 0,
+      totalModal: 0,
+      totalLabaKotor: 0,
+      totalDibayar: 0,
+      totalHutang: 0,
+      sisaHutang: 0,
+      jumlahTransaksiHutang: 0,
+      totalItemTerjual: 0,
+      totalJenisBarangTerjual: 0,
+      rataRataBelanja: 0,
+      metodePembayaranBreakdown: [],
+      kelompokKategoriBreakdown: [],
+      updatedAtMs: 0,
+    }
+
+    current.jumlahTransaksi += 1
+    current.omzet += totalDibayar
+    current.subtotal += subtotal
+    current.totalDiskon += totalDiskon
+    current.totalSetelahDiskon += totalSetelahDiskon
+    current.totalBiayaAdmin += totalBiayaAdmin
+    current.totalModal += totalModal
+    current.totalLabaKotor += labaKotorDiterima
+    current.totalDibayar += totalDibayar
+    current.totalHutang += sisaHutang
+    current.sisaHutang += sisaHutang
+    current.jumlahTransaksiHutang += sisaHutang > 0 ? 1 : 0
+    current.totalItemTerjual += totalItem
+    current.totalJenisBarangTerjual += totalJenis
+    current.updatedAtMs = Math.max(current.updatedAtMs || 0, getFirstFilledNumber(raw?.updatedAtMs, getFirestoreMillis(raw?.updatedAt), createdAtMs))
+
+    const metodeItems = Array.isArray(raw?.pembayaranItems) && raw.pembayaranItems.length > 0
+      ? raw.pembayaranItems
+      : [{
+          metodePembayaranNama: pickFirstString(raw?.metodePembayaranNama, "Tanpa Metode"),
+          nominal: totalDibayar,
+          biayaAdminNominal: totalBiayaAdmin,
+        }]
+
+    for (const metode of metodeItems) {
+      const nama = pickFirstString(metode?.metodePembayaranNama, metode?.nama, raw?.metodePembayaranNama, "Tanpa Metode")
+      const nominal = Math.min(totalDibayar, Math.max(0, getFirstFilledNumber(metode?.nominal, metode?.totalDenganAdmin, totalDibayar)))
+      const admin = Math.min(totalBiayaAdmin, Math.max(0, normalizeNumber(metode?.biayaAdminNominal ?? metode?.admin)))
+      const existing = current.metodePembayaranBreakdown.find((item) => item.nama === nama)
+
+      if (existing) {
+        existing.jumlahTransaksi += 1
+        existing.omzet += nominal
+        existing.admin += admin
+        existing.totalDibayar += nominal
+        existing.totalHutang += 0
+      } else {
+        current.metodePembayaranBreakdown.push({
+          nama,
+          jumlahTransaksi: 1,
+          omzet: nominal,
+          admin,
+          totalDibayar: nominal,
+          totalHutang: 0,
+        })
+      }
+    }
+
+    const kelompokItems = buildKelompokFromTransaksi(raw, kelompokRatio, tokoId, tokoNama)
+    for (const kelompok of kelompokItems) {
+      const groupKey = kelompok.kelompokId || `${tokoId}-${kelompok.namaKelompok}`
+      const existing = current.kelompokKategoriBreakdown.find((item) => (item.kelompokId || `${item.tokoId}-${item.namaKelompok}`) === groupKey)
+
+      if (existing) {
+        existing.kategoriIds = Array.from(new Set([...(existing.kategoriIds || []), ...(kelompok.kategoriIds || [])]))
+        existing.kategoriNama = Array.from(new Set([...(existing.kategoriNama || []), ...(kelompok.kategoriNama || [])]))
+        existing.jumlahTransaksi += Number(kelompok.jumlahTransaksi || 0)
+        existing.totalItem += Number(kelompok.totalItem || 0)
+        existing.totalQty += Number(kelompok.totalQty || 0)
+        existing.subtotal += Number(kelompok.subtotal || 0)
+        existing.totalDiskon += Number(kelompok.totalDiskon || 0)
+        existing.totalSetelahDiskon += Number(kelompok.totalSetelahDiskon || 0)
+        existing.omzet += Number(kelompok.omzet || 0)
+        existing.totalModal += Number(kelompok.totalModal || 0)
+        existing.totalLabaKotor += Number(kelompok.totalLabaKotor || 0)
+        existing.totalDibayar += Number(kelompok.totalDibayar || 0)
+        existing.totalHutang += Number(kelompok.totalHutang || 0)
+      } else {
+        current.kelompokKategoriBreakdown.push({ ...kelompok })
+      }
+    }
+
+    map.set(key, current)
+  }
+
+  return Array.from(map.values())
+    .map((item) => ({
+      ...item,
+      rataRataBelanja: item.jumlahTransaksi > 0 ? item.omzet / item.jumlahTransaksi : 0,
+      metodePembayaranBreakdown: item.metodePembayaranBreakdown.sort((a, b) => b.omzet - a.omzet),
+      kelompokKategoriBreakdown: item.kelompokKategoriBreakdown.sort((a, b) => a.urutan - b.urutan),
+    }))
+    .sort((a, b) => b.tanggalKey.localeCompare(a.tanggalKey) || b.updatedAtMs - a.updatedAtMs)
 }
 
 export default function LaporanHarianPage() {
@@ -316,8 +628,10 @@ export default function LaporanHarianPage() {
       ? raw.metodePembayaranBreakdown.map((item: any) => ({
           nama: item?.nama || "Tanpa Nama",
           jumlahTransaksi: Number(item?.jumlahTransaksi || 0),
-          omzet: Number(item?.omzet || 0),
+          omzet: Number(item?.totalDibayar || item?.omzet || 0),
           admin: Number(item?.admin || 0),
+          totalDibayar: Number(item?.totalDibayar || item?.omzet || 0),
+          totalHutang: Number(item?.totalHutang || item?.sisaHutang || 0),
         }))
       : []
 
@@ -334,13 +648,20 @@ export default function LaporanHarianPage() {
       kasirNama: pickFirstString(raw?.kasirNama, raw?.userNama, raw?.createdByNama, raw?.adminNama, raw?.namaKasir),
       kasirEmail: pickFirstString(raw?.kasirEmail, raw?.userEmail, raw?.createdByEmail, raw?.adminEmail, raw?.emailKasir),
       jumlahTransaksi: Number(raw?.jumlahTransaksi || 0),
-      omzet: Number(raw?.omzet || 0),
-      subtotal: Number(raw?.subtotal || 0),
-      totalDiskon: Number(raw?.totalDiskon || 0),
-      totalSetelahDiskon: Number(raw?.totalSetelahDiskon || 0),
-      totalBiayaAdmin: Number(raw?.totalBiayaAdmin || 0),
-      totalModal: normalizeNumber(raw?.totalModal ?? raw?.modal),
-      totalLabaKotor: getFirstFilledNumber(raw?.totalLabaKotor, raw?.estimasiLabaKotor, raw?.labaBersih, raw?.laba),
+      omzet: getFirstExistingNumber(raw?.totalDibayar, raw?.omzet),
+      subtotal: getFirstExistingNumber(raw?.subtotalBersih, raw?.subtotal),
+      totalDiskon: getFirstExistingNumber(raw?.totalDiskonBersih, raw?.totalDiskon),
+      totalSetelahDiskon: getFirstExistingNumber(raw?.totalDibayar, raw?.totalSetelahDiskonBersih, raw?.totalSetelahDiskon, raw?.omzet),
+      totalBiayaAdmin: getFirstExistingNumber(raw?.totalBiayaAdmin),
+      totalModal: getFirstExistingNumber(raw?.totalModalBersih, raw?.totalModal, raw?.modal),
+      totalLabaKotor:
+        getFirstExistingNumber(raw?.totalDibayar, raw?.omzet) -
+        getFirstExistingNumber(raw?.totalBiayaAdmin) -
+        getFirstExistingNumber(raw?.totalModalBersih, raw?.totalModal, raw?.modal),
+      totalDibayar: getFirstExistingNumber(raw?.totalDibayar, raw?.omzet),
+      totalHutang: getFirstExistingNumber(raw?.totalHutang, raw?.sisaHutang),
+      sisaHutang: getFirstExistingNumber(raw?.sisaHutang, raw?.totalHutang),
+      jumlahTransaksiHutang: Number(raw?.jumlahTransaksiHutang || 0),
       totalItemTerjual: Number(raw?.totalItemTerjual || 0),
       totalJenisBarangTerjual: Number(raw?.totalJenisBarangTerjual || 0),
       rataRataBelanja: Number(raw?.rataRataBelanja || 0),
@@ -382,11 +703,13 @@ export default function LaporanHarianPage() {
 
     try {
       const laporanPromise = getDocs(query(collection(db, "laporan_harian"), orderBy("tanggalKey", "desc")))
+      const transaksiPromise = getDocs(query(collection(db, "transaksi"), orderBy("createdAtMs", "desc")))
 
       if (admin) {
-        const [tokoSnap, laporanSnap] = await Promise.all([
+        const [tokoSnap, laporanSnap, transaksiSnap] = await Promise.all([
           getDocs(query(collection(db, "toko"), orderBy("nama"))),
           laporanPromise,
+          transaksiPromise,
         ])
 
         const tokoData: Toko[] = tokoSnap.docs
@@ -396,17 +719,20 @@ export default function LaporanHarianPage() {
           })
           .filter((item) => item.nama)
 
-        const laporanData = laporanSnap.docs
-          .map((item) => mapLaporanDoc(item.id, item.data()))
-          .filter((item) => item.tanggalKey)
+        const transaksiData = buildLaporanFromTransaksiDocs(transaksiSnap.docs.map((item) => ({ id: item.id, data: item.data() })))
+        const laporanData = transaksiData.length > 0
+          ? transaksiData
+          : laporanSnap.docs.map((item) => mapLaporanDoc(item.id, item.data())).filter((item) => item.tanggalKey)
 
         setTokoList(tokoData)
         setLaporanList(laporanData)
       } else {
-        const laporanSnap = await laporanPromise
-        const laporanData = laporanSnap.docs
-          .map((item) => mapLaporanDoc(item.id, item.data()))
+        const [laporanSnap, transaksiSnap] = await Promise.all([laporanPromise, transaksiPromise])
+        const transaksiData = buildLaporanFromTransaksiDocs(transaksiSnap.docs.map((item) => ({ id: item.id, data: item.data() })))
           .filter((item) => item.tanggalKey && isOwnLaporan(item, activeProfile || null))
+        const laporanData = transaksiData.length > 0
+          ? transaksiData
+          : laporanSnap.docs.map((item) => mapLaporanDoc(item.id, item.data())).filter((item) => item.tanggalKey && isOwnLaporan(item, activeProfile || null))
 
         setTokoList([{ id: tokoIdUser, nama: String(activeProfile?.tokoNama || "").trim() || "Toko Karyawan", aktif: true }])
         setLaporanList(laporanData)
@@ -467,6 +793,8 @@ export default function LaporanHarianPage() {
   const totalDiskon = filteredLaporan.reduce((acc, item) => acc + item.totalDiskon, 0)
   const totalAdmin = filteredLaporan.reduce((acc, item) => acc + item.totalBiayaAdmin, 0)
   const totalLabaKotor = filteredLaporan.reduce((acc, item) => acc + item.totalLabaKotor, 0)
+  const totalHutang = filteredLaporan.reduce((acc, item) => acc + item.sisaHutang, 0)
+  const totalTransaksiHutang = filteredLaporan.reduce((acc, item) => acc + item.jumlahTransaksiHutang, 0)
   const totalItemTerjual = filteredLaporan.reduce((acc, item) => acc + item.totalItemTerjual, 0)
   const rataRataBelanja = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0
 
@@ -515,6 +843,8 @@ export default function LaporanHarianPage() {
           omzet: 0,
           totalModal: 0,
           totalLabaKotor: 0,
+          totalDibayar: 0,
+          totalHutang: 0,
         }
 
         current.kategoriIds = Array.from(new Set([...(current.kategoriIds || []), ...(kelompok.kategoriIds || [])]))
@@ -528,6 +858,8 @@ export default function LaporanHarianPage() {
         current.omzet += Number(kelompok.omzet || kelompok.totalSetelahDiskon || 0)
         current.totalModal += normalizeNumber(kelompok.totalModal)
         current.totalLabaKotor += normalizeNumber(kelompok.totalLabaKotor)
+        current.totalDibayar += normalizeNumber(kelompok.totalDibayar || kelompok.omzet)
+        current.totalHutang += normalizeNumber(kelompok.totalHutang)
 
         map.set(key, current)
       }
@@ -541,15 +873,16 @@ export default function LaporanHarianPage() {
   }, [filteredLaporan])
 
   const tokoBreakdown = useMemo(() => {
-    const map = new Map<string, { tokoId: string; tokoNama: string; hariAktif: number; transaksi: number; omzet: number }>()
+    const map = new Map<string, { tokoId: string; tokoNama: string; hariAktif: number; transaksi: number; omzet: number; hutang: number }>()
 
     for (const laporan of filteredLaporan) {
       const key = laporan.tokoId || laporan.tokoNama || laporan.id
-      const current = map.get(key) || { tokoId: laporan.tokoId, tokoNama: laporan.tokoNama || "Tanpa Toko", hariAktif: 0, transaksi: 0, omzet: 0 }
+      const current = map.get(key) || { tokoId: laporan.tokoId, tokoNama: laporan.tokoNama || "Tanpa Toko", hariAktif: 0, transaksi: 0, omzet: 0, hutang: 0 }
 
       current.hariAktif += 1
       current.transaksi += Number(laporan.jumlahTransaksi || 0)
       current.omzet += Number(laporan.omzet || 0)
+      current.hutang += Number(laporan.sisaHutang || 0)
       map.set(key, current)
     }
 
@@ -557,14 +890,15 @@ export default function LaporanHarianPage() {
   }, [filteredLaporan])
 
   const kasirBreakdown = useMemo(() => {
-    const map = new Map<string, { uid: string; nama: string; email: string; transaksi: number; omzet: number }>()
+    const map = new Map<string, { uid: string; nama: string; email: string; transaksi: number; omzet: number; hutang: number }>()
 
     for (const laporan of filteredLaporan) {
       const key = laporan.ownerUid || laporan.kasirUid || laporan.kasirEmail || "tanpa-kasir"
-      const current = map.get(key) || { uid: laporan.ownerUid || laporan.kasirUid || "", nama: laporan.kasirNama || "Tanpa Nama", email: laporan.kasirEmail || "-", transaksi: 0, omzet: 0 }
+      const current = map.get(key) || { uid: laporan.ownerUid || laporan.kasirUid || "", nama: laporan.kasirNama || "Tanpa Nama", email: laporan.kasirEmail || "-", transaksi: 0, omzet: 0, hutang: 0 }
 
       current.transaksi += Number(laporan.jumlahTransaksi || 0)
       current.omzet += Number(laporan.omzet || 0)
+      current.hutang += Number(laporan.sisaHutang || 0)
       map.set(key, current)
     }
 
@@ -756,7 +1090,7 @@ export default function LaporanHarianPage() {
 
         <div className="space-y-2 sm:space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-            <StatCard icon={CircleDollarSign} label="Omzet" value={formatRupiah(totalOmzet)} subValue={`${totalTransaksi} transaksi`} tone="sky" />
+            <StatCard icon={CircleDollarSign} label="Pendapatan" value={formatRupiah(totalOmzet)} subValue={`${totalTransaksi} transaksi`} tone="sky" />
             <StatCard icon={Receipt} label="Rata-rata" value={formatRupiah(rataRataBelanja)} subValue={`${totalItemTerjual} item`} tone="blue" />
             <StatCard icon={Percent} label="Diskon" value={formatRupiah(totalDiskon)} subValue={`Admin ${formatRupiah(totalAdmin)}`} tone="slate" />
             <StatCard icon={BadgeDollarSign} label="Keuntungan Bersih" value={formatProfit(totalLabaKotor, canViewProfit)} subValue={canViewProfit ? "Akumulasi" : "Disembunyikan"} tone="rose" />
@@ -764,7 +1098,7 @@ export default function LaporanHarianPage() {
 
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <StatCard icon={TrendingUp} label="Hari Ini" value={formatRupiah(omzetHariIni)} tone="sky" />
-            <StatCard icon={ShoppingCart} label="Hari Direkap" value={String(filteredLaporan.length)} tone="blue" />
+            <StatCard icon={Wallet} label="Sisa Hutang" value={formatRupiah(totalHutang)} subValue={`${totalTransaksiHutang} transaksi`} tone="blue" />
             <StatCard icon={Store} label={isAdminUser ? "Toko Aktif" : "Toko Anda"} value={String(tokoBreakdown.length)} tone="slate" />
             <StatCard icon={FolderKanban} label="Kelompok" value={String(kelompokBreakdown.length)} tone="rose" />
           </div>
@@ -779,6 +1113,8 @@ export default function LaporanHarianPage() {
           tokoBreakdown={tokoBreakdown}
           kasirBreakdown={kasirBreakdown}
           totalOmzet={totalOmzet}
+          totalHutang={totalHutang}
+          totalTransaksiHutang={totalTransaksiHutang}
           itemsPerPage={itemsPerPage}
           setItemsPerPage={setItemsPerPage}
           page={page}
@@ -896,6 +1232,8 @@ function LaporanContent({
   tokoBreakdown,
   kasirBreakdown,
   totalOmzet,
+  totalHutang,
+  totalTransaksiHutang,
   itemsPerPage,
   setItemsPerPage,
   page,
@@ -909,9 +1247,11 @@ function LaporanContent({
   pagedLaporan: LaporanHarian[]
   metodeBreakdown: { nama: string; jumlahTransaksi: number; omzet: number; admin: number }[]
   kelompokBreakdown: KelompokKategoriBreakdown[]
-  tokoBreakdown: { tokoId: string; tokoNama: string; hariAktif: number; transaksi: number; omzet: number }[]
-  kasirBreakdown: { uid: string; nama: string; email: string; transaksi: number; omzet: number }[]
+  tokoBreakdown: { tokoId: string; tokoNama: string; hariAktif: number; transaksi: number; omzet: number; hutang: number }[]
+  kasirBreakdown: { uid: string; nama: string; email: string; transaksi: number; omzet: number; hutang: number }[]
   totalOmzet: number
+  totalHutang: number
+  totalTransaksiHutang: number
   itemsPerPage: number
   setItemsPerPage: (value: number) => void
   page: number
@@ -926,12 +1266,12 @@ function LaporanContent({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <div className="space-y-4 xl:col-span-7">
         <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <HeaderTitle title="Kelompok Laporan" subtitle="Breakdown penghasilan berdasarkan kelompok kategori" />
+          <HeaderTitle title="Grup Kategori" subtitle="Ringkasan pendapatan berdasarkan grup kategori" />
           <KelompokList data={kelompokBreakdown.slice(0, 8)} totalOmzet={totalOmzet} canViewProfit={canViewProfit} />
         </div>
 
         <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <HeaderTitle title="Metode Pembayaran" subtitle="Breakdown omzet berdasarkan metode bayar" />
+          <HeaderTitle title="Metode Pembayaran" subtitle="Ringkasan pendapatan berdasarkan metode bayar" />
           {metodeBreakdown.length === 0 ? (
             <EmptyBox label="Belum ada data metode" icon={Wallet} />
           ) : (
@@ -973,14 +1313,14 @@ function LaporanContent({
       <div className="space-y-4 xl:col-span-5">
         {isAdminUser && (
           <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <HeaderTitle title="Kasir / User Teratas" subtitle="Ranking user berdasarkan omzet" />
-            {kasirBreakdown.length === 0 ? <EmptyBox label="Belum ada data user" icon={ShoppingCart} /> : <RankingList data={kasirBreakdown.slice(0, 8).map((x) => ({ title: x.nama || x.email || "Tanpa Nama", subtitle: x.email, amount: x.omzet, rightLabel: `${x.transaksi} transaksi` }))} />}
+            <HeaderTitle title="Kasir / User Teratas" subtitle="Ranking user berdasarkan pendapatan" />
+            {kasirBreakdown.length === 0 ? <EmptyBox label="Belum ada data user" icon={ShoppingCart} /> : <RankingList data={kasirBreakdown.slice(0, 8).map((x) => ({ title: x.nama || x.email || "Tanpa Nama", subtitle: x.hutang > 0 ? `${x.email} · Hutang ${formatRupiah(x.hutang)}` : x.email, amount: x.omzet, rightLabel: `${x.transaksi} transaksi` }))} />}
           </div>
         )}
 
         <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <HeaderTitle title="Toko Teratas" subtitle="Ranking toko berdasarkan omzet" />
-          {tokoBreakdown.length === 0 ? <EmptyBox label="Belum ada data toko" icon={Store} /> : <RankingList data={tokoBreakdown.slice(0, 8).map((x) => ({ title: x.tokoNama, subtitle: `${x.hariAktif} hari aktif`, amount: x.omzet, rightLabel: `${x.transaksi} transaksi` }))} />}
+          <HeaderTitle title="Toko Teratas" subtitle="Ranking toko berdasarkan pendapatan" />
+          {tokoBreakdown.length === 0 ? <EmptyBox label="Belum ada data toko" icon={Store} /> : <RankingList data={tokoBreakdown.slice(0, 8).map((x) => ({ title: x.tokoNama, subtitle: x.hutang > 0 ? `${x.hariAktif} hari aktif · Hutang ${formatRupiah(x.hutang)}` : `${x.hariAktif} hari aktif`, amount: x.omzet, rightLabel: `${x.transaksi} transaksi` }))} />}
         </div>
       </div>
     </div>
@@ -1048,7 +1388,7 @@ function ProgressBar({ percent }: { percent: number }) {
       <div className="h-2 overflow-hidden rounded-full bg-slate-200">
         <div className="h-full rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500" style={{ width: `${Math.min(100, percent)}%` }} />
       </div>
-      <p className="mt-1 text-[10px] font-bold text-slate-500">{percent.toFixed(1)}% dari omzet</p>
+      <p className="mt-1 text-[10px] font-bold text-slate-500">{percent.toFixed(1)}% dari pendapatan</p>
     </div>
   )
 }
@@ -1068,9 +1408,9 @@ function LaporanMobileCard({ item, idx, canViewProfit }: { item: LaporanHarian; 
           </div>
           {(item.kasirNama || item.kasirEmail) && <p className="mt-2 truncate text-[10px] font-bold text-slate-500">Kasir: {item.kasirNama || item.kasirEmail}</p>}
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
-            <MiniInfo label="Omzet" value={formatRupiah(item.omzet)} />
+            <MiniInfo label="Pendapatan" value={formatRupiah(item.omzet)} />
             <MiniInfo label="Untung" value={formatProfit(item.totalLabaKotor, canViewProfit)} />
-            <MiniInfo label="Diskon" value={formatRupiah(item.totalDiskon)} />
+            <MiniInfo label="Hutang" value={item.sisaHutang > 0 ? formatRupiah(item.sisaHutang) : "-"} />
             <MiniInfo label="Item" value={String(item.totalItemTerjual)} />
           </div>
         </div>
@@ -1080,7 +1420,7 @@ function LaporanMobileCard({ item, idx, canViewProfit }: { item: LaporanHarian; 
 }
 
 function LaporanTable({ data, page, itemsPerPage, canViewProfit, isAdminUser }: { data: LaporanHarian[]; page: number; itemsPerPage: number; canViewProfit: boolean; isAdminUser: boolean }) {
-  const heads = isAdminUser ? ["No", "Tanggal", "Toko", "Kasir", "Transaksi", "Omzet", "Diskon", "Admin", "Untung", "Update"] : ["No", "Tanggal", "Toko", "Transaksi", "Omzet", "Diskon", "Admin", "Untung", "Update"]
+  const heads = isAdminUser ? ["No", "Tanggal", "Toko", "Kasir", "Transaksi", "Pendapatan", "Hutang", "Diskon", "Admin", "Untung", "Update"] : ["No", "Tanggal", "Toko", "Transaksi", "Pendapatan", "Hutang", "Diskon", "Admin", "Untung", "Update"]
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:block">
@@ -1100,6 +1440,7 @@ function LaporanTable({ data, page, itemsPerPage, canViewProfit, isAdminUser }: 
                 {isAdminUser && <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{item.kasirNama || item.kasirEmail || "-"}</td>}
                 <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">{item.jumlahTransaksi}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-black text-slate-800">{formatRupiah(item.omzet)}</td>
+                <td className="whitespace-nowrap px-3 py-3 font-black text-amber-700">{item.sisaHutang > 0 ? formatRupiah(item.sisaHutang) : "-"}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{formatRupiah(item.totalDiskon)}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-600">{formatRupiah(item.totalBiayaAdmin)}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-black text-sky-700">{formatProfit(item.totalLabaKotor, canViewProfit)}</td>
@@ -1151,8 +1492,8 @@ function KelompokModal({ show, onClose, data, totalOmzet, canViewProfit }: { sho
           <motion.div initial={{ opacity: 0, y: 10, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.96 }} transition={{ duration: 0.22, ease: "easeOut" }} className="max-h-[88vh] w-full max-w-4xl overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Penghasilan Kelompok</p>
-                <h2 className="truncate text-base font-black text-slate-800">Rekap Berdasarkan Kelompok Kategori</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Pendapatan Grup</p>
+                <h2 className="truncate text-base font-black text-slate-800">Rekap Berdasarkan Grup Kategori</h2>
               </div>
               <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"><X size={17} strokeWidth={2.5} /></button>
             </div>

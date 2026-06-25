@@ -20,6 +20,7 @@
   - Urutan menu tersimpan di localStorage.
   - Logic restock dari dashboard lama tetap dipertahankan.
   - Menu SOP ditambahkan di paling bawah grup Data Master dan mengarah ke /admin/aturan.
+  - Tambah tombol yang belum ada dari layout: Barang Rusak dan Daftar Hutang.
 */
 
 import Link from "next/link";
@@ -63,6 +64,7 @@ import {
   Ruler,
   ScanBarcode,
   ShieldCheck,
+  ShieldAlert,
   ShoppingBag,
   ShoppingCart,
   Store,
@@ -131,6 +133,7 @@ const DEFAULT_MENU_GROUPS: MenuGroup[] = [
       { href: "/admin/tambah-saldo", icon: Wallet, label: "Saldo" },
       { href: "/admin/tambah-provider", icon: Wifi, label: "Provider" },
       { href: "/admin/tambah-barang", icon: Package, label: "Barang" },
+      { href: "/admin/barang-rusak", icon: ShieldAlert, label: "Barang Rusak" },
       { href: "/admin/tambah-barang-tetap", icon: Building2, label: "Aset" },
       { href: "/admin/aturan", icon: BookOpenText, label: "SOP" },
     ],
@@ -166,6 +169,7 @@ const DEFAULT_MENU_GROUPS: MenuGroup[] = [
         label: "Pembayaran",
       },
       { href: "/admin/riwayat-transaksi", icon: History, label: "Riwayat" },
+      { href: "/admin/hutang", icon: Wallet, label: "Hutang" },
       { href: "/admin/laporan-harian", icon: FileClock, label: "Harian" },
       { href: "/admin/laporan-bulanan", icon: ReceiptText, label: "Bulanan" },
     ],
