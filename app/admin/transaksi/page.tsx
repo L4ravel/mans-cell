@@ -52,6 +52,7 @@ import {
   User2,
   Mail,
   Target,
+  Tag,
   Cpu,
   X,
   ChevronDown,
@@ -114,6 +115,11 @@ type KelompokLaporanKategori = {
   aktif: boolean;
   createdAt?: number;
   updatedAt?: number;
+};
+
+type KategoriDigitalTransaksi = {
+  id: string;
+  nama: string;
 };
 
 type KelompokKategoriBreakdown = {
@@ -801,6 +807,7 @@ export default function TransaksiPage() {
 
   const [tokoList, setTokoList] = useState<Toko[]>([]);
   const [barangList, setBarangList] = useState<TransaksiBarang[]>([]);
+  const [kategoriDigitalList, setKategoriDigitalList] = useState<KategoriDigitalTransaksi[]>([]);
   const [diskonList, setDiskonList] = useState<Diskon[]>([]);
   const [metodeList, setMetodeList] = useState<MetodePembayaran[]>([]);
   const [saldoList, setSaldoList] = useState<TransaksiMasterSaldoDigital[]>([]);
@@ -820,6 +827,7 @@ export default function TransaksiPage() {
     { id: "pay-2", metodeId: "", nominal: "" },
   ]);
   const [searchBarang, setSearchBarang] = useState("");
+  const [selectedKategoriDigitalId, setSelectedKategoriDigitalId] = useState("");
   const [catatan, setCatatan] = useState("");
   const [activeTab, setActiveTab] = useState<"fisik" | "digital">("fisik");
   const [selectedPelangganId, setSelectedPelangganId] = useState("");
@@ -999,6 +1007,36 @@ export default function TransaksiPage() {
       })
       .filter((item) => item.nama && item.aktif !== false);
     setTokoList(list);
+  };
+
+  const fetchKategoriDigital = async () => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, "kategori_barang_digital"), orderBy("nama")),
+      );
+
+      const list: KategoriDigitalTransaksi[] = snap.docs
+        .map((d) => {
+          const x = d.data() as any;
+          return {
+            id: d.id,
+            nama: String(x?.nama || "").trim(),
+          };
+        })
+        .filter((item) => item.nama)
+        .sort((a, b) =>
+          a.nama.localeCompare(b.nama, "id-ID", {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        );
+
+      setKategoriDigitalList(list);
+    } catch (e) {
+      console.error("Gagal memuat kategori digital:", e);
+      setKategoriDigitalList([]);
+      setError("Gagal memuat kategori barang digital");
+    }
   };
 
   const fetchBarang = async (tokoId: string) => {
@@ -1297,6 +1335,7 @@ export default function TransaksiPage() {
 
       await Promise.all([
         fetchToko(),
+        fetchKategoriDigital(),
         fetchDiskon(),
         fetchMetode(),
         fetchSaldo(),
@@ -1343,6 +1382,7 @@ export default function TransaksiPage() {
 
     setBarangList([]);
     setSearchBarang("");
+    setSelectedKategoriDigitalId("");
     setCameraOpen(false);
 
     if (!tokoIdAktif) return;
@@ -1363,6 +1403,10 @@ export default function TransaksiPage() {
     () => isAdminProfile(currentUserProfile),
     [currentUserProfile],
   );
+
+  useEffect(() => {
+    if (activeTab !== "digital") setSelectedKategoriDigitalId("");
+  }, [activeTab]);
 
   useEffect(() => {
     if (!currentUserProfile) return;
@@ -1420,6 +1464,42 @@ export default function TransaksiPage() {
   const saldoTokoMap = useMemo(() => {
     return new Map(saldoTokoAktif.map((item) => [item.id, item]));
   }, [saldoTokoAktif]);
+
+  const kategoriDigitalOptions = useMemo(() => {
+    const kategoriIdsDiToko = new Set(
+      barangList
+        .filter((item) => (item.jenisBarang || "fisik") === "digital")
+        .filter((item) => !selectedTokoId || item.tokoId === selectedTokoId)
+        .map((item) => String(item.kategoriId || "").trim())
+        .filter(Boolean),
+    );
+
+    const map = new Map<string, KategoriDigitalTransaksi>();
+
+    kategoriDigitalList.forEach((item) => {
+      if (item.id && item.nama) map.set(item.id, item);
+    });
+
+    barangList
+      .filter((item) => (item.jenisBarang || "fisik") === "digital")
+      .filter((item) => !selectedTokoId || item.tokoId === selectedTokoId)
+      .forEach((item) => {
+        const kategoriId = String(item.kategoriId || "").trim();
+        const kategoriNama = String(item.kategoriNama || "").trim();
+        if (kategoriId && kategoriNama && !map.has(kategoriId)) {
+          map.set(kategoriId, { id: kategoriId, nama: kategoriNama });
+        }
+      });
+
+    return Array.from(map.values())
+      .filter((item) => !selectedTokoId || kategoriIdsDiToko.size === 0 || kategoriIdsDiToko.has(item.id))
+      .sort((a, b) =>
+        a.nama.localeCompare(b.nama, "id-ID", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+      );
+  }, [barangList, kategoriDigitalList, selectedTokoId]);
 
   const selectedMetode = useMemo(
     () => metodeList.find((m) => m.id === selectedMetodeId) || null,
@@ -1625,12 +1705,29 @@ export default function TransaksiPage() {
       if (!sameToko || !sameJenis || !matchSearch) return false;
       if (activeTab === "digital") {
         const saldoSourceId = String(item.saldoSourceId || "").trim();
-        return item.aktif !== false && !!saldoSourceId && saldoTokoMap.has(saldoSourceId);
+        const kategoriId = String(item.kategoriId || "").trim();
+        const matchKategoriDigital = selectedKategoriDigitalId
+          ? kategoriId === selectedKategoriDigitalId
+          : !kategoriId;
+
+        return (
+          item.aktif !== false &&
+          !!saldoSourceId &&
+          saldoTokoMap.has(saldoSourceId) &&
+          matchKategoriDigital
+        );
       }
       if (shouldHideBarangFromSale(item)) return false;
       return true;
     });
-  }, [barangList, selectedTokoId, searchBarang, activeTab, saldoTokoMap]);
+  }, [
+    barangList,
+    selectedTokoId,
+    searchBarang,
+    activeTab,
+    saldoTokoMap,
+    selectedKategoriDigitalId,
+  ]);
 
   const barangBarcodeMap = useMemo(() => {
     const map = new Map<
@@ -4904,6 +5001,46 @@ export default function TransaksiPage() {
                   )}
                 </div>
 
+                {activeTab === "digital" && (
+                  <div>
+                    <FieldLabel icon={Tag} label="Kategori Digital" />
+                    <div className="relative">
+                      <select
+                        value={selectedKategoriDigitalId}
+                        onChange={(e) => setSelectedKategoriDigitalId(e.target.value)}
+                        disabled={!selectedTokoId}
+                        className={`w-full appearance-none rounded-xl border-2 px-3 py-2.5 pr-9 text-sm font-semibold outline-none transition-all ${
+                          selectedTokoId
+                            ? "border-slate-200 bg-white text-slate-700 focus:border-blue-500"
+                            : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                        }`}
+                      >
+                        <option value="">
+                          {selectedTokoId ? "Pilih kategori" : "Pilih toko dulu"}
+                        </option>
+                        {selectedTokoId &&
+                          kategoriDigitalOptions.map((kategori) => (
+                            <option key={kategori.id} value={kategori.id}>
+                              {kategori.nama}
+                            </option>
+                          ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                        strokeWidth={2.5}
+                      />
+                    </div>
+                    <p className="mt-1 text-[10px] font-bold text-slate-400">
+                      {selectedTokoId
+                        ? selectedKategoriDigitalId
+                          ? "Barang digital tampil sesuai kategori yang dipilih."
+                          : "Tanpa memilih kategori, hanya barang digital tanpa kategori yang tampil."
+                        : "Kategori digital baru bisa dipilih setelah toko dipilih."}
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-2">
                   <motion.button
                     whileTap={{ scale: 0.97 }}
@@ -5559,6 +5696,39 @@ export default function TransaksiPage() {
                       </div>
                     )}
                   </div>
+
+                  {activeTab === "digital" && (
+                    <div>
+                      <FieldLabel icon={Tag} label="Kategori Digital" />
+                      <div className="relative">
+                        <select
+                          value={selectedKategoriDigitalId}
+                          onChange={(e) => setSelectedKategoriDigitalId(e.target.value)}
+                          disabled={!selectedTokoId}
+                          className={`w-full appearance-none rounded-xl border-2 px-3 py-2.5 pr-9 text-sm font-semibold outline-none transition-all ${
+                            selectedTokoId
+                              ? "border-slate-200 bg-white text-slate-700 hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                              : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                          }`}
+                        >
+                          <option value="">
+                            {selectedTokoId ? "Pilih kategori" : "Pilih toko dulu"}
+                          </option>
+                          {selectedTokoId &&
+                            kategoriDigitalOptions.map((kategori) => (
+                              <option key={kategori.id} value={kategori.id}>
+                                {kategori.nama}
+                              </option>
+                            ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                          strokeWidth={2.6}
+                        />
+                      </div>                    
+                    </div>
+                  )}
 
                   <div>
                     <FieldLabel icon={User2} label="Pelanggan (Opsional)" />

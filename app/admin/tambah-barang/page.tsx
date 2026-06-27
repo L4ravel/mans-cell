@@ -1,4 +1,5 @@
 /*
+  app/admin/tambah-barang/page.tsx
   Halaman admin barang untuk CRUD data barang per toko di Firestore.
   Layout direvisi konsisten 100% dengan master data terbaru: tema biru muda, filter mobile collapse, stat card sesuai filter aktif, card mobile modern, dan tombol aksi seragam.
   Revisi:
@@ -35,6 +36,7 @@ import {
   query,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore"
 import {
   AlertCircle,
@@ -1120,8 +1122,52 @@ function BarcodeSvg({ value, className }: { value: string; className?: string })
   return <svg ref={svgRef} className={className} />
 }
 
+function InlineHargaInput({
+  label,
+  value,
+  onChange,
+  dirty,
+  invalid,
+  className = "",
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  dirty?: boolean
+  invalid?: boolean
+  className?: string
+}) {
+  const labelClass = invalid
+    ? "text-red-500"
+    : dirty
+      ? "text-emerald-600"
+      : "text-slate-400"
 
+  const inputClass = invalid
+    ? "border-red-300 bg-red-50/40 focus:border-red-400 focus:ring-red-400/20 focus-visible:border-red-400 focus-visible:ring-red-400/20"
+    : dirty
+      ? "border-emerald-300 bg-emerald-50/40 focus:border-sky-500 focus:ring-sky-400/25 focus-visible:border-sky-500 focus-visible:ring-sky-400/25"
+      : "border-slate-200 focus:border-sky-500 focus:ring-sky-400/25 focus-visible:border-sky-500 focus-visible:ring-sky-400/25"
 
+  return (
+    <div className={className}>
+      <p className={`mb-1 text-[8px] font-black uppercase tracking-widest ${labelClass}`}>
+        {label}
+      </p>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">
+          Rp
+        </span>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          inputMode="numeric"
+          className={`h-9 w-full rounded-xl border-2 bg-white pl-7 pr-2 text-right text-xs font-black text-slate-800 outline-none transition-all focus:outline-none focus-visible:outline-none focus:ring-2 focus-visible:ring-2 focus:ring-offset-0 focus-visible:ring-offset-0 ${inputClass}`}
+        />
+      </div>
+    </div>
+  )
+}
 
 
 function getVisibleBarangImportColumns() {
@@ -1711,6 +1757,7 @@ async function downloadBarangTemplateWithExcelJS(params: {
 export default function TambahBarangPage() {
   const [data, setData] = useState<Barang[]>([])
   const [kategoriList, setKategoriList] = useState<KategoriBarang[]>([])
+  const [kategoriDigitalList, setKategoriDigitalList] = useState<KategoriBarang[]>([])
   const [satuanList, setSatuanList] = useState<SatuanBarang[]>([])
   const [supplierList, setSupplierList] = useState<Supplier[]>([])
   const [providerList, setProviderList] = useState<ProviderItem[]>([])
@@ -1728,11 +1775,22 @@ export default function TambahBarangPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [inlinePriceDrafts, setInlinePriceDrafts] = useState<
+    Record<string, { hargaModal: string; hargaJual: string }>
+  >({})
+  const [inlinePriceSaving, setInlinePriceSaving] = useState<Record<string, boolean>>({})
+  const [newDigitalKategoriNama, setNewDigitalKategoriNama] = useState("")
+  const [creatingDigitalKategori, setCreatingDigitalKategori] = useState(false)
+  const [showDigitalKategoriModal, setShowDigitalKategoriModal] = useState(false)
+  const [digitalKategoriFormNama, setDigitalKategoriFormNama] = useState("")
+  const [editingDigitalKategoriId, setEditingDigitalKategoriId] = useState<string | null>(null)
+  const [digitalKategoriLoading, setDigitalKategoriLoading] = useState(false)
+  const [deleteDigitalKategoriTarget, setDeleteDigitalKategoriTarget] = useState<KategoriBarang | null>(null)
 
   const [search, setSearch] = useState("")
   const [filterKategori, setFilterKategori] = useState("")
   const [filterToko, setFilterToko] = useState("")
-  const [filterJenisBarang, setFilterJenisBarang] = useState("")
+  const [activeBarangTab, setActiveBarangTab] = useState<JenisBarang>("fisik")
   const [filterMobileOpen, setFilterMobileOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [page, setPage] = useState(1)
@@ -1762,6 +1820,34 @@ export default function TambahBarangPage() {
   const isEdit = !!editId
   const isDigitalForm = form.jenisBarang === "digital"
   const isFisikForm = form.jenisBarang === "fisik"
+
+  const kategoriAktifList = activeBarangTab === "digital" ? kategoriDigitalList : kategoriList
+  const kategoriFormList = isDigitalForm ? kategoriDigitalList : kategoriList
+  const semuaKategoriList = useMemo(
+    () => {
+      const map = new Map<string, KategoriBarang>()
+      ;[...kategoriList, ...kategoriDigitalList].forEach((item) => {
+        if (item.id && !map.has(item.id)) map.set(item.id, item)
+      })
+      return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama, "id-ID", { numeric: true, sensitivity: "base" }))
+    },
+    [kategoriList, kategoriDigitalList],
+  )
+  const digitalKategoriUsageMap = useMemo(() => {
+    const map = new Map<string, number>()
+
+    data.forEach((item) => {
+      if ((item.jenisBarang || "fisik") !== "digital") return
+
+      const kategoriId = normalizeText(item.kategoriId)
+      if (!kategoriId) return
+
+      map.set(kategoriId, (map.get(kategoriId) || 0) + 1)
+    })
+
+    return map
+  }, [data])
+
   const [statValueMode, setStatValueMode] = useState<Record<StatValueKey, StatValueMode>>({
     totalBarang: "jumlah",
     totalFisik: "jumlah",
@@ -1793,6 +1879,24 @@ export default function TambahBarangPage() {
     } catch (e) {
       console.error(e)
       setKategoriList([])
+    }
+  }
+
+  const fetchKategoriDigital = async () => {
+    try {
+      const qRef = query(collection(db, "kategori_barang_digital"), orderBy("nama"))
+      const snap = await getDocs(qRef)
+      setKategoriDigitalList(
+        snap.docs
+          .map((d) => {
+            const x = d.data() as any
+            return { id: d.id, nama: x?.nama || "" }
+          })
+          .filter((item) => item.nama)
+      )
+    } catch (e) {
+      console.error(e)
+      setKategoriDigitalList([])
     }
   }
 
@@ -1973,6 +2077,7 @@ export default function TambahBarangPage() {
       if (!u) return
       await Promise.all([
         fetchKategori(),
+        fetchKategoriDigital(),
         fetchSatuan(),
         fetchSupplier(),
         fetchProvider(),
@@ -2005,11 +2110,11 @@ export default function TambahBarangPage() {
 
       const matchKategori = !filterKategori || d.kategoriId === filterKategori
       const matchToko = !filterToko || d.tokoId === filterToko
-      const matchJenis = !filterJenisBarang || d.jenisBarang === filterJenisBarang
+      const matchJenis = (d.jenisBarang || "fisik") === activeBarangTab
 
       return matchSearch && matchKategori && matchToko && matchJenis
     })
-  }, [data, search, filterKategori, filterToko, filterJenisBarang])
+  }, [data, search, filterKategori, filterToko, activeBarangTab])
 
   const barangStats = useMemo(() => {
     const fisikItems = filtered.filter((item) => (item.jenisBarang || "fisik") === "fisik")
@@ -2062,7 +2167,7 @@ export default function TambahBarangPage() {
     return data
       .filter((item) => item.tokoId === copySourceTokoId)
       .filter((item) => isBarangTampilUtama(item))
-      .filter((item) => !filterJenisBarang || item.jenisBarang === filterJenisBarang)
+      .filter((item) => (item.jenisBarang || "fisik") === activeBarangTab)
       .filter((item) => !filterKategori || item.kategoriId === filterKategori)
       .filter((item) => {
         const q = search.toLowerCase().trim()
@@ -2081,7 +2186,7 @@ export default function TambahBarangPage() {
           (item.saldoSourceNama || "").toLowerCase().includes(q)
         )
       })
-  }, [copySourceTokoId, data, filterJenisBarang, filterKategori, search])
+  }, [copySourceTokoId, data, activeBarangTab, filterKategori, search])
 
   const copyableTokoList = useMemo(
     () => tokoList.filter((item) => item.aktif !== false && item.id !== copySourceTokoId),
@@ -2096,11 +2201,130 @@ export default function TambahBarangPage() {
       ? filtered
       : filtered.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
+  useEffect(() => {
+    setFilterKategori("")
+    setPage(1)
+  }, [activeBarangTab])
+
   const goPage = (p: number) => setPage(Math.max(1, Math.min(totalPages, p)))
   const setField =
     (key: keyof typeof EMPTY_FORM) =>
     (val: any) =>
       setForm((f) => ({ ...f, [key]: val }))
+
+  const getInlinePriceDraft = (item: Barang) => {
+    return (
+      inlinePriceDrafts[item.id] || {
+        hargaModal: formatNumberDots(item.hargaModal),
+        hargaJual: formatNumberDots(item.hargaJual),
+      }
+    )
+  }
+
+  const updateInlinePriceDraft = (
+    item: Barang,
+    field: "hargaModal" | "hargaJual",
+    value: string,
+  ) => {
+    setInlinePriceDrafts((prev) => {
+      const current =
+        prev[item.id] || {
+          hargaModal: formatNumberDots(item.hargaModal),
+          hargaJual: formatNumberDots(item.hargaJual),
+        }
+
+      return {
+        ...prev,
+        [item.id]: {
+          ...current,
+          [field]: formatNumberDots(value),
+        },
+      }
+    })
+  }
+
+  const hasInlinePriceChange = (item: Barang) => {
+    const draft = inlinePriceDrafts[item.id]
+    if (!draft) return false
+
+    return (
+      parseRupiahNumber(draft.hargaModal) !== Number(item.hargaModal || 0) ||
+      parseRupiahNumber(draft.hargaJual) !== Number(item.hargaJual || 0)
+    )
+  }
+
+
+  const isInlinePriceInvalid = (item: Barang) => {
+    const draft = getInlinePriceDraft(item)
+    const hargaModal = parseRupiahNumber(draft.hargaModal)
+    const hargaJual = parseRupiahNumber(draft.hargaJual)
+
+    if (hargaModal <= 0 && hargaJual <= 0) return false
+    return hargaModal > hargaJual
+  }
+
+  const handleSaveInlinePrice = async (item: Barang) => {
+    const user = auth.currentUser
+    if (!user || inlinePriceSaving[item.id]) return
+
+    const draft = getInlinePriceDraft(item)
+    const hargaModal = parseRupiahNumber(draft.hargaModal)
+    const hargaJual = parseRupiahNumber(draft.hargaJual)
+
+    if (hargaModal < 0 || hargaJual < 0) {
+      alert("Harga tidak valid")
+      return
+    }
+
+    if (hargaJual < hargaModal) {
+      alert("Harga jual tidak boleh lebih kecil dari harga modal")
+      return
+    }
+
+    if (!hasInlinePriceChange(item)) {
+      openEdit(item)
+      return
+    }
+
+    setInlinePriceSaving((prev) => ({ ...prev, [item.id]: true }))
+
+    try {
+      const now = Date.now()
+      await updateDoc(doc(db, "barang", item.id), {
+        hargaModal,
+        hargaJual,
+        updatedAt: now,
+        updatedBy: user.uid,
+      })
+
+      setData((prev) =>
+        prev.map((row) =>
+          row.id === item.id
+            ? {
+                ...row,
+                hargaModal,
+                hargaJual,
+                updatedAt: now,
+              }
+            : row,
+        ),
+      )
+
+      setInlinePriceDrafts((prev) => {
+        const next = { ...prev }
+        delete next[item.id]
+        return next
+      })
+
+      setSuccessMsg("Harga modal dan harga jual berhasil diperbarui")
+      setTimeout(() => setSuccessMsg(null), 2500)
+    } catch (e) {
+      console.error(e)
+      alert("Gagal menyimpan perubahan harga")
+    } finally {
+      setInlinePriceSaving((prev) => ({ ...prev, [item.id]: false }))
+    }
+  }
 
   const focusKodeUnikScanner = () => {
     window.setTimeout(() => {
@@ -2180,10 +2404,12 @@ export default function TambahBarangPage() {
   }
 
     const handleChangeJenisBarang = (nextJenis: JenisBarang) => {
+    setActiveBarangTab(nextJenis)
     setForm((prev) => {
       const nextForm = {
         ...prev,
         jenisBarang: nextJenis,
+        kategoriId: "",
         merk: nextJenis === "digital" ? "" : prev.merk,
         satuan: nextJenis === "digital" ? "transaksi" : prev.satuan || prev.satuanNama || "",
         satuanId: nextJenis === "digital" ? "" : prev.satuanId || "",
@@ -2218,29 +2444,35 @@ export default function TambahBarangPage() {
     setError(null)
   }
 
-    const openAdd = () => {
+  const openAdd = () => {
     const defaultSatuan = satuanList[0]
+    const isDigitalTab = activeBarangTab === "digital"
+    const defaultProvider = providerList[0]
+    const defaultSaldo = saldoList.find((item) => item.aktif) || saldoList[0]
 
     setForm({
       ...EMPTY_FORM,
-      supplier: supplierList[0]?.nama || "",
-      satuan: defaultSatuan?.nama || "pcs",
-      satuanId: defaultSatuan?.id || "",
-      satuanNama: defaultSatuan?.nama || "pcs",
-      stok: "1",
-      stokMinimum: "1",
-      pakaiKodeUnik: true,
+      jenisBarang: activeBarangTab,
+      kategoriId: "",
+      supplier: isDigitalTab ? defaultSaldo?.namaSaldo || "" : supplierList[0]?.nama || "",
+      satuan: isDigitalTab ? "transaksi" : defaultSatuan?.nama || "pcs",
+      satuanId: isDigitalTab ? "" : defaultSatuan?.id || "",
+      satuanNama: isDigitalTab ? "transaksi" : defaultSatuan?.nama || "pcs",
+      stok: isDigitalTab ? "0" : "1",
+      stokMinimum: isDigitalTab ? "0" : "1",
+      pakaiKodeUnik: isDigitalTab ? false : true,
       jenisKodeUnik: "imei" as JenisKodeUnik,
       kodeUnik: "",
-      providerId: providerList[0]?.id || "",
-      provider: providerList[0]?.nama || "",
-      saldoSourceId: saldoList.find((item) => item.aktif)?.id || saldoList[0]?.id || "",
+      providerId: isDigitalTab ? defaultProvider?.id || "" : "",
+      provider: isDigitalTab ? defaultProvider?.nama || "" : "",
+      saldoSourceId: isDigitalTab ? defaultSaldo?.id || "" : "",
+      nominalProduk: "",
       aktif: true,
     })
     setEditId(null)
     setError(null)
     setShowModal(true)
-    focusKodeUnikScanner()
+    if (!isDigitalTab) focusKodeUnikScanner()
   }
 
     const openEdit = (d: Barang) => {
@@ -2270,11 +2502,13 @@ export default function TambahBarangPage() {
       aktif: d.aktif !== false,
     })
     setEditId(d.id)
+    setActiveBarangTab((d.jenisBarang || "fisik") as JenisBarang)
     setError(null)
     setShowModal(true)
   }
 
   const validateForm = () => {
+    if (isDigitalForm && !form.kategoriId) return "Pilih kategori digital terlebih dahulu"
     if (!form.nama.trim()) return "Nama barang wajib diisi"
     if (!form.kategoriId) return "Kategori wajib dipilih"
     if (!form.tokoId) return "Toko wajib dipilih"
@@ -2368,6 +2602,271 @@ export default function TambahBarangPage() {
     return null
   }
 
+  const handleCreateDigitalKategori = async () => {
+    const user = auth.currentUser
+    const nama = normalizeText(newDigitalKategoriNama)
+
+    if (!user) return
+    if (!nama) {
+      setError("Nama kategori digital wajib diisi")
+      return
+    }
+
+    const duplicate = kategoriDigitalList.find(
+      (item) => item.nama.trim().toLowerCase() === nama.toLowerCase(),
+    )
+
+    if (duplicate) {
+      setForm((prev) => ({ ...prev, kategoriId: duplicate.id }))
+      setNewDigitalKategoriNama("")
+      return
+    }
+
+    setCreatingDigitalKategori(true)
+    setError(null)
+
+    try {
+      const now = Date.now()
+      const newRef = doc(collection(db, "kategori_barang_digital"))
+      const payload = {
+        nama,
+        aktif: true,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: user.uid,
+        updatedBy: user.uid,
+      }
+
+      await setDoc(newRef, payload)
+
+      const newItem = { id: newRef.id, nama }
+      setKategoriDigitalList((prev) =>
+        [...prev, newItem].sort((a, b) =>
+          a.nama.localeCompare(b.nama, "id-ID", {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        ),
+      )
+      setForm((prev) => ({ ...prev, kategoriId: newRef.id }))
+      setNewDigitalKategoriNama("")
+      setSuccessMsg("Kategori digital berhasil ditambahkan")
+      setTimeout(() => setSuccessMsg(null), 2500)
+    } catch (e) {
+      console.error(e)
+      setError("Gagal menambahkan kategori digital")
+    } finally {
+      setCreatingDigitalKategori(false)
+    }
+  }
+
+  const resetDigitalKategoriManagerForm = () => {
+    setDigitalKategoriFormNama("")
+    setEditingDigitalKategoriId(null)
+    setDeleteDigitalKategoriTarget(null)
+  }
+
+  const openDigitalKategoriManager = () => {
+    resetDigitalKategoriManagerForm()
+    setError(null)
+    setShowDigitalKategoriModal(true)
+  }
+
+  const closeDigitalKategoriManager = () => {
+    if (digitalKategoriLoading) return
+    setShowDigitalKategoriModal(false)
+    resetDigitalKategoriManagerForm()
+  }
+
+  const startEditDigitalKategori = (item: KategoriBarang) => {
+    setEditingDigitalKategoriId(item.id)
+    setDigitalKategoriFormNama(item.nama)
+    setDeleteDigitalKategoriTarget(null)
+  }
+
+  const handleSaveDigitalKategoriManager = async () => {
+    const user = auth.currentUser
+    const nama = normalizeText(digitalKategoriFormNama)
+
+    if (!user || digitalKategoriLoading) return
+    if (!nama) {
+      setError("Nama kategori digital wajib diisi")
+      return
+    }
+
+    const duplicate = kategoriDigitalList.find((item) => {
+      const sameName = item.nama.trim().toLowerCase() === nama.toLowerCase()
+      const notSelf = !editingDigitalKategoriId || item.id !== editingDigitalKategoriId
+      return sameName && notSelf
+    })
+
+    if (duplicate) {
+      setError("Nama kategori digital sudah ada")
+      return
+    }
+
+    setDigitalKategoriLoading(true)
+    setError(null)
+
+    try {
+      const now = Date.now()
+
+      if (editingDigitalKategoriId) {
+        await updateDoc(doc(db, "kategori_barang_digital", editingDigitalKategoriId), {
+          nama,
+          updatedAt: now,
+          updatedBy: user.uid,
+        })
+
+        const barangSnap = await getDocs(
+          query(collection(db, "barang"), where("kategoriId", "==", editingDigitalKategoriId)),
+        )
+
+        await Promise.all(
+          barangSnap.docs.map((item) => {
+            const x = item.data() as any
+            if ((x?.jenisBarang || "fisik") !== "digital") return Promise.resolve()
+            return updateDoc(item.ref, {
+              kategoriNama: nama,
+              updatedAt: now,
+              updatedBy: user.uid,
+            })
+          }),
+        )
+
+        setKategoriDigitalList((prev) =>
+          prev
+            .map((item) =>
+              item.id === editingDigitalKategoriId
+                ? {
+                    ...item,
+                    nama,
+                  }
+                : item,
+            )
+            .sort((a, b) =>
+              a.nama.localeCompare(b.nama, "id-ID", {
+                numeric: true,
+                sensitivity: "base",
+              }),
+            ),
+        )
+
+        setData((prev) =>
+          prev.map((item) =>
+            item.jenisBarang === "digital" && item.kategoriId === editingDigitalKategoriId
+              ? {
+                  ...item,
+                  kategoriNama: nama,
+                  updatedAt: now,
+                }
+              : item,
+          ),
+        )
+
+        setSuccessMsg("Kategori digital berhasil diperbarui")
+      } else {
+        const newRef = doc(collection(db, "kategori_barang_digital"))
+        const payload = {
+          nama,
+          aktif: true,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: user.uid,
+          updatedBy: user.uid,
+        }
+
+        await setDoc(newRef, payload)
+
+        setKategoriDigitalList((prev) =>
+          [...prev, { id: newRef.id, nama }].sort((a, b) =>
+            a.nama.localeCompare(b.nama, "id-ID", {
+              numeric: true,
+              sensitivity: "base",
+            }),
+          ),
+        )
+
+        setSuccessMsg("Kategori digital berhasil ditambahkan")
+      }
+
+      resetDigitalKategoriManagerForm()
+      setTimeout(() => setSuccessMsg(null), 2500)
+    } catch (e) {
+      console.error(e)
+      setError(editingDigitalKategoriId ? "Gagal memperbarui kategori digital" : "Gagal menambahkan kategori digital")
+    } finally {
+      setDigitalKategoriLoading(false)
+    }
+  }
+
+  const handleDeleteDigitalKategoriManager = async () => {
+    const user = auth.currentUser
+    const target = deleteDigitalKategoriTarget
+
+    if (!user || !target || digitalKategoriLoading) return
+
+    setDigitalKategoriLoading(true)
+    setError(null)
+
+    try {
+      const now = Date.now()
+      const barangSnap = await getDocs(
+        query(collection(db, "barang"), where("kategoriId", "==", target.id)),
+      )
+
+      await Promise.all(
+        barangSnap.docs.map((item) => {
+          const x = item.data() as any
+          if ((x?.jenisBarang || "fisik") !== "digital") return Promise.resolve()
+          return updateDoc(item.ref, {
+            kategoriId: "",
+            kategoriNama: "",
+            updatedAt: now,
+            updatedBy: user.uid,
+          })
+        }),
+      )
+
+      await deleteDoc(doc(db, "kategori_barang_digital", target.id))
+
+      setKategoriDigitalList((prev) => prev.filter((item) => item.id !== target.id))
+      setData((prev) =>
+        prev.map((item) =>
+          item.jenisBarang === "digital" && item.kategoriId === target.id
+            ? {
+                ...item,
+                kategoriId: "",
+                kategoriNama: "",
+                updatedAt: now,
+              }
+            : item,
+        ),
+      )
+
+      if (filterKategori === target.id) setFilterKategori("")
+      setForm((prev) =>
+        prev.kategoriId === target.id
+          ? {
+              ...prev,
+              kategoriId: "",
+              nama: prev.jenisBarang === "digital" ? "" : prev.nama,
+            }
+          : prev,
+      )
+
+      setDeleteDigitalKategoriTarget(null)
+      if (editingDigitalKategoriId === target.id) resetDigitalKategoriManagerForm()
+      setSuccessMsg("Kategori digital berhasil dihapus")
+      setTimeout(() => setSuccessMsg(null), 2500)
+    } catch (e) {
+      console.error(e)
+      setError("Gagal menghapus kategori digital")
+    } finally {
+      setDigitalKategoriLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const user = auth.currentUser
@@ -2383,7 +2882,8 @@ export default function TambahBarangPage() {
     setError(null)
 
     try {
-      const kategori = kategoriList.find((k) => k.id === form.kategoriId)
+      const kategoriSource = isDigitalForm ? kategoriDigitalList : kategoriList
+      const kategori = kategoriSource.find((k) => k.id === form.kategoriId)
       if (!kategori) {
         setError("Kategori tidak ditemukan")
         return
@@ -2783,7 +3283,7 @@ export default function TambahBarangPage() {
       addBarangTemplateDropdowns({
         XLSX,
         ws: dataBarangSheet,
-        kategoriCount: kategoriList.length,
+        kategoriCount: semuaKategoriList.length,
         tokoCount: tokoList.length,
         satuanCount: satuanList.length,
         supplierCount: supplierList.length,
@@ -2801,7 +3301,7 @@ export default function TambahBarangPage() {
         XLSX,
         "REFERENSI KATEGORI BARANG",
         ["id", "kategoriNama"],
-        kategoriList.map((item) => [item.id, item.nama])
+        semuaKategoriList.map((item) => [item.id, item.nama])
       ),
       "ref_kategori"
     )
@@ -2862,13 +3362,13 @@ export default function TambahBarangPage() {
   const handleDownloadTemplate = async () => {
     setError(null)
     try {
-      if (kategoriList.length === 0 || tokoList.length === 0) {
+      if (semuaKategoriList.length === 0 || tokoList.length === 0) {
         setError("Kategori dan toko wajib tersedia sebelum download template")
         return
       }
 
       await downloadBarangTemplateWithExcelJS({
-        kategoriList,
+        kategoriList: semuaKategoriList,
         tokoList,
         satuanList,
         supplierList,
@@ -2901,7 +3401,7 @@ export default function TambahBarangPage() {
 
   const resolveKategoriByName = (value: unknown) => {
     const key = normalizeExcelCompact(value)
-    return kategoriList.find((item) => normalizeExcelCompact(item.nama) === key) || null
+    return semuaKategoriList.find((item) => normalizeExcelCompact(item.nama) === key) || null
   }
 
   const resolveTokoByName = (value: unknown) => {
@@ -3897,7 +4397,9 @@ export default function TambahBarangPage() {
                   Data Barang
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Kelola barang fisik dan digital lengkap dengan stok, barcode, provider, dan saldo.
+                  {activeBarangTab === "digital"
+                    ? "Kelola produk digital, provider, kategori digital, modal, dan sumber saldo."
+                    : "Kelola barang fisik lengkap dengan stok, barcode, supplier, dan IMEI."}
                 </p>
               </div>
             </div>
@@ -3973,23 +4475,36 @@ export default function TambahBarangPage() {
     whileTap={{ scale: 0.97 }}
     transition={{ duration: 0.12, ease: "easeOut" }}
     onClick={openPrintModal}
-    disabled={!filterToko}
+    disabled={!filterToko || activeBarangTab !== "fisik"}
     className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 text-[10px] font-black uppercase tracking-wide text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
-    title={filterToko ? "Print Barcode" : "Pilih filter toko terlebih dahulu"}
+    title={activeBarangTab !== "fisik" ? "Barcode hanya untuk barang fisik" : filterToko ? "Print Barcode" : "Pilih filter toko terlebih dahulu"}
   >
     <Printer size={13} strokeWidth={3} />
     <span className="hidden sm:inline">Barcode</span>
   </motion.button>
+
+  {activeBarangTab === "digital" && (
+    <motion.button
+      whileTap={{ scale: 0.97 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
+      onClick={openDigitalKategoriManager}
+      className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 text-[10px] font-black uppercase tracking-wide text-white transition-colors hover:bg-white/15"
+      title="Kelola kategori barang digital"
+    >
+      <Tag size={13} strokeWidth={3} />
+      <span className="hidden sm:inline">Kategori</span>
+    </motion.button>
+  )}
 
   <motion.button
     whileTap={{ scale: 0.97 }}
     transition={{ duration: 0.12, ease: "easeOut" }}
     onClick={openAdd}
     className="inline-flex h-8 items-center justify-center gap-1 rounded-full bg-white px-3 text-[10px] font-black uppercase tracking-wide text-sky-700 shadow-sm transition-colors hover:bg-sky-50"
-    title="Tambah Barang"
+    title={activeBarangTab === "digital" ? "Tambah Barang Digital" : "Tambah Barang Fisik"}
   >
     <Plus size={13} strokeWidth={3} />
-    <span className="hidden sm:inline">Tambah</span>
+    <span className="hidden sm:inline">{activeBarangTab === "digital" ? "Tambah Digital" : "Tambah Fisik"}</span>
   </motion.button>
 
   <motion.button
@@ -4080,6 +4595,40 @@ export default function TambahBarangPage() {
         </div>
 
         <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveBarangTab("fisik")}
+              className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-xs font-black uppercase tracking-[0.08em] transition-all sm:text-sm ${
+                activeBarangTab === "fisik"
+                  ? "bg-sky-500 text-white shadow-sm shadow-sky-500/20"
+                  : "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              }`}
+            >
+              <Package size={16} strokeWidth={2.5} />
+              Barang Fisik
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveBarangTab("digital")}
+              className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-xs font-black uppercase tracking-[0.08em] transition-all sm:text-sm ${
+                activeBarangTab === "digital"
+                  ? "bg-sky-500 text-white shadow-sm shadow-sky-500/20"
+                  : "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              }`}
+            >
+              <Smartphone size={16} strokeWidth={2.5} />
+              Barang Digital
+            </button>
+          </div>
+        </motion.div>
+
+        <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.08 }}
@@ -4088,7 +4637,7 @@ export default function TambahBarangPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="sm:col-span-2 lg:col-span-2">
               <label className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Cari Barang / Barcode
+                {activeBarangTab === "digital" ? "Cari Barang Digital" : "Cari Barang / Barcode"}
               </label>
               <div className="relative mt-1">
                 <Search
@@ -4102,27 +4651,13 @@ export default function TambahBarangPage() {
                     setSearch(e.target.value)
                     setPage(1)
                   }}
-                  placeholder="Barcode, nama, provider, saldo, IMEI..."
+                  placeholder={activeBarangTab === "digital" ? "Nama, kategori, provider, saldo, nominal..." : "Barcode, nama, supplier, IMEI..."}
                   className="w-full rounded-xl border-2 border-slate-200 bg-white py-2.5 pl-8 pr-4 text-sm font-semibold text-slate-700 placeholder:text-slate-300 transition-all focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
                 />
               </div>
             </div>
 
             <div className="hidden sm:contents">
-              <FilterSelect
-                label="Jenis"
-                value={filterJenisBarang}
-                onChange={(v) => {
-                  setFilterJenisBarang(v)
-                  setPage(1)
-                }}
-                icon={Package}
-              >
-                <option value="">Semua Jenis</option>
-                <option value="fisik">Fisik</option>
-                <option value="digital">Digital</option>
-              </FilterSelect>
-
               <FilterSelect
                 label="Kategori"
                 value={filterKategori}
@@ -4133,7 +4668,7 @@ export default function TambahBarangPage() {
                 icon={Tag}
               >
                 <option value="">Semua Kategori</option>
-                {kategoriList.map((k) => (
+                {kategoriAktifList.map((k) => (
                   <option key={k.id} value={k.id}>
                     {k.nama}
                   </option>
@@ -4156,6 +4691,22 @@ export default function TambahBarangPage() {
                   </option>
                 ))}
               </FilterSelect>
+
+              {activeBarangTab === "digital" && (
+                <div>
+                  <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Kategori Digital
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openDigitalKategoriManager}
+                    className="inline-flex h-[43px] w-full items-center justify-center gap-2 rounded-xl border-2 border-sky-100 bg-sky-50 px-3 text-sm font-black text-sky-700 transition-all hover:border-sky-200 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                  >
+                    <Tag size={15} strokeWidth={2.8} />
+                    Kategori
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -4168,7 +4719,7 @@ export default function TambahBarangPage() {
               type="button"
             >
               <Plus size={14} strokeWidth={2.5} />
-              Tambah
+              {activeBarangTab === "digital" ? "Digital" : "Fisik"}
             </motion.button>
 
             <motion.button
@@ -4207,19 +4758,24 @@ export default function TambahBarangPage() {
                 className="overflow-hidden sm:hidden"
               >
                 <div className="mt-3 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
-                  <FilterSelect label="Jenis" value={filterJenisBarang} onChange={(v) => { setFilterJenisBarang(v); setPage(1) }} icon={Package}>
-                    <option value="">Semua Jenis</option>
-                    <option value="fisik">Fisik</option>
-                    <option value="digital">Digital</option>
-                  </FilterSelect>
                   <FilterSelect label="Kategori" value={filterKategori} onChange={(v) => { setFilterKategori(v); setPage(1) }} icon={Tag}>
                     <option value="">Semua Kategori</option>
-                    {kategoriList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
+                    {kategoriAktifList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
                   </FilterSelect>
                   <FilterSelect label="Toko" value={filterToko} onChange={(v) => { setFilterToko(v); setPage(1) }} icon={Store}>
                     <option value="">Semua Toko</option>
                     {tokoList.map((t) => <option key={t.id} value={t.id}>{t.nama}</option>)}
                   </FilterSelect>
+                  {activeBarangTab === "digital" && (
+                    <button
+                      type="button"
+                      onClick={openDigitalKategoriManager}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-sky-100 bg-sky-50 px-3 py-2.5 text-xs font-black uppercase tracking-wide text-sky-700 transition hover:bg-sky-100"
+                    >
+                      <Tag size={14} strokeWidth={2.8} />
+                      Kategori Digital
+                    </button>
+                  )}
                   <FilterSelect label="Tampilkan" value={itemsPerPage} onChange={(v) => { setItemsPerPage(Number(v)); setPage(1) }}>
                     {ITEMS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </FilterSelect>
@@ -4276,7 +4832,7 @@ export default function TambahBarangPage() {
               className="flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-2 text-xs font-black text-white shadow-sm"
             >
               <Plus size={13} strokeWidth={3} />
-              Tambah Barang Pertama
+              {activeBarangTab === "digital" ? "Tambah Digital Pertama" : "Tambah Fisik Pertama"}
             </motion.button>
           </motion.div>
         )}
@@ -4286,6 +4842,10 @@ export default function TambahBarangPage() {
             <div className="space-y-2 sm:hidden">
               {paged.map((d, idx) => {
                 const isLowStock = d.jenisBarang === "fisik" && d.stok <= d.stokMinimum
+                const priceDraft = getInlinePriceDraft(d)
+                const priceDirty = hasInlinePriceChange(d)
+                const priceInvalid = isInlinePriceInvalid(d)
+                const priceSaving = Boolean(inlinePriceSaving[d.id])
 
                 return (
                   <motion.div
@@ -4304,10 +4864,29 @@ export default function TambahBarangPage() {
                       </div>
                       <div className="flex flex-shrink-0 gap-1.5">
                         <button
-                          onClick={() => openEdit(d)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:bg-sky-100"
+                          onClick={() => (priceDirty ? handleSaveInlinePrice(d) : openEdit(d))}
+                          disabled={priceSaving}
+                          className={`relative flex h-7 w-7 items-center justify-center rounded-lg border shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                            priceDirty
+                              ? priceInvalid
+                                ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                                : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                          }`}
+                          title={priceDirty ? (priceInvalid ? "Harga modal lebih besar dari harga jual" : "Simpan perubahan harga") : "Edit barang"}
                         >
-                          <Pencil size={12} strokeWidth={2.5} />
+                          {priceSaving ? (
+                            <RefreshCw size={12} className="animate-spin" strokeWidth={2.5} />
+                          ) : (
+                            <Pencil size={12} strokeWidth={2.5} />
+                          )}
+                          {priceDirty && !priceSaving ? (
+                            <span
+                              className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                                priceInvalid ? "bg-red-500" : "bg-emerald-500"
+                              }`}
+                            />
+                          ) : null}
                         </button>
                         <button
                           onClick={() => setDeleteId(d.id)}
@@ -4386,6 +4965,22 @@ export default function TambahBarangPage() {
                           <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
                             Nominal: {d.nominalProduk || "-"}
                           </span>
+                          <div className="grid w-full grid-cols-2 gap-2">
+                            <InlineHargaInput
+                              label="Harga Modal"
+                              value={priceDraft.hargaModal}
+                              dirty={priceDirty}
+                              invalid={priceInvalid}
+                              onChange={(value) => updateInlinePriceDraft(d, "hargaModal", value)}
+                            />
+                            <InlineHargaInput
+                              label="Harga Jual"
+                              value={priceDraft.hargaJual}
+                              dirty={priceDirty}
+                              invalid={priceInvalid}
+                              onChange={(value) => updateInlinePriceDraft(d, "hargaJual", value)}
+                            />
+                          </div>
                           <span
                             className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${
                               d.aktif === false
@@ -4412,7 +5007,8 @@ export default function TambahBarangPage() {
                       <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Jenis</th>
                       <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Barcode / Kode</th>
                       <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Toko</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Harga</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Harga Modal</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Harga Jual</th>
                       <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">Stok / Status</th>
                       <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-slate-500">Aksi</th>
                     </tr>
@@ -4420,6 +5016,10 @@ export default function TambahBarangPage() {
                   <tbody>
                     {paged.map((d) => {
                       const isLowStock = d.jenisBarang === "fisik" && d.stok <= d.stokMinimum
+                      const priceDraft = getInlinePriceDraft(d)
+                      const priceDirty = hasInlinePriceChange(d)
+                      const priceInvalid = isInlinePriceInvalid(d)
+                      const priceSaving = Boolean(inlinePriceSaving[d.id])
 
                       return (
                         <tr key={d.id} className="border-t border-slate-100 align-top">
@@ -4429,11 +5029,6 @@ export default function TambahBarangPage() {
                               {d.kategoriNama} · {d.jenisBarang === "digital" ? d.provider || "-" : d.merk || "-"} ·{" "}
                               {d.jenisBarang === "digital" ? d.saldoSourceNama || "-" : d.supplier || "-"}
                             </p>
-                            {d.jenisBarang === "digital" ? (
-                              <p className="mt-1 text-xs font-semibold text-sky-600">
-                                {d.provider || "-"} · {d.nominalProduk || "-"}
-                              </p>
-                            ) : null}
                           </td>
 
                           <td className="px-4 py-3">
@@ -4497,9 +5092,24 @@ export default function TambahBarangPage() {
                             <p className="mt-1 text-xs text-slate-500">{d.satuanNama || d.satuan || "-"}</p>
                           </td>
 
-                          <td className="px-4 py-3">
-                            <p className="text-sm font-bold text-slate-700">{formatRupiah(d.hargaJual)}</p>
-                            <p className="mt-1 text-xs text-slate-500">Modal: {formatRupiah(d.hargaModal)}</p>
+                          <td className="min-w-[150px] px-4 py-3">
+                            <InlineHargaInput
+                              label="Modal"
+                              value={priceDraft.hargaModal}
+                              dirty={priceDirty}
+                              invalid={priceInvalid}
+                              onChange={(value) => updateInlinePriceDraft(d, "hargaModal", value)}
+                            />
+                          </td>
+
+                          <td className="min-w-[150px] px-4 py-3">
+                            <InlineHargaInput
+                              label="Jual"
+                              value={priceDraft.hargaJual}
+                              dirty={priceDirty}
+                              invalid={priceInvalid}
+                              onChange={(value) => updateInlinePriceDraft(d, "hargaJual", value)}
+                            />
                           </td>
 
                           <td className="px-4 py-3">
@@ -4535,10 +5145,29 @@ export default function TambahBarangPage() {
                           <td className="px-4 py-3">
                             <div className="flex justify-end gap-2">
                               <button
-                                onClick={() => openEdit(d)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:bg-sky-100"
+                                onClick={() => (priceDirty ? handleSaveInlinePrice(d) : openEdit(d))}
+                                disabled={priceSaving}
+                                className={`relative flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                                  priceDirty
+                                    ? priceInvalid
+                                      ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                                      : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                }`}
+                                title={priceDirty ? (priceInvalid ? "Harga modal lebih besar dari harga jual" : "Simpan perubahan harga") : "Edit barang"}
                               >
-                                <Pencil size={13} strokeWidth={2.5} />
+                                {priceSaving ? (
+                                  <RefreshCw size={13} className="animate-spin" strokeWidth={2.5} />
+                                ) : (
+                                  <Pencil size={13} strokeWidth={2.5} />
+                                )}
+                                {priceDirty && !priceSaving ? (
+                                  <span
+                                    className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                                      priceInvalid ? "bg-red-500" : "bg-emerald-500"
+                                    }`}
+                                  />
+                                ) : null}
                               </button>
                               <button
                                 onClick={() => setDeleteId(d.id)}
@@ -4609,10 +5238,10 @@ export default function TambahBarangPage() {
                     </div>
                     <div>
                       <h2 className="text-base font-black leading-none text-white">
-                        {isEdit ? "Edit Barang" : "Tambah Barang"}
+                        {isEdit ? `Edit Barang ${isDigitalForm ? "Digital" : "Fisik"}` : `Tambah Barang ${isDigitalForm ? "Digital" : "Fisik"}`}
                       </h2>
                       <p className="mt-0.5 text-[10px] font-semibold text-white/70">
-                        Support barang fisik dan digital
+                        {isDigitalForm ? "Produk digital memakai kategori digital terpisah" : "Barang fisik memakai kategori fisik dan stok"}
                       </p>
                     </div>
                   </div>
@@ -4684,29 +5313,110 @@ export default function TambahBarangPage() {
                         placeholder="Otomatis dari toko + nama barang"
                       />
 
-                      <FormInput
-                        label="Nama Barang"
-                        required
-                        icon={Package}
-                        value={form.nama}
-                        onChange={(e: any) => syncKodeBarangFromName({ nama: e.target.value })}
-                        placeholder={isDigitalForm ? "Contoh: Pulsa XL 5K" : "Contoh: Oppo A58"}
-                      />
+                      {isDigitalForm ? (
+                        <>
+                          <FormSelect
+                            label="Kategori Digital"
+                            required
+                            icon={Tag}
+                            value={form.kategoriId}
+                            onChange={(e: any) => {
+                              const nextKategoriId = e.target.value
+                              setForm((prev) => ({
+                                ...prev,
+                                kategoriId: nextKategoriId,
+                                nama: nextKategoriId ? prev.nama : "",
+                                kodeBarang: nextKategoriId && prev.nama.trim() && prev.tokoId
+                                  ? generateKodeBarang(prev.tokoId, prev.nama, editId)
+                                  : "",
+                              }))
+                            }}
+                          >
+                            <option value="">Pilih kategori digital dulu</option>
+                            {kategoriFormList.map((k) => (
+                              <option key={k.id} value={k.id}>
+                                {k.nama}
+                              </option>
+                            ))}
+                          </FormSelect>
 
-                      <FormSelect
-                        label="Kategori"
-                        required
-                        icon={Tag}
-                        value={form.kategoriId}
-                        onChange={(e: any) => setField("kategoriId")(e.target.value)}
-                      >
-                        <option value="">Pilih kategori</option>
-                        {kategoriList.map((k) => (
-                          <option key={k.id} value={k.id}>
-                            {k.nama}
-                          </option>
-                        ))}
-                      </FormSelect>
+                          <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-3 sm:col-span-2">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-sky-600">
+                              Kategori Digital Baru
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-sky-700/80">
+                              Buat atau pilih kategori dulu. Setelah kategori dipilih, kolom nama barang akan aktif.
+                            </p>
+                            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                              <input
+                                value={newDigitalKategoriNama}
+                                onChange={(e) => setNewDigitalKategoriNama(e.target.value)}
+                                placeholder="Contoh: XL, Telkomsel, DANA, Listrik"
+                                className="w-full rounded-xl border-2 border-sky-100 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 placeholder:text-slate-300 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleCreateDigitalKategori}
+                                disabled={creatingDigitalKategori || !newDigitalKategoriNama.trim()}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-white shadow-sm shadow-sky-500/15 transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {creatingDigitalKategori ? (
+                                  <RefreshCw size={14} className="animate-spin" strokeWidth={2.5} />
+                                ) : (
+                                  <Plus size={14} strokeWidth={2.5} />
+                                )}
+                                Tambah Kategori
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <FormInput
+                              label="Nama Barang"
+                              required
+                              icon={Package}
+                              value={form.nama}
+                              disabled={!form.kategoriId}
+                              onChange={(e: any) => {
+                                if (!form.kategoriId) return
+                                syncKodeBarangFromName({ nama: e.target.value })
+                              }}
+                              placeholder={form.kategoriId ? "Contoh: Pulsa XL 5K" : "Pilih kategori digital dulu"}
+                            />
+                            {!form.kategoriId && (
+                              <p className="mt-1 text-[10px] font-bold text-amber-600">
+                                Pilih atau buat kategori digital terlebih dahulu sebelum mengisi nama barang.
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <FormInput
+                            label="Nama Barang"
+                            required
+                            icon={Package}
+                            value={form.nama}
+                            onChange={(e: any) => syncKodeBarangFromName({ nama: e.target.value })}
+                            placeholder="Contoh: Oppo A58"
+                          />
+
+                          <FormSelect
+                            label="Kategori"
+                            required
+                            icon={Tag}
+                            value={form.kategoriId}
+                            onChange={(e: any) => setField("kategoriId")(e.target.value)}
+                          >
+                            <option value="">Pilih kategori</option>
+                            {kategoriFormList.map((k) => (
+                              <option key={k.id} value={k.id}>
+                                {k.nama}
+                              </option>
+                            ))}
+                          </FormSelect>
+                        </>
+                      )}
 
                       <FormSelect
                         label="Toko"
@@ -5322,7 +6032,7 @@ export default function TambahBarangPage() {
                     </div>
                     <p className="mt-2 text-xs font-semibold text-sky-700">
                       {copySourceToko
-                        ? `${copySourceItems.length} barang dari ${copySourceToko.nama} siap disalin${filterJenisBarang || filterKategori || search ? " sesuai filter aktif" : ""}.`
+                        ? `${copySourceItems.length} barang dari ${copySourceToko.nama} siap disalin${filterKategori || search ? " sesuai filter aktif" : ""}.`
                         : "Pilih toko asal untuk melihat jumlah barang yang bisa disalin."}
                     </p>
                   </div>
@@ -5420,6 +6130,190 @@ export default function TambahBarangPage() {
                       </>
                     )}
                   </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showDigitalKategoriModal && (
+            <motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget && !digitalKategoriLoading) closeDigitalKategoriManager()
+              }}
+            >
+              <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              >
+                <div className="relative flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
+                      <Tag size={18} className="text-white" strokeWidth={2.5} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black leading-none text-white">Kategori Barang Digital</h2>
+                      <p className="mt-0.5 text-[10px] font-semibold text-white/70">
+                        Tambah, edit, dan hapus kategori digital.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeDigitalKategoriManager}
+                    disabled={digitalKategoriLoading}
+                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white transition-colors hover:bg-white/30 disabled:opacity-60"
+                  >
+                    <X size={16} strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5">
+                  <div className="mb-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">
+                      {editingDigitalKategoriId ? "Edit Kategori" : "Tambah Kategori Baru"}
+                    </p>
+
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        value={digitalKategoriFormNama}
+                        onChange={(e) => setDigitalKategoriFormNama(e.target.value)}
+                        disabled={digitalKategoriLoading}
+                        placeholder="Contoh: XL, Telkomsel, DANA, Listrik"
+                        className="min-w-0 flex-1 rounded-xl border-2 border-sky-100 bg-white px-3 py-2.5 text-sm font-black text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 disabled:opacity-60"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleSaveDigitalKategoriManager}
+                        disabled={digitalKategoriLoading}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 px-4 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-sm shadow-sky-500/15 transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {digitalKategoriLoading ? (
+                          <RefreshCw size={14} className="animate-spin" strokeWidth={2.8} />
+                        ) : editingDigitalKategoriId ? (
+                          <Pencil size={14} strokeWidth={2.8} />
+                        ) : (
+                          <Plus size={14} strokeWidth={2.8} />
+                        )}
+                        {editingDigitalKategoriId ? "Update" : "Tambah"}
+                      </button>
+
+                      {editingDigitalKategoriId && (
+                        <button
+                          type="button"
+                          onClick={resetDigitalKategoriManagerForm}
+                          disabled={digitalKategoriLoading}
+                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wide text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                        >
+                          Batal
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {deleteDigitalKategoriTarget && (
+                    <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                      <p className="text-xs font-black text-rose-700">
+                        Hapus kategori {deleteDigitalKategoriTarget.nama}?
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold leading-relaxed text-rose-600">
+                        Barang digital yang memakai kategori ini akan dipindahkan menjadi tanpa kategori.
+                      </p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setDeleteDigitalKategoriTarget(null)}
+                          disabled={digitalKategoriLoading}
+                          className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteDigitalKategoriManager}
+                          disabled={digitalKategoriLoading}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-60"
+                        >
+                          {digitalKategoriLoading && <RefreshCw size={13} className="animate-spin" strokeWidth={2.8} />}
+                          Ya, Hapus
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        Daftar Kategori
+                      </p>
+                      <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-black text-sky-700">
+                        {kategoriDigitalList.length} kategori
+                      </span>
+                    </div>
+
+                    {kategoriDigitalList.length === 0 ? (
+                      <div className="p-8 text-center text-xs font-bold text-slate-400">
+                        Belum ada kategori digital.
+                      </div>
+                    ) : (
+                      <div className="max-h-[380px] divide-y divide-slate-100 overflow-y-auto">
+                        {kategoriDigitalList.map((item) => {
+                          const usedCount = digitalKategoriUsageMap.get(item.id) || 0
+                          const isEditing = editingDigitalKategoriId === item.id
+
+                          return (
+                            <div
+                              key={item.id}
+                              className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                                isEditing ? "bg-sky-50" : "bg-white"
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-black text-slate-800">{item.nama}</p>
+                                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                  Dipakai {usedCount} barang digital
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditDigitalKategori(item)}
+                                  disabled={digitalKategoriLoading}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
+                                >
+                                  <Pencil size={13} strokeWidth={2.6} />
+                                  Edit
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteDigitalKategoriTarget(item)}
+                                  disabled={digitalKategoriLoading}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-300/70 bg-rose-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-rose-700 disabled:opacity-60"
+                                >
+                                  <Trash2 size={13} strokeWidth={2.6} />
+                                  Hapus
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             </motion.div>

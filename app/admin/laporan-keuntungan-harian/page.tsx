@@ -1,13 +1,12 @@
 /*
-  Halaman admin laporan keuntungan harian.
-  Revisi: tab kategori dibuat menjadi Grup Kategori dan Kategori, default Grup Kategori, termasuk pada popup mobile dan panel desktop.
+  app/admin/laporan-keuntungan-harian/page.tsx
 */
 
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import { auth, db } from "@/lib/firebase"
-import { collection, getDocs, orderBy, query } from "firebase/firestore"
+import { useEffect, useMemo, useState } from "react";
+import { auth, db } from "@/lib/firebase";
+import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import {
   AlertCircle,
   BarChart3,
@@ -26,265 +25,272 @@ import {
   TrendingUp,
   Wallet,
   X,
-} from "lucide-react"
-import { AnimatePresence, motion } from "framer-motion"
+} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 type Toko = {
-  id: string
-  nama: string
-  aktif?: boolean
-}
+  id: string;
+  nama: string;
+  aktif?: boolean;
+};
 
 type KategoriBreakdown = {
-  kategoriId: string
-  kategoriNama: string
-  jumlahTransaksi: number
-  qtyTerjual: number
-  omzet: number
-  subtotal: number
-  totalDiskon: number
-  totalSetelahDiskon: number
-  totalModal: number
-  totalBiayaAdmin: number
-  labaKotor: number
-  labaBersih: number
-  satuanIds?: string[]
-  satuanNamaList?: string[]
-  namaBarangList?: string[]
-}
+  kategoriId: string;
+  kategoriNama: string;
+  jumlahTransaksi: number;
+  qtyTerjual: number;
+  omzet: number;
+  subtotal: number;
+  totalDiskon: number;
+  totalSetelahDiskon: number;
+  totalModal: number;
+  totalBiayaAdmin: number;
+  labaKotor: number;
+  labaBersih: number;
+  satuanIds?: string[];
+  satuanNamaList?: string[];
+  namaBarangList?: string[];
+};
 
 type KelompokKategoriBreakdown = {
-  kelompokId: string
-  namaKelompok: string
-  urutan: number
-  tokoId: string
-  tokoNama: string
-  kategoriIds: string[]
-  kategoriNama: string[]
-  jumlahTransaksi: number
-  totalQty: number
-  omzet: number
-  subtotal: number
-  totalDiskon: number
-  totalSetelahDiskon: number
-  totalModal: number
-  totalBiayaAdmin: number
-  totalLabaKotor: number
-}
+  kelompokId: string;
+  namaKelompok: string;
+  urutan: number;
+  tokoId: string;
+  tokoNama: string;
+  kategoriIds: string[];
+  kategoriNama: string[];
+  jumlahTransaksi: number;
+  totalQty: number;
+  omzet: number;
+  subtotal: number;
+  totalDiskon: number;
+  totalSetelahDiskon: number;
+  totalModal: number;
+  totalBiayaAdmin: number;
+  totalLabaKotor: number;
+};
 
 type LaporanHarian = {
-  id: string
-  tanggalKey: string
-  tokoId: string
-  tokoNama: string
-  totalLabaKotor: number
-  totalKeuntunganBersih: number
-  omzet: number
-  jumlahTransaksi: number
-  kategoriBreakdown: KategoriBreakdown[]
-  kelompokKategoriBreakdown: KelompokKategoriBreakdown[]
-}
+  id: string;
+  tanggalKey: string;
+  tokoId: string;
+  tokoNama: string;
+  totalLabaKotor: number;
+  totalKeuntunganBersih: number;
+  omzet: number;
+  jumlahTransaksi: number;
+  kategoriBreakdown: KategoriBreakdown[];
+  kelompokKategoriBreakdown: KelompokKategoriBreakdown[];
+};
 
 type Pengeluaran = {
-  id: string
-  tanggalKey: string
-  tokoId: string
-  tokoNama: string
-  kategoriId: string
-  kategoriNama: string
-  nominal: number
-}
+  id: string;
+  tanggalKey: string;
+  tokoId: string;
+  tokoNama: string;
+  kategoriId: string;
+  kategoriNama: string;
+  nominal: number;
+};
 
 type RekapKeuntunganHarian = {
-  tanggalKey: string
-  tokoId: string
-  tokoNama: string
-  kategoriId: string
-  kategoriNama: string
-  satuanId: string
-  satuanNama: string
-  penghasilanKotor: number
-  pengeluaran: number
-  keuntunganBersih: number
-  omzet: number
-  jumlahTransaksi: number
-  jumlahQtyTerjual: number
-  jumlahDataPengeluaran: number
-}
+  tanggalKey: string;
+  tokoId: string;
+  tokoNama: string;
+  kategoriId: string;
+  kategoriNama: string;
+  satuanId: string;
+  satuanNama: string;
+  penghasilanKotor: number;
+  pengeluaran: number;
+  keuntunganBersih: number;
+  omzet: number;
+  jumlahTransaksi: number;
+  jumlahQtyTerjual: number;
+  jumlahDataPengeluaran: number;
+};
 
 type RankingKategoriBarang = {
-  kategoriId: string
-  kategoriNama: string
-  penghasilanKotor: number
-  pengeluaran: number
-  keuntunganBersih: number
-  omzet: number
-  qtyTerjual: number
-  jumlahTransaksi: number
-}
+  kategoriId: string;
+  kategoriNama: string;
+  penghasilanKotor: number;
+  pengeluaran: number;
+  keuntunganBersih: number;
+  omzet: number;
+  qtyTerjual: number;
+  jumlahTransaksi: number;
+};
 
 type RankingGrupKategori = {
-  kelompokId: string
-  namaKelompok: string
-  penghasilanKotor: number
-  keuntunganBersih: number
-  omzet: number
-  qtyTerjual: number
-  jumlahTransaksi: number
-}
+  kelompokId: string;
+  namaKelompok: string;
+  penghasilanKotor: number;
+  keuntunganBersih: number;
+  omzet: number;
+  qtyTerjual: number;
+  jumlahTransaksi: number;
+};
 
 type RankingSatuanBarang = {
-  satuanId: string
-  satuanNama: string
-  penghasilanKotor: number
-  keuntunganBersih: number
-  omzet: number
-  qtyTerjual: number
-  jumlahTransaksi: number
-  namaBarangList: string[]
-}
+  satuanId: string;
+  satuanNama: string;
+  penghasilanKotor: number;
+  keuntunganBersih: number;
+  omzet: number;
+  qtyTerjual: number;
+  jumlahTransaksi: number;
+  namaBarangList: string[];
+};
 
-type RankingModalType = "toko" | "kategori" | "satuan" | null
-type KategoriRankingTab = "grup" | "kategori"
-type RankingItemType = "toko" | "kategori" | "grupKategori" | "satuan"
-type MobileReportTab = "chart" | "rekap"
+type RankingModalType = "toko" | "kategori" | "satuan" | null;
+type KategoriRankingTab = "grup" | "kategori";
+type RankingItemType = "toko" | "kategori" | "grupKategori" | "satuan";
+type MobileReportTab = "chart" | "rekap";
 
 type RankingToko = {
-  tokoId: string
-  tokoNama: string
-  penghasilanKotor: number
-  pengeluaran: number
-  keuntunganBersih: number
-  hariAktif: number
-}
+  tokoId: string;
+  tokoNama: string;
+  penghasilanKotor: number;
+  pengeluaran: number;
+  keuntunganBersih: number;
+  hariAktif: number;
+};
 
 function formatRupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
-  }).format(Number(value || 0))
+  }).format(Number(value || 0));
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("id-ID").format(Number(value || 0))
+  return new Intl.NumberFormat("id-ID").format(Number(value || 0));
 }
 
 function formatCompactNumber(value: number) {
-  const rounded = Math.round(Number(value || 0) * 100) / 100
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(rounded)
+  const rounded = Math.round(Number(value || 0) * 100) / 100;
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(
+    rounded,
+  );
 }
 
 function formatTanggalKey(value?: string) {
-  if (!value) return "-"
-  const parts = String(value).split("-")
-  if (parts.length !== 3) return value
-  const year = Number(parts[0])
-  const month = Number(parts[1])
-  const day = Number(parts[2])
-  if (!year || !month || !day) return value
+  if (!value) return "-";
+  const parts = String(value).split("-");
+  if (parts.length !== 3) return value;
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  if (!year || !month || !day) return value;
 
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
     month: "long",
     year: "numeric",
-  }).format(new Date(year, month - 1, day))
+  }).format(new Date(year, month - 1, day));
 }
 
 function toDateInputValue(date: Date) {
-  const y = date.getFullYear()
-  const m = `${date.getMonth() + 1}`.padStart(2, "0")
-  const d = `${date.getDate()}`.padStart(2, "0")
-  return `${y}-${m}-${d}`
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getStartOfMonthDateInput() {
-  const now = new Date()
-  return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-01`
+  const now = new Date();
+  return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-01`;
 }
 
 function normalizeKategoriKey(value?: string) {
-  return String(value || "").trim().toLowerCase()
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeSatuanKey(value?: string) {
-  return String(value || "").trim().toLowerCase()
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function uniqueStringList(values: any[]): string[] {
-  const map = new Map<string, string>()
+  const map = new Map<string, string>();
 
   for (const value of values || []) {
-    const text = String(value || "").trim()
-    const key = text.toLowerCase()
-    if (!text || map.has(key)) continue
-    map.set(key, text)
+    const text = String(value || "").trim();
+    const key = text.toLowerCase();
+    if (!text || map.has(key)) continue;
+    map.set(key, text);
   }
 
-  return Array.from(map.values())
+  return Array.from(map.values());
 }
 
 function getTanggalKeyFromUnknown(value: any) {
-  const direct = String(value?.tanggalKey || "").trim()
-  if (direct) return direct
+  const direct = String(value?.tanggalKey || "").trim();
+  if (direct) return direct;
 
-  const createdAtMs = Number(value?.createdAtMs || 0)
+  const createdAtMs = Number(value?.createdAtMs || 0);
   if (createdAtMs > 0) {
-    return toDateInputValue(new Date(createdAtMs))
+    return toDateInputValue(new Date(createdAtMs));
   }
 
-  const tanggal = value?.tanggal
-  if (tanggal?.toDate) return toDateInputValue(tanggal.toDate())
-  if (typeof tanggal === "string" && tanggal.length >= 10) return tanggal.slice(0, 10)
+  const tanggal = value?.tanggal;
+  if (tanggal?.toDate) return toDateInputValue(tanggal.toDate());
+  if (typeof tanggal === "string" && tanggal.length >= 10)
+    return tanggal.slice(0, 10);
 
-  return ""
+  return "";
 }
 
 function getSatuanEntries(item: KategoriBreakdown) {
-  const ids = Array.isArray(item.satuanIds) ? item.satuanIds : []
-  const names = Array.isArray(item.satuanNamaList) ? item.satuanNamaList : []
-  const maxLen = Math.max(ids.length, names.length)
-  const result: { id: string; nama: string; key: string }[] = []
+  const ids = Array.isArray(item.satuanIds) ? item.satuanIds : [];
+  const names = Array.isArray(item.satuanNamaList) ? item.satuanNamaList : [];
+  const maxLen = Math.max(ids.length, names.length);
+  const result: { id: string; nama: string; key: string }[] = [];
 
   for (let i = 0; i < maxLen; i += 1) {
-    const rawId = String(ids[i] || "").trim()
-    const rawNama = String(names[i] || "").trim()
-    const normalizedKey = normalizeSatuanKey(rawId || rawNama)
-    const visibleNama = rawNama || rawId || "Tanpa Satuan"
+    const rawId = String(ids[i] || "").trim();
+    const rawNama = String(names[i] || "").trim();
+    const normalizedKey = normalizeSatuanKey(rawId || rawNama);
+    const visibleNama = rawNama || rawId || "Tanpa Satuan";
 
-    if (!normalizedKey) continue
-    if (result.some((entry) => entry.key === normalizedKey)) continue
+    if (!normalizedKey) continue;
+    if (result.some((entry) => entry.key === normalizedKey)) continue;
 
-    result.push({ id: normalizedKey, nama: visibleNama, key: normalizedKey })
+    result.push({ id: normalizedKey, nama: visibleNama, key: normalizedKey });
   }
 
-  return result
+  return result;
 }
 
 function getNamaBarangRefs(item: KategoriBreakdown) {
   return uniqueStringList([
     ...(Array.isArray(item.namaBarangList) ? item.namaBarangList : []),
-  ])
+  ]);
 }
 
 function normalizeNumber(value: unknown) {
-  const numberValue = Number(value ?? 0)
-  return Number.isFinite(numberValue) ? numberValue : 0
+  const numberValue = Number(value ?? 0);
+  return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
 function getFirstFilledNumber(...values: unknown[]) {
   for (const value of values) {
-    if (value === undefined || value === null || value === "") continue
-    const numberValue = normalizeNumber(value)
-    if (numberValue !== 0) return numberValue
+    if (value === undefined || value === null || value === "") continue;
+    const numberValue = normalizeNumber(value);
+    if (numberValue !== 0) return numberValue;
   }
 
-  return 0
+  return 0;
 }
 
 function hasNumberValue(value: unknown) {
-  if (value === undefined || value === null || value === "") return false
-  return Number.isFinite(Number(value))
+  if (value === undefined || value === null || value === "") return false;
+  return Number.isFinite(Number(value));
 }
 
 function getBersihNumber({
@@ -293,28 +299,28 @@ function getBersihNumber({
   retur,
   fallback = 0,
 }: {
-  bersih?: unknown[]
-  lama?: unknown[]
-  retur?: unknown[]
-  fallback?: number
+  bersih?: unknown[];
+  lama?: unknown[];
+  retur?: unknown[];
+  fallback?: number;
 }) {
-  const bersihList = bersih || []
+  const bersihList = bersih || [];
   for (const value of bersihList) {
-    if (hasNumberValue(value)) return Math.max(0, normalizeNumber(value))
+    if (hasNumberValue(value)) return Math.max(0, normalizeNumber(value));
   }
 
-  const nilaiLama = getFirstFilledNumber(...(lama || []))
-  const nilaiRetur = getFirstFilledNumber(...(retur || []))
+  const nilaiLama = getFirstFilledNumber(...(lama || []));
+  const nilaiRetur = getFirstFilledNumber(...(retur || []));
 
-  if (nilaiRetur > 0) return Math.max(0, nilaiLama - nilaiRetur)
-  if (nilaiLama > 0) return Math.max(0, nilaiLama)
+  if (nilaiRetur > 0) return Math.max(0, nilaiLama - nilaiRetur);
+  if (nilaiLama > 0) return Math.max(0, nilaiLama);
 
-  return Math.max(0, fallback)
+  return Math.max(0, fallback);
 }
 
 function getSafeRatio(value: number) {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(1, value))
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
 }
 
 function getKelompokLabaKotor(item: any) {
@@ -325,83 +331,125 @@ function getKelompokLabaKotor(item: any) {
     item?.keuntungan,
     item?.untung,
     item?.laba,
-  )
+  );
 
-  if (directValue !== 0) return directValue
+  if (directValue !== 0) return directValue;
 
-  const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
-  const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
+  const totalSetelahDiskon = normalizeNumber(
+    item?.totalSetelahDiskon ?? item?.omzet,
+  );
+  const totalModal = normalizeNumber(item?.totalModal ?? item?.modal);
 
   if (totalSetelahDiskon !== 0 && totalModal !== 0) {
-    return totalSetelahDiskon - totalModal
+    return totalSetelahDiskon - totalModal;
   }
 
-  return 0
+  return 0;
 }
 
-function normalizeKelompokBreakdown(value: unknown): KelompokKategoriBreakdown[] {
-  if (!Array.isArray(value)) return []
+function normalizeKelompokBreakdown(
+  value: unknown,
+): KelompokKategoriBreakdown[] {
+  if (!Array.isArray(value)) return [];
 
   return value
     .map((item: any) => {
-      const omzet = normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon)
-      const totalSetelahDiskon = normalizeNumber(item?.totalSetelahDiskon ?? item?.omzet)
-      const totalModal = normalizeNumber(item?.totalModal ?? item?.modal)
-      const jumlahTransaksi = omzet > 0 || totalSetelahDiskon > 0 || totalModal > 0
-        ? normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi)
-        : 0
+      const omzet = normalizeNumber(item?.omzet ?? item?.totalSetelahDiskon);
+      const totalSetelahDiskon = normalizeNumber(
+        item?.totalSetelahDiskon ?? item?.omzet,
+      );
+      const totalModal = normalizeNumber(item?.totalModal ?? item?.modal);
+      const jumlahTransaksi =
+        omzet > 0 || totalSetelahDiskon > 0 || totalModal > 0
+          ? normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi)
+          : 0;
 
       return {
-        kelompokId: String(item?.kelompokId || item?.id || item?.groupId || "tanpa-kelompok").trim() || "tanpa-kelompok",
-        namaKelompok: String(item?.namaKelompok || item?.kelompokNama || item?.nama || "Tanpa Kelompok").trim() || "Tanpa Kelompok",
+        kelompokId:
+          String(
+            item?.kelompokId || item?.id || item?.groupId || "tanpa-kelompok",
+          ).trim() || "tanpa-kelompok",
+        namaKelompok:
+          String(
+            item?.namaKelompok ||
+              item?.kelompokNama ||
+              item?.nama ||
+              "Tanpa Kelompok",
+          ).trim() || "Tanpa Kelompok",
         urutan: normalizeNumber(item?.urutan || 9999),
         tokoId: String(item?.tokoId || "").trim(),
         tokoNama: String(item?.tokoNama || "").trim(),
-        kategoriIds: uniqueStringList(Array.isArray(item?.kategoriIds) ? item.kategoriIds : []),
-        kategoriNama: uniqueStringList(Array.isArray(item?.kategoriNama) ? item.kategoriNama : []),
+        kategoriIds: uniqueStringList(
+          Array.isArray(item?.kategoriIds) ? item.kategoriIds : [],
+        ),
+        kategoriNama: uniqueStringList(
+          Array.isArray(item?.kategoriNama) ? item.kategoriNama : [],
+        ),
         jumlahTransaksi,
-        totalQty: normalizeNumber(item?.totalQty ?? item?.qtyTerjual ?? item?.qty ?? item?.totalItemTerjual),
+        totalQty: normalizeNumber(
+          item?.totalQty ??
+            item?.qtyTerjual ??
+            item?.qty ??
+            item?.totalItemTerjual,
+        ),
         omzet,
         subtotal: normalizeNumber(item?.subtotal),
         totalDiskon: normalizeNumber(item?.totalDiskon),
         totalSetelahDiskon,
         totalModal,
-        totalBiayaAdmin: normalizeNumber(item?.totalBiayaAdmin ?? item?.biayaAdmin),
+        totalBiayaAdmin: normalizeNumber(
+          item?.totalBiayaAdmin ?? item?.biayaAdmin,
+        ),
         totalLabaKotor: getKelompokLabaKotor(item),
-      }
+      };
     })
-    .filter((item) => item.namaKelompok)
+    .filter((item) => item.namaKelompok);
 }
 
-
 function getMillisFromUnknown(value: any) {
-  if (!value) return 0
-  if (typeof value === "number") return value
-  if (typeof value?.toMillis === "function") return Number(value.toMillis() || 0)
-  if (typeof value?.seconds === "number") return Number(value.seconds * 1000)
-  return 0
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value?.toMillis === "function")
+    return Number(value.toMillis() || 0);
+  if (typeof value?.seconds === "number") return Number(value.seconds * 1000);
+  return 0;
 }
 
 function getTransaksiTanggalKey(raw: any) {
-  const direct = String(raw?.tanggalKey || "").trim()
-  if (direct) return direct
+  const direct = String(raw?.tanggalKey || "").trim();
+  if (direct) return direct;
 
-  const createdAtMs = getFirstFilledNumber(raw?.createdAtMs, getMillisFromUnknown(raw?.createdAt), getMillisFromUnknown(raw?.tanggal))
-  if (createdAtMs > 0) return toDateInputValue(new Date(createdAtMs))
+  const createdAtMs = getFirstFilledNumber(
+    raw?.createdAtMs,
+    getMillisFromUnknown(raw?.createdAt),
+    getMillisFromUnknown(raw?.tanggal),
+  );
+  if (createdAtMs > 0) return toDateInputValue(new Date(createdAtMs));
 
-  return getTanggalKeyFromUnknown(raw)
+  return getTanggalKeyFromUnknown(raw);
 }
 
 function getTransaksiUpdatedAtMs(raw: any) {
-  return getFirstFilledNumber(raw?.updatedAtMs, getMillisFromUnknown(raw?.updatedAt), raw?.createdAtMs, getMillisFromUnknown(raw?.createdAt), getMillisFromUnknown(raw?.tanggal))
+  return getFirstFilledNumber(
+    raw?.updatedAtMs,
+    getMillisFromUnknown(raw?.updatedAt),
+    raw?.createdAtMs,
+    getMillisFromUnknown(raw?.createdAt),
+    getMillisFromUnknown(raw?.tanggal),
+  );
 }
 
 function getPembayaranItemsNominal(value: unknown) {
-  if (!Array.isArray(value)) return 0
+  if (!Array.isArray(value)) return 0;
   return value.reduce((acc, item: any) => {
-    const nominal = getFirstFilledNumber(item?.nominal, item?.totalDenganAdmin, item?.jumlah, item?.amount)
-    return acc + Math.max(0, nominal)
-  }, 0)
+    const nominal = getFirstFilledNumber(
+      item?.nominal,
+      item?.totalDenganAdmin,
+      item?.jumlah,
+      item?.amount,
+    );
+    return acc + Math.max(0, nominal);
+  }, 0);
 }
 
 function getTransaksiBiayaAdmin(raw: any) {
@@ -409,39 +457,53 @@ function getTransaksiBiayaAdmin(raw: any) {
     bersih: [raw?.biayaAdminBersih, raw?.adminBersih],
     lama: [raw?.biayaAdminNominal, raw?.totalBiayaAdmin, raw?.admin],
     retur: [raw?.totalReturBiayaAdmin, raw?.returBiayaAdmin],
-  })
+  });
 }
 
 function getTransaksiSubtotalItems(raw: any) {
-  const items = Array.isArray(raw?.items) ? raw.items : []
+  const items = Array.isArray(raw?.items) ? raw.items : [];
   return items.reduce((acc: number, item: any) => {
-    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
-    const hargaAsli = getFirstFilledNumber(item?.hargaAsli, item?.hargaNormal, item?.hargaJual, item?.harga)
-    return acc + hargaAsli * qty
-  }, 0)
+    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1));
+    const hargaAsli = getFirstFilledNumber(
+      item?.hargaAsli,
+      item?.hargaNormal,
+      item?.hargaJual,
+      item?.harga,
+    );
+    return acc + hargaAsli * qty;
+  }, 0);
 }
 
 function getTransaksiTotalSetelahDiskonItems(raw: any) {
-  const items = Array.isArray(raw?.items) ? raw.items : []
+  const items = Array.isArray(raw?.items) ? raw.items : [];
   return items.reduce((acc: number, item: any) => {
-    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
-    const hargaSetelahDiskon = getFirstFilledNumber(item?.hargaSetelahDiskon, item?.hargaJual, item?.hargaAsli, item?.harga)
-    return acc + hargaSetelahDiskon * qty
-  }, 0)
+    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1));
+    const hargaSetelahDiskon = getFirstFilledNumber(
+      item?.hargaSetelahDiskon,
+      item?.hargaJual,
+      item?.hargaAsli,
+      item?.harga,
+    );
+    return acc + hargaSetelahDiskon * qty;
+  }, 0);
 }
 
 function getTransaksiModalItems(raw: any) {
-  const items = Array.isArray(raw?.items) ? raw.items : []
+  const items = Array.isArray(raw?.items) ? raw.items : [];
   return items.reduce((acc: number, item: any) => {
-    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
-    const modal = getFirstFilledNumber(item?.hargaModal, item?.modal, item?.hargaBeli)
-    return acc + modal * qty
-  }, 0)
+    const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1));
+    const modal = getFirstFilledNumber(
+      item?.hargaModal,
+      item?.modal,
+      item?.hargaBeli,
+    );
+    return acc + modal * qty;
+  }, 0);
 }
 
 function getTransaksiGrandTotalValid(raw: any) {
-  const totalBarang = getTransaksiTotalBarangValid(raw)
-  const admin = getTransaksiBiayaAdmin(raw)
+  const totalBarang = getTransaksiTotalBarangValid(raw);
+  const admin = getTransaksiBiayaAdmin(raw);
 
   const explicit = getBersihNumber({
     bersih: [raw?.grandTotalBersih, raw?.totalBayarBersih, raw?.totalBersih],
@@ -450,68 +512,108 @@ function getTransaksiGrandTotalValid(raw: any) {
       raw?.totalReturNominal,
       raw?.totalReturGrandTotal,
       raw?.returNominal,
-      getFirstFilledNumber(raw?.totalReturSetelahDiskon) + getFirstFilledNumber(raw?.totalReturBiayaAdmin),
+      getFirstFilledNumber(raw?.totalReturSetelahDiskon) +
+        getFirstFilledNumber(raw?.totalReturBiayaAdmin),
     ],
     fallback: totalBarang + admin,
-  })
+  });
 
-  return Math.max(0, explicit)
+  return Math.max(0, explicit);
 }
 
 function getTransaksiTotalDibayarValid(raw: any) {
-  const grandTotal = getTransaksiGrandTotalValid(raw)
-  const isHutang = Boolean(raw?.isHutang) || normalizeNumber(raw?.sisaHutang) > 0 || normalizeNumber(raw?.totalHutang) > 0 || normalizeNumber(raw?.kurangBayar) > 0
+  const grandTotal = getTransaksiGrandTotalValid(raw);
+  const isHutang =
+    Boolean(raw?.isHutang) ||
+    normalizeNumber(raw?.sisaHutang) > 0 ||
+    normalizeNumber(raw?.totalHutang) > 0 ||
+    normalizeNumber(raw?.kurangBayar) > 0;
 
-  if (!isHutang) return grandTotal
+  if (!isHutang) return grandTotal;
 
-  const explicitPaid = getFirstFilledNumber(raw?.totalDibayar, raw?.totalTerbayar, raw?.dibayar)
-  if (explicitPaid > 0) return Math.min(grandTotal, explicitPaid)
+  const explicitPaid = getFirstFilledNumber(
+    raw?.totalDibayar,
+    raw?.totalTerbayar,
+    raw?.dibayar,
+  );
+  if (explicitPaid > 0) return Math.min(grandTotal, explicitPaid);
 
-  const splitPaid = getPembayaranItemsNominal(raw?.pembayaranItems)
-  if (splitPaid > 0) return Math.min(grandTotal, splitPaid)
+  const splitPaid = getPembayaranItemsNominal(raw?.pembayaranItems);
+  if (splitPaid > 0) return Math.min(grandTotal, splitPaid);
 
-  const sisaHutang = getFirstFilledNumber(raw?.sisaHutang, raw?.totalHutang, raw?.kurangBayar)
-  if (sisaHutang > 0) return Math.max(0, Math.min(grandTotal, grandTotal - sisaHutang))
+  const sisaHutang = getFirstFilledNumber(
+    raw?.sisaHutang,
+    raw?.totalHutang,
+    raw?.kurangBayar,
+  );
+  if (sisaHutang > 0)
+    return Math.max(0, Math.min(grandTotal, grandTotal - sisaHutang));
 
-  const uangBayar = normalizeNumber(raw?.uangBayar)
-  const kembalian = normalizeNumber(raw?.kembalian)
-  if (uangBayar > 0) return Math.max(0, Math.min(grandTotal, uangBayar - Math.max(0, kembalian)))
+  const uangBayar = normalizeNumber(raw?.uangBayar);
+  const kembalian = normalizeNumber(raw?.kembalian);
+  if (uangBayar > 0)
+    return Math.max(
+      0,
+      Math.min(grandTotal, uangBayar - Math.max(0, kembalian)),
+    );
 
-  return 0
+  return 0;
 }
 
 function getTransaksiSisaHutangValid(raw: any, totalDibayar: number) {
-  if (hasNumberValue(raw?.sisaHutang)) return Math.max(0, normalizeNumber(raw?.sisaHutang))
-  if (getTransaksiGrandTotalValid(raw) <= 0) return 0
+  if (hasNumberValue(raw?.sisaHutang))
+    return Math.max(0, normalizeNumber(raw?.sisaHutang));
+  if (getTransaksiGrandTotalValid(raw) <= 0) return 0;
 
-  const direct = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar)
-  if (direct > 0) return Math.max(0, Math.min(getTransaksiGrandTotalValid(raw), direct))
-  if (Boolean(raw?.isHutang)) return Math.max(0, getTransaksiGrandTotalValid(raw) - totalDibayar)
-  return 0
+  const direct = getFirstFilledNumber(raw?.totalHutang, raw?.kurangBayar);
+  if (direct > 0)
+    return Math.max(0, Math.min(getTransaksiGrandTotalValid(raw), direct));
+  if (Boolean(raw?.isHutang))
+    return Math.max(0, getTransaksiGrandTotalValid(raw) - totalDibayar);
+  return 0;
 }
 
 function getTransaksiAdminDibayarValid(raw: any, totalDibayar: number) {
-  const grandTotal = getTransaksiGrandTotalValid(raw)
-  const totalAdmin = getTransaksiBiayaAdmin(raw)
-  if (grandTotal <= 0 || totalAdmin <= 0) return 0
-  return Math.max(0, Math.min(totalAdmin, totalAdmin * (totalDibayar / grandTotal)))
+  const grandTotal = getTransaksiGrandTotalValid(raw);
+  const totalAdmin = getTransaksiBiayaAdmin(raw);
+  if (grandTotal <= 0 || totalAdmin <= 0) return 0;
+  return Math.max(
+    0,
+    Math.min(totalAdmin, totalAdmin * (totalDibayar / grandTotal)),
+  );
 }
 
 function getTransaksiTotalBarangValid(raw: any) {
   return getBersihNumber({
-    bersih: [raw?.totalSetelahDiskonBersih, raw?.omzetBersih, raw?.totalBarangBersih],
-    lama: [raw?.totalSetelahDiskon, raw?.omzet, getTransaksiTotalSetelahDiskonItems(raw)],
-    retur: [raw?.totalReturSetelahDiskon, raw?.totalReturBarang, raw?.returSetelahDiskon],
-  })
+    bersih: [
+      raw?.totalSetelahDiskonBersih,
+      raw?.omzetBersih,
+      raw?.totalBarangBersih,
+    ],
+    lama: [
+      raw?.totalSetelahDiskon,
+      raw?.omzet,
+      getTransaksiTotalSetelahDiskonItems(raw),
+    ],
+    retur: [
+      raw?.totalReturSetelahDiskon,
+      raw?.totalReturBarang,
+      raw?.returSetelahDiskon,
+    ],
+  });
 }
 
 function getTransaksiSubtotalValid(raw: any) {
   return getBersihNumber({
     bersih: [raw?.subtotalBersih],
-    lama: [raw?.subtotal, getTransaksiSubtotalItems(raw), getTransaksiTotalBarangValid(raw)],
+    lama: [
+      raw?.subtotal,
+      getTransaksiSubtotalItems(raw),
+      getTransaksiTotalBarangValid(raw),
+    ],
     retur: [raw?.totalReturSubtotal, raw?.returSubtotal],
     fallback: getTransaksiTotalBarangValid(raw),
-  })
+  });
 }
 
 function getTransaksiModalValid(raw: any) {
@@ -519,7 +621,7 @@ function getTransaksiModalValid(raw: any) {
     bersih: [raw?.totalModalBersih, raw?.modalBersih],
     lama: [raw?.totalModal, raw?.modal, getTransaksiModalItems(raw)],
     retur: [raw?.totalReturModal, raw?.returModal],
-  })
+  });
 }
 
 function getTransaksiTotalItemValid(raw: any) {
@@ -529,18 +631,30 @@ function getTransaksiTotalItemValid(raw: any) {
       raw?.totalItem,
       raw?.totalItemTerjual,
       Array.isArray(raw?.items)
-        ? raw.items.reduce((acc: number, item: any) => acc + Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1)), 0)
+        ? raw.items.reduce(
+            (acc: number, item: any) =>
+              acc +
+              Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1)),
+            0,
+          )
         : 0,
     ],
     retur: [raw?.totalReturQty, raw?.returQty],
-  })
+  });
 }
 
 function getTransaksiModalRatio(raw: any) {
-  const modalLama = Math.max(0, getFirstFilledNumber(raw?.totalModal, raw?.modal, getTransaksiModalItems(raw)))
-  const modalBersih = getTransaksiModalValid(raw)
-  if (modalLama <= 0) return modalBersih > 0 ? 1 : 0
-  return getSafeRatio(modalBersih / modalLama)
+  const modalLama = Math.max(
+    0,
+    getFirstFilledNumber(
+      raw?.totalModal,
+      raw?.modal,
+      getTransaksiModalItems(raw),
+    ),
+  );
+  const modalBersih = getTransaksiModalValid(raw);
+  if (modalLama <= 0) return modalBersih > 0 ? 1 : 0;
+  return getSafeRatio(modalBersih / modalLama);
 }
 
 function getTransaksiQtyRatio(raw: any) {
@@ -550,43 +664,91 @@ function getTransaksiQtyRatio(raw: any) {
       raw?.totalItem,
       raw?.totalItemTerjual,
       Array.isArray(raw?.items)
-        ? raw.items.reduce((acc: number, item: any) => acc + Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1)), 0)
+        ? raw.items.reduce(
+            (acc: number, item: any) =>
+              acc +
+              Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1)),
+            0,
+          )
         : 0,
     ),
-  )
-  const qtyBersih = getTransaksiTotalItemValid(raw)
-  if (qtyLama <= 0) return qtyBersih > 0 ? 1 : 0
-  return getSafeRatio(qtyBersih / qtyLama)
+  );
+  const qtyBersih = getTransaksiTotalItemValid(raw);
+  if (qtyLama <= 0) return qtyBersih > 0 ? 1 : 0;
+  return getSafeRatio(qtyBersih / qtyLama);
 }
 
 function getTransaksiDiskonValid(raw: any) {
-  const subtotal = getTransaksiSubtotalValid(raw)
-  const totalBarang = getTransaksiTotalBarangValid(raw)
+  const subtotal = getTransaksiSubtotalValid(raw);
+  const totalBarang = getTransaksiTotalBarangValid(raw);
 
   return getBersihNumber({
     bersih: [raw?.totalDiskonBersih],
     lama: [raw?.totalDiskon, Math.max(0, subtotal - totalBarang)],
     retur: [raw?.totalReturDiskon, raw?.returDiskon],
     fallback: Math.max(0, subtotal - totalBarang),
-  })
+  });
 }
 
-function getPaidNetBarangRatio(raw: any, totalDibayar: number, adminDibayar: number) {
-  const totalBarang = getTransaksiTotalBarangValid(raw)
-  if (totalBarang <= 0) return 1
-  return Math.max(0, Math.min(1, Math.max(0, totalDibayar - adminDibayar) / totalBarang))
+function getPaidNetBarangRatio(
+  raw: any,
+  totalDibayar: number,
+  adminDibayar: number,
+) {
+  const totalBarang = getTransaksiTotalBarangValid(raw);
+  if (totalBarang <= 0) return 1;
+  return Math.max(
+    0,
+    Math.min(1, Math.max(0, totalDibayar - adminDibayar) / totalBarang),
+  );
 }
 
 function normalizeTransaksiItem(item: any) {
-  const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1))
-  const hargaAsli = getFirstFilledNumber(item?.hargaAsli, item?.hargaNormal, item?.hargaJual, item?.harga)
-  const hargaSetelahDiskon = getFirstFilledNumber(item?.hargaSetelahDiskon, item?.hargaJual, item?.hargaAsli, item?.harga)
-  const hargaModal = getFirstFilledNumber(item?.hargaModal, item?.modal, item?.hargaBeli)
-  const kategoriNama = String(item?.kategoriNama || item?.kategori || item?.namaKategori || "Tanpa Kategori").trim() || "Tanpa Kategori"
-  const kategoriId = String(item?.kategoriId || item?.kategoriID || kategoriNama).trim().toLowerCase() || "tanpa-kategori"
-  const satuanNama = String(item?.satuanNama || item?.satuan || item?.unit || "Tanpa Satuan").trim() || "Tanpa Satuan"
-  const satuanId = String(item?.satuanId || item?.satuanID || satuanNama).trim().toLowerCase() || "tanpa-satuan"
-  const namaBarang = String(item?.nama || item?.namaBarang || item?.barangNama || item?.produkNama || item?.productName || "").trim()
+  const qty = Math.max(0, normalizeNumber(item?.qty ?? item?.jumlah ?? 1));
+  const hargaAsli = getFirstFilledNumber(
+    item?.hargaAsli,
+    item?.hargaNormal,
+    item?.hargaJual,
+    item?.harga,
+  );
+  const hargaSetelahDiskon = getFirstFilledNumber(
+    item?.hargaSetelahDiskon,
+    item?.hargaJual,
+    item?.hargaAsli,
+    item?.harga,
+  );
+  const hargaModal = getFirstFilledNumber(
+    item?.hargaModal,
+    item?.modal,
+    item?.hargaBeli,
+  );
+  const kategoriNama =
+    String(
+      item?.kategoriNama ||
+        item?.kategori ||
+        item?.namaKategori ||
+        "Tanpa Kategori",
+    ).trim() || "Tanpa Kategori";
+  const kategoriId =
+    String(item?.kategoriId || item?.kategoriID || kategoriNama)
+      .trim()
+      .toLowerCase() || "tanpa-kategori";
+  const satuanNama =
+    String(
+      item?.satuanNama || item?.satuan || item?.unit || "Tanpa Satuan",
+    ).trim() || "Tanpa Satuan";
+  const satuanId =
+    String(item?.satuanId || item?.satuanID || satuanNama)
+      .trim()
+      .toLowerCase() || "tanpa-satuan";
+  const namaBarang = String(
+    item?.nama ||
+      item?.namaBarang ||
+      item?.barangNama ||
+      item?.produkNama ||
+      item?.productName ||
+      "",
+  ).trim();
 
   return {
     qty,
@@ -601,26 +763,49 @@ function normalizeTransaksiItem(item: any) {
     subtotal: hargaAsli * qty,
     totalSetelahDiskon: hargaSetelahDiskon * qty,
     totalModal: hargaModal * qty,
-  }
+  };
 }
 
-function buildKategoriBreakdownFromTransaksi(raw: any, paidNetRatio: number, modalRatio = 1, qtyRatio = 1): KategoriBreakdown[] {
-  const existing = Array.isArray(raw?.kategoriBreakdown) ? raw.kategoriBreakdown : []
+function buildKategoriBreakdownFromTransaksi(
+  raw: any,
+  paidNetRatio: number,
+  modalRatio = 1,
+  qtyRatio = 1,
+): KategoriBreakdown[] {
+  const existing = Array.isArray(raw?.kategoriBreakdown)
+    ? raw.kategoriBreakdown
+    : [];
   if (existing.length > 0) {
     return existing
       .map((item: any) => {
-        const kategoriNama = String(item?.nama || item?.kategoriNama || "Tanpa Kategori").trim() || "Tanpa Kategori"
-        const kategoriId = String(item?.kategoriId || kategoriNama).trim().toLowerCase() || "tanpa-kategori"
-        const nilaiJual = getFirstFilledNumber(item?.totalSetelahDiskon, item?.omzet, item?.subtotal)
-        const pendapatanDiterima = Math.max(0, nilaiJual * paidNetRatio)
-        const totalModal = Math.max(0, normalizeNumber(item?.totalModal ?? item?.modal) * modalRatio)
-        const labaValid = pendapatanDiterima - totalModal
+        const kategoriNama =
+          String(item?.nama || item?.kategoriNama || "Tanpa Kategori").trim() ||
+          "Tanpa Kategori";
+        const kategoriId =
+          String(item?.kategoriId || kategoriNama)
+            .trim()
+            .toLowerCase() || "tanpa-kategori";
+        const nilaiJual = getFirstFilledNumber(
+          item?.totalSetelahDiskon,
+          item?.omzet,
+          item?.subtotal,
+        );
+        const pendapatanDiterima = Math.max(0, nilaiJual * paidNetRatio);
+        const totalModal = Math.max(
+          0,
+          normalizeNumber(item?.totalModal ?? item?.modal) * modalRatio,
+        );
+        const labaValid = pendapatanDiterima - totalModal;
 
         return {
           kategoriId,
           kategoriNama,
-          jumlahTransaksi: normalizeNumber(item?.jumlahTransaksi ?? item?.transaksi),
-          qtyTerjual: normalizeNumber(item?.qtyTerjual ?? item?.totalQty ?? item?.qty) * qtyRatio,
+          jumlahTransaksi: normalizeNumber(
+            item?.jumlahTransaksi ?? item?.transaksi,
+          ),
+          qtyTerjual:
+            normalizeNumber(item?.qtyTerjual ?? item?.totalQty ?? item?.qty) *
+            qtyRatio,
           omzet: pendapatanDiterima,
           subtotal: normalizeNumber(item?.subtotal),
           totalDiskon: normalizeNumber(item?.totalDiskon),
@@ -629,25 +814,29 @@ function buildKategoriBreakdownFromTransaksi(raw: any, paidNetRatio: number, mod
           totalBiayaAdmin: 0,
           labaKotor: labaValid,
           labaBersih: labaValid,
-          satuanIds: uniqueStringList(Array.isArray(item?.satuanIds) ? item.satuanIds : []),
-          satuanNamaList: uniqueStringList(Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : []),
+          satuanIds: uniqueStringList(
+            Array.isArray(item?.satuanIds) ? item.satuanIds : [],
+          ),
+          satuanNamaList: uniqueStringList(
+            Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : [],
+          ),
           namaBarangList: uniqueStringList([
             ...(Array.isArray(item?.namaBarangList) ? item.namaBarangList : []),
             ...(Array.isArray(item?.barangNamaList) ? item.barangNamaList : []),
             ...(Array.isArray(item?.produkNamaList) ? item.produkNamaList : []),
           ]),
-        }
+        };
       })
-      .filter((item: KategoriBreakdown) => item.kategoriNama)
+      .filter((item: KategoriBreakdown) => item.kategoriNama);
   }
 
-  const items = Array.isArray(raw?.items) ? raw.items : []
-  const map = new Map<string, KategoriBreakdown>()
+  const items = Array.isArray(raw?.items) ? raw.items : [];
+  const map = new Map<string, KategoriBreakdown>();
 
   for (const item of items) {
-    const row = normalizeTransaksiItem(item)
-    const pendapatanDiterima = row.totalSetelahDiskon * paidNetRatio
-    const totalDiskon = Math.max(0, row.subtotal - row.totalSetelahDiskon)
+    const row = normalizeTransaksiItem(item);
+    const pendapatanDiterima = row.totalSetelahDiskon * paidNetRatio;
+    const totalDiskon = Math.max(0, row.subtotal - row.totalSetelahDiskon);
     const current = map.get(row.kategoriId) || {
       kategoriId: row.kategoriId,
       kategoriNama: row.kategoriNama,
@@ -664,57 +853,85 @@ function buildKategoriBreakdownFromTransaksi(raw: any, paidNetRatio: number, mod
       satuanIds: [],
       satuanNamaList: [],
       namaBarangList: [],
-    }
+    };
 
-    current.jumlahTransaksi = pendapatanDiterima > 0 || row.totalModal * modalRatio > 0 ? 1 : 0
-    current.qtyTerjual += row.qty * qtyRatio
-    current.omzet += pendapatanDiterima
-    current.subtotal += row.subtotal
-    current.totalDiskon += totalDiskon
-    current.totalSetelahDiskon += pendapatanDiterima
-    current.totalModal += row.totalModal * modalRatio
-    current.labaKotor += pendapatanDiterima - row.totalModal * modalRatio
-    current.labaBersih += pendapatanDiterima - row.totalModal * modalRatio
-    current.satuanIds = uniqueStringList([...(current.satuanIds || []), row.satuanId])
-    current.satuanNamaList = uniqueStringList([...(current.satuanNamaList || []), row.satuanNama])
-    current.namaBarangList = uniqueStringList([...(current.namaBarangList || []), row.namaBarang].filter(Boolean))
-    map.set(row.kategoriId, current)
+    current.jumlahTransaksi =
+      pendapatanDiterima > 0 || row.totalModal * modalRatio > 0 ? 1 : 0;
+    current.qtyTerjual += row.qty * qtyRatio;
+    current.omzet += pendapatanDiterima;
+    current.subtotal += row.subtotal;
+    current.totalDiskon += totalDiskon;
+    current.totalSetelahDiskon += pendapatanDiterima;
+    current.totalModal += row.totalModal * modalRatio;
+    current.labaKotor += pendapatanDiterima - row.totalModal * modalRatio;
+    current.labaBersih += pendapatanDiterima - row.totalModal * modalRatio;
+    current.satuanIds = uniqueStringList([
+      ...(current.satuanIds || []),
+      row.satuanId,
+    ]);
+    current.satuanNamaList = uniqueStringList([
+      ...(current.satuanNamaList || []),
+      row.satuanNama,
+    ]);
+    current.namaBarangList = uniqueStringList(
+      [...(current.namaBarangList || []), row.namaBarang].filter(Boolean),
+    );
+    map.set(row.kategoriId, current);
   }
 
-  return Array.from(map.values())
+  return Array.from(map.values());
 }
 
-function buildKelompokBreakdownFromTransaksi(raw: any, paidNetRatio: number, modalRatio = 1, qtyRatio = 1): KelompokKategoriBreakdown[] {
-  const kelompokData = normalizeKelompokBreakdown(raw?.kelompokKategoriBreakdown)
+function buildKelompokBreakdownFromTransaksi(
+  raw: any,
+  paidNetRatio: number,
+  modalRatio = 1,
+  qtyRatio = 1,
+): KelompokKategoriBreakdown[] {
+  const kelompokData = normalizeKelompokBreakdown(
+    raw?.kelompokKategoriBreakdown,
+  );
 
   return kelompokData.map((item) => {
-    const nilaiJual = getFirstFilledNumber(item.totalSetelahDiskon, item.omzet, item.subtotal)
-    const pendapatanDiterima = Math.max(0, nilaiJual * paidNetRatio)
-    const totalModal = normalizeNumber(item.totalModal) * modalRatio
-    const labaValid = pendapatanDiterima - totalModal
+    const nilaiJual = getFirstFilledNumber(
+      item.totalSetelahDiskon,
+      item.omzet,
+      item.subtotal,
+    );
+    const pendapatanDiterima = Math.max(0, nilaiJual * paidNetRatio);
+    const totalModal = normalizeNumber(item.totalModal) * modalRatio;
+    const labaValid = pendapatanDiterima - totalModal;
 
     return {
       ...item,
       omzet: pendapatanDiterima,
       totalQty: normalizeNumber(item.totalQty) * qtyRatio,
-      jumlahTransaksi: pendapatanDiterima > 0 || totalModal > 0 ? normalizeNumber(item.jumlahTransaksi) : 0,
+      jumlahTransaksi:
+        pendapatanDiterima > 0 || totalModal > 0
+          ? normalizeNumber(item.jumlahTransaksi)
+          : 0,
       totalSetelahDiskon: pendapatanDiterima,
       totalModal,
       totalBiayaAdmin: 0,
       totalLabaKotor: labaValid,
-    }
-  })
+    };
+  });
 }
 
-function mergeKategoriBreakdown(target: KategoriBreakdown[], tambah: KategoriBreakdown[]) {
-  const map = new Map<string, KategoriBreakdown>()
+function mergeKategoriBreakdown(
+  target: KategoriBreakdown[],
+  tambah: KategoriBreakdown[],
+) {
+  const map = new Map<string, KategoriBreakdown>();
 
   for (const item of target) {
-    map.set(item.kategoriId || normalizeKategoriKey(item.kategoriNama), { ...item })
+    map.set(item.kategoriId || normalizeKategoriKey(item.kategoriNama), {
+      ...item,
+    });
   }
 
   for (const item of tambah) {
-    const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
+    const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama);
     const current = map.get(key) || {
       kategoriId: key,
       kategoriNama: item.kategoriNama || "Tanpa Kategori",
@@ -731,36 +948,50 @@ function mergeKategoriBreakdown(target: KategoriBreakdown[], tambah: KategoriBre
       satuanIds: [],
       satuanNamaList: [],
       namaBarangList: [],
-    }
+    };
 
-    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
-    current.qtyTerjual += normalizeNumber(item.qtyTerjual)
-    current.omzet += normalizeNumber(item.omzet)
-    current.subtotal += normalizeNumber(item.subtotal)
-    current.totalDiskon += normalizeNumber(item.totalDiskon)
-    current.totalSetelahDiskon += normalizeNumber(item.totalSetelahDiskon)
-    current.totalModal += normalizeNumber(item.totalModal)
-    current.totalBiayaAdmin += normalizeNumber(item.totalBiayaAdmin)
-    current.labaKotor += normalizeNumber(item.labaKotor)
-    current.labaBersih += normalizeNumber(item.labaBersih)
-    current.satuanIds = uniqueStringList([...(current.satuanIds || []), ...(item.satuanIds || [])])
-    current.satuanNamaList = uniqueStringList([...(current.satuanNamaList || []), ...(item.satuanNamaList || [])])
-    current.namaBarangList = uniqueStringList([...(current.namaBarangList || []), ...(item.namaBarangList || [])])
-    map.set(key, current)
+    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi);
+    current.qtyTerjual += normalizeNumber(item.qtyTerjual);
+    current.omzet += normalizeNumber(item.omzet);
+    current.subtotal += normalizeNumber(item.subtotal);
+    current.totalDiskon += normalizeNumber(item.totalDiskon);
+    current.totalSetelahDiskon += normalizeNumber(item.totalSetelahDiskon);
+    current.totalModal += normalizeNumber(item.totalModal);
+    current.totalBiayaAdmin += normalizeNumber(item.totalBiayaAdmin);
+    current.labaKotor += normalizeNumber(item.labaKotor);
+    current.labaBersih += normalizeNumber(item.labaBersih);
+    current.satuanIds = uniqueStringList([
+      ...(current.satuanIds || []),
+      ...(item.satuanIds || []),
+    ]);
+    current.satuanNamaList = uniqueStringList([
+      ...(current.satuanNamaList || []),
+      ...(item.satuanNamaList || []),
+    ]);
+    current.namaBarangList = uniqueStringList([
+      ...(current.namaBarangList || []),
+      ...(item.namaBarangList || []),
+    ]);
+    map.set(key, current);
   }
 
-  return Array.from(map.values())
+  return Array.from(map.values());
 }
 
-function mergeKelompokBreakdown(target: KelompokKategoriBreakdown[], tambah: KelompokKategoriBreakdown[]) {
-  const map = new Map<string, KelompokKategoriBreakdown>()
+function mergeKelompokBreakdown(
+  target: KelompokKategoriBreakdown[],
+  tambah: KelompokKategoriBreakdown[],
+) {
+  const map = new Map<string, KelompokKategoriBreakdown>();
 
   for (const item of target) {
-    map.set(item.kelompokId || normalizeKategoriKey(item.namaKelompok), { ...item })
+    map.set(item.kelompokId || normalizeKategoriKey(item.namaKelompok), {
+      ...item,
+    });
   }
 
   for (const item of tambah) {
-    const key = item.kelompokId || normalizeKategoriKey(item.namaKelompok)
+    const key = item.kelompokId || normalizeKategoriKey(item.namaKelompok);
     const current = map.get(key) || {
       kelompokId: key,
       namaKelompok: item.namaKelompok || "Tanpa Kelompok",
@@ -778,49 +1009,80 @@ function mergeKelompokBreakdown(target: KelompokKategoriBreakdown[], tambah: Kel
       totalModal: 0,
       totalBiayaAdmin: 0,
       totalLabaKotor: 0,
-    }
+    };
 
-    current.kategoriIds = uniqueStringList([...(current.kategoriIds || []), ...(item.kategoriIds || [])])
-    current.kategoriNama = uniqueStringList([...(current.kategoriNama || []), ...(item.kategoriNama || [])])
-    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
-    current.totalQty += normalizeNumber(item.totalQty)
-    current.omzet += normalizeNumber(item.omzet)
-    current.subtotal += normalizeNumber(item.subtotal)
-    current.totalDiskon += normalizeNumber(item.totalDiskon)
-    current.totalSetelahDiskon += normalizeNumber(item.totalSetelahDiskon)
-    current.totalModal += normalizeNumber(item.totalModal)
-    current.totalBiayaAdmin += normalizeNumber(item.totalBiayaAdmin)
-    current.totalLabaKotor += normalizeNumber(item.totalLabaKotor)
-    map.set(key, current)
+    current.kategoriIds = uniqueStringList([
+      ...(current.kategoriIds || []),
+      ...(item.kategoriIds || []),
+    ]);
+    current.kategoriNama = uniqueStringList([
+      ...(current.kategoriNama || []),
+      ...(item.kategoriNama || []),
+    ]);
+    current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi);
+    current.totalQty += normalizeNumber(item.totalQty);
+    current.omzet += normalizeNumber(item.omzet);
+    current.subtotal += normalizeNumber(item.subtotal);
+    current.totalDiskon += normalizeNumber(item.totalDiskon);
+    current.totalSetelahDiskon += normalizeNumber(item.totalSetelahDiskon);
+    current.totalModal += normalizeNumber(item.totalModal);
+    current.totalBiayaAdmin += normalizeNumber(item.totalBiayaAdmin);
+    current.totalLabaKotor += normalizeNumber(item.totalLabaKotor);
+    map.set(key, current);
   }
 
-  return Array.from(map.values()).sort((a, b) => normalizeNumber(a.urutan) - normalizeNumber(b.urutan))
+  return Array.from(map.values()).sort(
+    (a, b) => normalizeNumber(a.urutan) - normalizeNumber(b.urutan),
+  );
 }
 
-function buildLaporanHarianValidFromTransaksi(docs: Array<{ id: string; data: any }>): LaporanHarian[] {
-  const map = new Map<string, LaporanHarian>()
+function buildLaporanHarianValidFromTransaksi(
+  docs: Array<{ id: string; data: any }>,
+): LaporanHarian[] {
+  const map = new Map<string, LaporanHarian>();
 
   for (const docItem of docs) {
-    const raw = docItem.data || {}
-    if (String(raw?.status || "").toLowerCase() !== "selesai") continue
+    const raw = docItem.data || {};
+    if (String(raw?.status || "").toLowerCase() !== "selesai") continue;
 
-    const tanggalKey = getTransaksiTanggalKey(raw)
-    if (!tanggalKey) continue
+    const tanggalKey = getTransaksiTanggalKey(raw);
+    if (!tanggalKey) continue;
 
-    const tokoId = String(raw?.tokoId || "").trim()
-    const tokoNama = String(raw?.tokoNama || "Tanpa Toko").trim() || "Tanpa Toko"
-    const key = `${tanggalKey}__${tokoId || tokoNama}`
-    const totalDibayar = getTransaksiTotalDibayarValid(raw)
-    const totalAdminDibayar = getTransaksiAdminDibayarValid(raw, totalDibayar)
-    const pendapatanBarangDiterima = Math.max(0, totalDibayar - totalAdminDibayar)
-    const paidNetRatio = getPaidNetBarangRatio(raw, totalDibayar, totalAdminDibayar)
-    const totalModal = getTransaksiModalValid(raw)
-    const modalRatio = getTransaksiModalRatio(raw)
-    const qtyRatio = getTransaksiQtyRatio(raw)
-    const labaValid = pendapatanBarangDiterima - totalModal
-    const kategoriBreakdown = buildKategoriBreakdownFromTransaksi(raw, paidNetRatio, modalRatio, qtyRatio)
-    const kelompokKategoriBreakdown = buildKelompokBreakdownFromTransaksi(raw, paidNetRatio, modalRatio, qtyRatio)
-    const totalQty = kategoriBreakdown.reduce((acc, item) => acc + normalizeNumber(item.qtyTerjual), 0)
+    const tokoId = String(raw?.tokoId || "").trim();
+    const tokoNama =
+      String(raw?.tokoNama || "Tanpa Toko").trim() || "Tanpa Toko";
+    const key = `${tanggalKey}__${tokoId || tokoNama}`;
+    const totalDibayar = getTransaksiTotalDibayarValid(raw);
+    const totalAdminDibayar = getTransaksiAdminDibayarValid(raw, totalDibayar);
+    const pendapatanBarangDiterima = Math.max(
+      0,
+      totalDibayar - totalAdminDibayar,
+    );
+    const paidNetRatio = getPaidNetBarangRatio(
+      raw,
+      totalDibayar,
+      totalAdminDibayar,
+    );
+    const totalModal = getTransaksiModalValid(raw);
+    const modalRatio = getTransaksiModalRatio(raw);
+    const qtyRatio = getTransaksiQtyRatio(raw);
+    const labaValid = pendapatanBarangDiterima - totalModal;
+    const kategoriBreakdown = buildKategoriBreakdownFromTransaksi(
+      raw,
+      paidNetRatio,
+      modalRatio,
+      qtyRatio,
+    );
+    const kelompokKategoriBreakdown = buildKelompokBreakdownFromTransaksi(
+      raw,
+      paidNetRatio,
+      modalRatio,
+      qtyRatio,
+    );
+    const totalQty = kategoriBreakdown.reduce(
+      (acc, item) => acc + normalizeNumber(item.qtyTerjual),
+      0,
+    );
 
     if (
       totalDibayar <= 0 &&
@@ -828,7 +1090,7 @@ function buildLaporanHarianValidFromTransaksi(docs: Array<{ id: string; data: an
       getTransaksiTotalBarangValid(raw) <= 0 &&
       String(raw?.returStatus || "").toLowerCase() === "penuh"
     ) {
-      continue
+      continue;
     }
 
     const current = map.get(key) || {
@@ -842,53 +1104,71 @@ function buildLaporanHarianValidFromTransaksi(docs: Array<{ id: string; data: an
       jumlahTransaksi: 0,
       kategoriBreakdown: [],
       kelompokKategoriBreakdown: [],
-    }
+    };
 
-    current.jumlahTransaksi += 1
-    current.omzet += totalDibayar
-    current.totalLabaKotor += labaValid
-    current.totalKeuntunganBersih += labaValid
-    current.kategoriBreakdown = mergeKategoriBreakdown(current.kategoriBreakdown, kategoriBreakdown)
-    current.kelompokKategoriBreakdown = mergeKelompokBreakdown(current.kelompokKategoriBreakdown, kelompokKategoriBreakdown)
+    current.jumlahTransaksi += 1;
+    current.omzet += totalDibayar;
+    current.totalLabaKotor += labaValid;
+    current.totalKeuntunganBersih += labaValid;
+    current.kategoriBreakdown = mergeKategoriBreakdown(
+      current.kategoriBreakdown,
+      kategoriBreakdown,
+    );
+    current.kelompokKategoriBreakdown = mergeKelompokBreakdown(
+      current.kelompokKategoriBreakdown,
+      kelompokKategoriBreakdown,
+    );
 
     if (totalQty <= 0 && Array.isArray(raw?.items)) {
-      const fallbackKategori = buildKategoriBreakdownFromTransaksi(raw, paidNetRatio, modalRatio, qtyRatio)
-      current.kategoriBreakdown = mergeKategoriBreakdown(current.kategoriBreakdown, fallbackKategori)
+      const fallbackKategori = buildKategoriBreakdownFromTransaksi(
+        raw,
+        paidNetRatio,
+        modalRatio,
+        qtyRatio,
+      );
+      current.kategoriBreakdown = mergeKategoriBreakdown(
+        current.kategoriBreakdown,
+        fallbackKategori,
+      );
     }
 
-    map.set(key, current)
+    map.set(key, current);
   }
 
-  return Array.from(map.values()).sort((a, b) => b.tanggalKey.localeCompare(a.tanggalKey))
+  return Array.from(map.values()).sort((a, b) =>
+    b.tanggalKey.localeCompare(a.tanggalKey),
+  );
 }
 
 async function downloadWorkbookXlsx(workbook: any, filename: string) {
-  const XLSX = await import("xlsx-js-style")
-  const ab = XLSX.write(workbook, { type: "array", bookType: "xlsx" })
+  const XLSX = await import("xlsx-js-style");
+  const ab = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
   const blob = new Blob([ab], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function safeSheetName(value: string, fallback = "Sheet") {
   const clean = String(value || fallback)
     .replace(/[\\/?*[\]:]/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-  return (clean || fallback).slice(0, 31)
+    .trim();
+  return (clean || fallback).slice(0, 31);
 }
 
 function makeSheet(XLSX: any, title: string, headers: string[], rows: any[][]) {
-  const ws = XLSX.utils.aoa_to_sheet([[title], [], headers, ...rows])
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(0, headers.length - 1) } }]
-  ws["!cols"] = headers.map(() => ({ wch: 22 }))
-  return ws
+  const ws = XLSX.utils.aoa_to_sheet([[title], [], headers, ...rows]);
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(0, headers.length - 1) } },
+  ];
+  ws["!cols"] = headers.map(() => ({ wch: 22 }));
+  return ws;
 }
 
 function FilterSelect({
@@ -898,11 +1178,11 @@ function FilterSelect({
   label,
   icon: Icon,
 }: {
-  value: string
-  onChange: (value: string) => void
-  children: React.ReactNode
-  label: string
-  icon?: any
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+  label: string;
+  icon?: any;
 }) {
   return (
     <div>
@@ -935,67 +1215,108 @@ function FilterSelect({
         />
       </div>
     </div>
-  )
+  );
 }
 
 export default function LaporanKeuntunganHarianPage() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [tokoList, setTokoList] = useState<Toko[]>([])
-  const [laporanHarianList, setLaporanHarianList] = useState<LaporanHarian[]>([])
-  const [pengeluaranList, setPengeluaranList] = useState<Pengeluaran[]>([])
+  const [tokoList, setTokoList] = useState<Toko[]>([]);
+  const [laporanHarianList, setLaporanHarianList] = useState<LaporanHarian[]>(
+    [],
+  );
+  const [pengeluaranList, setPengeluaranList] = useState<Pengeluaran[]>([]);
 
-  const [search, setSearch] = useState("")
-  const [filterToko, setFilterToko] = useState("")
-  const [filterKategori, setFilterKategori] = useState("")
-  const [filterSatuan, setFilterSatuan] = useState("")
-  const [tanggalMulai, setTanggalMulai] = useState(getStartOfMonthDateInput())
-  const [tanggalSelesai, setTanggalSelesai] = useState(toDateInputValue(new Date()))
-  const [filterMobileOpen, setFilterMobileOpen] = useState(false)
-  const [rankingModal, setRankingModal] = useState<RankingModalType>(null)
-  const [desktopKategoriTab, setDesktopKategoriTab] = useState<KategoriRankingTab>("grup")
-  const [mobileKategoriTab, setMobileKategoriTab] = useState<KategoriRankingTab>("grup")
-  const [mobileReportTab, setMobileReportTab] = useState<MobileReportTab>("chart")
+  const [search, setSearch] = useState("");
+  const [filterToko, setFilterToko] = useState("");
+  const [filterKategori, setFilterKategori] = useState("");
+  const [filterSatuan, setFilterSatuan] = useState("");
+  const [tanggalMulai, setTanggalMulai] = useState(getStartOfMonthDateInput());
+  const [tanggalSelesai, setTanggalSelesai] = useState(
+    toDateInputValue(new Date()),
+  );
+  const [filterMobileOpen, setFilterMobileOpen] = useState(false);
+  const [rankingModal, setRankingModal] = useState<RankingModalType>(null);
+  const [desktopKategoriTab, setDesktopKategoriTab] =
+    useState<KategoriRankingTab>("grup");
+  const [mobileKategoriTab, setMobileKategoriTab] =
+    useState<KategoriRankingTab>("grup");
+  const [mobileReportTab, setMobileReportTab] =
+    useState<MobileReportTab>("chart");
 
   const fetchAll = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
 
     try {
-      const [tokoSnap, laporanSnap, transaksiSnap, pengeluaranSnap] = await Promise.all([
-        getDocs(query(collection(db, "toko"), orderBy("nama"))),
-        getDocs(query(collection(db, "laporan_harian"), orderBy("tanggalKey", "desc"))),
-        getDocs(collection(db, "transaksi")),
-        getDocs(query(collection(db, "pengeluaran"), orderBy("createdAtMs", "desc"))),
-      ])
+      const [tokoSnap, laporanSnap, transaksiSnap, pengeluaranSnap] =
+        await Promise.all([
+          getDocs(query(collection(db, "toko"), orderBy("nama"))),
+          getDocs(
+            query(
+              collection(db, "laporan_harian"),
+              orderBy("tanggalKey", "desc"),
+            ),
+          ),
+          getDocs(collection(db, "transaksi")),
+          getDocs(
+            query(
+              collection(db, "pengeluaran"),
+              orderBy("createdAtMs", "desc"),
+            ),
+          ),
+        ]);
 
       const tokoData: Toko[] = tokoSnap.docs.map((d) => {
-        const x = d.data() as any
+        const x = d.data() as any;
         return {
           id: d.id,
           nama: String(x?.nama || ""),
           aktif: Boolean(x?.aktif),
-        }
-      })
+        };
+      });
 
       const laporanFallbackData: LaporanHarian[] = laporanSnap.docs.map((d) => {
-        const x = d.data() as any
-        const kategoriBreakdown: KategoriBreakdown[] = Array.isArray(x?.kategoriBreakdown)
+        const x = d.data() as any;
+        const kategoriBreakdown: KategoriBreakdown[] = Array.isArray(
+          x?.kategoriBreakdown,
+        )
           ? x.kategoriBreakdown.map((item: any) => {
-              const namaKategori = String(item?.nama || item?.kategoriNama || "Tanpa Kategori").trim()
-              const kategoriKey = String(item?.kategoriId || namaKategori).trim().toLowerCase()
-              const satuanIds = uniqueStringList(Array.isArray(item?.satuanIds) ? item.satuanIds : [])
-              const satuanNamaList = uniqueStringList(Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : [])
+              const namaKategori = String(
+                item?.nama || item?.kategoriNama || "Tanpa Kategori",
+              ).trim();
+              const kategoriKey = String(item?.kategoriId || namaKategori)
+                .trim()
+                .toLowerCase();
+              const satuanIds = uniqueStringList(
+                Array.isArray(item?.satuanIds) ? item.satuanIds : [],
+              );
+              const satuanNamaList = uniqueStringList(
+                Array.isArray(item?.satuanNamaList) ? item.satuanNamaList : [],
+              );
               const namaBarangList = uniqueStringList([
-                ...(Array.isArray(item?.namaBarangList) ? item.namaBarangList : []),
-                ...(Array.isArray(item?.barangNamaList) ? item.barangNamaList : []),
-                ...(Array.isArray(item?.produkNamaList) ? item.produkNamaList : []),
-              ])
+                ...(Array.isArray(item?.namaBarangList)
+                  ? item.namaBarangList
+                  : []),
+                ...(Array.isArray(item?.barangNamaList)
+                  ? item.barangNamaList
+                  : []),
+                ...(Array.isArray(item?.produkNamaList)
+                  ? item.produkNamaList
+                  : []),
+              ]);
 
-              const pendapatanDiterima = normalizeNumber(item?.totalDibayar ?? item?.uangMasuk ?? item?.omzet ?? item?.totalSetelahDiskon)
-              const totalModal = normalizeNumber(item?.totalModal || item?.modal)
-              const labaValid = pendapatanDiterima - totalModal
+              const pendapatanDiterima = normalizeNumber(
+                item?.totalDibayar ??
+                  item?.uangMasuk ??
+                  item?.omzet ??
+                  item?.totalSetelahDiskon,
+              );
+              const totalModal = normalizeNumber(
+                item?.totalModal || item?.modal,
+              );
+              const labaValid = pendapatanDiterima - totalModal;
 
               return {
                 kategoriId: kategoriKey,
@@ -1013,24 +1334,39 @@ export default function LaporanKeuntunganHarianPage() {
                 satuanIds,
                 satuanNamaList,
                 namaBarangList,
-              }
+              };
             })
-          : []
+          : [];
 
-        const kelompokKategoriBreakdown = normalizeKelompokBreakdown(x?.kelompokKategoriBreakdown).map((item) => {
-          const pendapatanDiterima = normalizeNumber((item as any)?.totalDibayar ?? item.omzet ?? item.totalSetelahDiskon)
-          const labaValid = pendapatanDiterima - normalizeNumber(item.totalModal)
+        const kelompokKategoriBreakdown = normalizeKelompokBreakdown(
+          x?.kelompokKategoriBreakdown,
+        ).map((item) => {
+          const pendapatanDiterima = normalizeNumber(
+            (item as any)?.totalDibayar ??
+              item.omzet ??
+              item.totalSetelahDiskon,
+          );
+          const labaValid =
+            pendapatanDiterima - normalizeNumber(item.totalModal);
           return {
             ...item,
             omzet: pendapatanDiterima,
             totalSetelahDiskon: pendapatanDiterima,
             totalLabaKotor: labaValid,
-          }
-        })
+          };
+        });
 
-        const totalPendapatan = Number(x?.totalDibayar ?? x?.uangMasuk ?? x?.omzet ?? 0)
-        const totalModal = normalizeNumber(x?.totalModal ?? x?.modal)
-        const totalLabaValid = getFirstFilledNumber(x?.labaCash, x?.labaDibayar, totalPendapatan - totalModal, x?.totalKeuntunganBersih, x?.totalLabaKotor)
+        const totalPendapatan = Number(
+          x?.totalDibayar ?? x?.uangMasuk ?? x?.omzet ?? 0,
+        );
+        const totalModal = normalizeNumber(x?.totalModal ?? x?.modal);
+        const totalLabaValid = getFirstFilledNumber(
+          x?.labaCash,
+          x?.labaDibayar,
+          totalPendapatan - totalModal,
+          x?.totalKeuntunganBersih,
+          x?.totalLabaKotor,
+        );
 
         return {
           id: d.id,
@@ -1043,16 +1379,17 @@ export default function LaporanKeuntunganHarianPage() {
           jumlahTransaksi: Number(x?.jumlahTransaksi || 0),
           kategoriBreakdown,
           kelompokKategoriBreakdown,
-        }
-      })
+        };
+      });
 
       const transaksiData = buildLaporanHarianValidFromTransaksi(
-        transaksiSnap.docs.map((d) => ({ id: d.id, data: d.data() }))
-      )
-      const laporanData = transaksiData.length > 0 ? transaksiData : laporanFallbackData
+        transaksiSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
+      );
+      const laporanData =
+        transaksiData.length > 0 ? transaksiData : laporanFallbackData;
 
       const pengeluaranData: Pengeluaran[] = pengeluaranSnap.docs.map((d) => {
-        const x = d.data() as any
+        const x = d.data() as any;
         return {
           id: d.id,
           tanggalKey: getTanggalKeyFromUnknown(x),
@@ -1061,102 +1398,123 @@ export default function LaporanKeuntunganHarianPage() {
           kategoriId: String(x?.kategoriId || ""),
           kategoriNama: String(x?.kategoriNama || ""),
           nominal: Number(x?.nominal || 0),
-        }
-      })
+        };
+      });
 
-      setTokoList(tokoData.filter((item) => item.nama))
-      setLaporanHarianList(laporanData.filter((item) => item.tanggalKey))
-      setPengeluaranList(pengeluaranData.filter((item) => item.tanggalKey))
+      setTokoList(tokoData.filter((item) => item.nama));
+      setLaporanHarianList(laporanData.filter((item) => item.tanggalKey));
+      setPengeluaranList(pengeluaranData.filter((item) => item.tanggalKey));
     } catch (err) {
-      console.error(err)
-      setError("Gagal memuat laporan keuntungan harian")
-      setTokoList([])
-      setLaporanHarianList([])
-      setPengeluaranList([])
+      console.error(err);
+      setError("Gagal memuat laporan keuntungan harian");
+      setTokoList([]);
+      setLaporanHarianList([]);
+      setPengeluaranList([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) await fetchAll()
-    })
+      if (user) await fetchAll();
+    });
 
-    return () => unsub()
-  }, [])
+    return () => unsub();
+  }, []);
 
   const laporanHarianVisible = useMemo(() => {
     return laporanHarianList.filter((laporan) => {
-      const matchToko = !filterToko || laporan.tokoId === filterToko
-      const matchStart = !tanggalMulai || laporan.tanggalKey >= tanggalMulai
-      const matchEnd = !tanggalSelesai || laporan.tanggalKey <= tanggalSelesai
-      return matchToko && matchStart && matchEnd
-    })
-  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai])
+      const matchToko = !filterToko || laporan.tokoId === filterToko;
+      const matchStart = !tanggalMulai || laporan.tanggalKey >= tanggalMulai;
+      const matchEnd = !tanggalSelesai || laporan.tanggalKey <= tanggalSelesai;
+      return matchToko && matchStart && matchEnd;
+    });
+  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai]);
 
   const kategoriBarangList = useMemo(() => {
-    const map = new Map<string, { id: string; nama: string }>()
+    const map = new Map<string, { id: string; nama: string }>();
 
     for (const laporan of laporanHarianVisible) {
       for (const item of laporan.kategoriBreakdown || []) {
-        const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
-        if (!key) continue
-        if (!map.has(key)) map.set(key, { id: key, nama: item.kategoriNama || "Tanpa Kategori" })
+        const key = item.kategoriId || normalizeKategoriKey(item.kategoriNama);
+        if (!key) continue;
+        if (!map.has(key))
+          map.set(key, {
+            id: key,
+            nama: item.kategoriNama || "Tanpa Kategori",
+          });
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
-  }, [laporanHarianVisible])
+    return Array.from(map.values()).sort((a, b) =>
+      a.nama.localeCompare(b.nama),
+    );
+  }, [laporanHarianVisible]);
 
   const satuanBarangList = useMemo(() => {
-    const map = new Map<string, { id: string; nama: string }>()
+    const map = new Map<string, { id: string; nama: string }>();
 
     for (const laporan of laporanHarianVisible) {
       for (const item of laporan.kategoriBreakdown || []) {
         for (const entry of getSatuanEntries(item)) {
-          if (!map.has(entry.key)) map.set(entry.key, { id: entry.key, nama: entry.nama })
+          if (!map.has(entry.key))
+            map.set(entry.key, { id: entry.key, nama: entry.nama });
         }
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => a.nama.localeCompare(b.nama))
-  }, [laporanHarianVisible])
+    return Array.from(map.values()).sort((a, b) =>
+      a.nama.localeCompare(b.nama),
+    );
+  }, [laporanHarianVisible]);
 
   useEffect(() => {
-    if (filterKategori && !kategoriBarangList.some((item) => item.id === filterKategori)) {
-      setFilterKategori("")
+    if (
+      filterKategori &&
+      !kategoriBarangList.some((item) => item.id === filterKategori)
+    ) {
+      setFilterKategori("");
     }
-  }, [filterKategori, kategoriBarangList])
+  }, [filterKategori, kategoriBarangList]);
 
   useEffect(() => {
-    if (filterSatuan && !satuanBarangList.some((item) => item.id === filterSatuan)) {
-      setFilterSatuan("")
+    if (
+      filterSatuan &&
+      !satuanBarangList.some((item) => item.id === filterSatuan)
+    ) {
+      setFilterSatuan("");
     }
-  }, [filterSatuan, satuanBarangList])
+  }, [filterSatuan, satuanBarangList]);
 
   const rekapList = useMemo(() => {
-    const map = new Map<string, RekapKeuntunganHarian>()
+    const map = new Map<string, RekapKeuntunganHarian>();
     const aktifKategoriNama =
-      kategoriBarangList.find((x) => x.id === filterKategori)?.nama || "Semua Kategori"
+      kategoriBarangList.find((x) => x.id === filterKategori)?.nama ||
+      "Semua Kategori";
     const aktifSatuanNama =
-      satuanBarangList.find((x) => x.id === filterSatuan)?.nama || "Semua Satuan"
+      satuanBarangList.find((x) => x.id === filterSatuan)?.nama ||
+      "Semua Satuan";
 
     for (const item of laporanHarianList) {
       const matchedBreakdowns = (item.kategoriBreakdown || []).filter((row) => {
-        const rowKategoriKey = row.kategoriId || normalizeKategoriKey(row.kategoriNama)
-        const matchKategori = !filterKategori || rowKategoriKey === filterKategori
-        const rowSatuanKeys = getSatuanEntries(row).map((entry) => entry.key)
-        const matchSatuan = !filterSatuan || rowSatuanKeys.includes(normalizeSatuanKey(filterSatuan))
-        return matchKategori && matchSatuan
-      })
+        const rowKategoriKey =
+          row.kategoriId || normalizeKategoriKey(row.kategoriNama);
+        const matchKategori =
+          !filterKategori || rowKategoriKey === filterKategori;
+        const rowSatuanKeys = getSatuanEntries(row).map((entry) => entry.key);
+        const matchSatuan =
+          !filterSatuan ||
+          rowSatuanKeys.includes(normalizeSatuanKey(filterSatuan));
+        return matchKategori && matchSatuan;
+      });
 
       if (filterKategori || filterSatuan) {
-        if (matchedBreakdowns.length === 0) continue
+        if (matchedBreakdowns.length === 0) continue;
 
         const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${
           filterKategori || "all"
-        }__${filterSatuan || "all"}`
+        }__${filterSatuan || "all"}`;
 
         const current = map.get(key) || {
           tanggalKey: item.tanggalKey,
@@ -1173,28 +1531,28 @@ export default function LaporanKeuntunganHarianPage() {
           jumlahTransaksi: 0,
           jumlahQtyTerjual: 0,
           jumlahDataPengeluaran: 0,
-        }
+        };
 
         current.penghasilanKotor += matchedBreakdowns.reduce(
           (sum, row) => sum + Number(row.labaBersih || row.labaKotor || 0),
-          0
-        )
+          0,
+        );
         current.omzet += matchedBreakdowns.reduce(
           (sum, row) => sum + Number(row.omzet || row.totalSetelahDiskon || 0),
-          0
-        )
+          0,
+        );
         current.jumlahTransaksi += matchedBreakdowns.reduce(
           (sum, row) => sum + Number(row.jumlahTransaksi || 0),
-          0
-        )
+          0,
+        );
         current.jumlahQtyTerjual += matchedBreakdowns.reduce(
           (sum, row) => sum + Number(row.qtyTerjual || 0),
-          0
-        )
+          0,
+        );
 
-        map.set(key, current)
+        map.set(key, current);
       } else {
-        const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`
+        const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`;
         const current = map.get(key) || {
           tanggalKey: item.tanggalKey,
           tokoId: item.tokoId,
@@ -1210,23 +1568,28 @@ export default function LaporanKeuntunganHarianPage() {
           jumlahTransaksi: 0,
           jumlahQtyTerjual: 0,
           jumlahDataPengeluaran: 0,
-        }
+        };
 
-        current.penghasilanKotor += Number(item.totalKeuntunganBersih || item.totalLabaKotor || 0)
-        current.omzet += Number(item.omzet || 0)
-        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
+        current.penghasilanKotor += Number(
+          item.totalKeuntunganBersih || item.totalLabaKotor || 0,
+        );
+        current.omzet += Number(item.omzet || 0);
+        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0);
         current.jumlahQtyTerjual += Number(
-          (item.kategoriBreakdown || []).reduce((sum, row) => sum + Number(row?.qtyTerjual || 0), 0)
-        )
+          (item.kategoriBreakdown || []).reduce(
+            (sum, row) => sum + Number(row?.qtyTerjual || 0),
+            0,
+          ),
+        );
 
-        map.set(key, current)
+        map.set(key, current);
       }
     }
 
     for (const item of pengeluaranList) {
       const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__${
         filterKategori || "all"
-      }__${filterSatuan || "all"}`
+      }__${filterSatuan || "all"}`;
 
       const current = map.get(key) || {
         tanggalKey: item.tanggalKey,
@@ -1234,11 +1597,13 @@ export default function LaporanKeuntunganHarianPage() {
         tokoNama: item.tokoNama || "Tanpa Toko",
         kategoriId: filterKategori || "",
         kategoriNama: filterKategori
-          ? kategoriBarangList.find((x) => x.id === filterKategori)?.nama || "Tanpa Kategori"
+          ? kategoriBarangList.find((x) => x.id === filterKategori)?.nama ||
+            "Tanpa Kategori"
           : "Semua Kategori",
         satuanId: filterSatuan || "",
         satuanNama: filterSatuan
-          ? satuanBarangList.find((x) => x.id === filterSatuan)?.nama || "Tanpa Satuan"
+          ? satuanBarangList.find((x) => x.id === filterSatuan)?.nama ||
+            "Tanpa Satuan"
           : "Semua Satuan",
         penghasilanKotor: 0,
         pengeluaran: 0,
@@ -1247,20 +1612,23 @@ export default function LaporanKeuntunganHarianPage() {
         jumlahTransaksi: 0,
         jumlahQtyTerjual: 0,
         jumlahDataPengeluaran: 0,
-      }
+      };
 
-      current.pengeluaran += Number(item.nominal || 0)
-      current.jumlahDataPengeluaran += 1
-      map.set(key, current)
+      current.pengeluaran += Number(item.nominal || 0);
+      current.jumlahDataPengeluaran += 1;
+      map.set(key, current);
     }
 
     return Array.from(map.values())
-      .map((item) => ({ ...item, keuntunganBersih: item.penghasilanKotor - item.pengeluaran }))
+      .map((item) => ({
+        ...item,
+        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
+      }))
       .sort((a, b) => {
-        const tanggalCompare = b.tanggalKey.localeCompare(a.tanggalKey)
-        if (tanggalCompare !== 0) return tanggalCompare
-        return b.keuntunganBersih - a.keuntunganBersih
-      })
+        const tanggalCompare = b.tanggalKey.localeCompare(a.tanggalKey);
+        if (tanggalCompare !== 0) return tanggalCompare;
+        return b.keuntunganBersih - a.keuntunganBersih;
+      });
   }, [
     laporanHarianList,
     pengeluaranList,
@@ -1268,10 +1636,10 @@ export default function LaporanKeuntunganHarianPage() {
     filterSatuan,
     kategoriBarangList,
     satuanBarangList,
-  ])
+  ]);
 
   const filteredRekap = useMemo(() => {
-    const q = search.toLowerCase().trim()
+    const q = search.toLowerCase().trim();
 
     return rekapList.filter((item) => {
       const matchSearch =
@@ -1279,32 +1647,47 @@ export default function LaporanKeuntunganHarianPage() {
         item.tanggalKey.toLowerCase().includes(q) ||
         item.tokoNama.toLowerCase().includes(q) ||
         item.kategoriNama.toLowerCase().includes(q) ||
-        item.satuanNama.toLowerCase().includes(q)
+        item.satuanNama.toLowerCase().includes(q);
 
-      const matchToko = !filterToko || item.tokoId === filterToko
-      const matchStart = !tanggalMulai || item.tanggalKey >= tanggalMulai
-      const matchEnd = !tanggalSelesai || item.tanggalKey <= tanggalSelesai
+      const matchToko = !filterToko || item.tokoId === filterToko;
+      const matchStart = !tanggalMulai || item.tanggalKey >= tanggalMulai;
+      const matchEnd = !tanggalSelesai || item.tanggalKey <= tanggalSelesai;
 
-      return matchSearch && matchToko && matchStart && matchEnd
-    })
-  }, [rekapList, search, filterToko, tanggalMulai, tanggalSelesai])
+      return matchSearch && matchToko && matchStart && matchEnd;
+    });
+  }, [rekapList, search, filterToko, tanggalMulai, tanggalSelesai]);
 
-  const totalPenghasilanKotor = filteredRekap.reduce((acc, item) => acc + item.penghasilanKotor, 0)
-  const totalPengeluaran = filteredRekap.reduce((acc, item) => acc + item.pengeluaran, 0)
-  const totalKeuntunganBersih = filteredRekap.reduce((acc, item) => acc + item.keuntunganBersih, 0)
-  const totalOmzet = filteredRekap.reduce((acc, item) => acc + item.omzet, 0)
-  const totalTransaksi = filteredRekap.reduce((acc, item) => acc + item.jumlahTransaksi, 0)
-  const totalQtyTerjual = filteredRekap.reduce((acc, item) => acc + item.jumlahQtyTerjual, 0)
+  const totalPenghasilanKotor = filteredRekap.reduce(
+    (acc, item) => acc + item.penghasilanKotor,
+    0,
+  );
+  const totalPengeluaran = filteredRekap.reduce(
+    (acc, item) => acc + item.pengeluaran,
+    0,
+  );
+  const totalKeuntunganBersih = filteredRekap.reduce(
+    (acc, item) => acc + item.keuntunganBersih,
+    0,
+  );
+  const totalOmzet = filteredRekap.reduce((acc, item) => acc + item.omzet, 0);
+  const totalTransaksi = filteredRekap.reduce(
+    (acc, item) => acc + item.jumlahTransaksi,
+    0,
+  );
+  const totalQtyTerjual = filteredRekap.reduce(
+    (acc, item) => acc + item.jumlahQtyTerjual,
+    0,
+  );
 
   const keuntunganHariIni = filteredRekap
     .filter((item) => item.tanggalKey === toDateInputValue(new Date()))
-    .reduce((acc, item) => acc + item.keuntunganBersih, 0)
+    .reduce((acc, item) => acc + item.keuntunganBersih, 0);
 
   const rankingToko = useMemo(() => {
-    const map = new Map<string, RankingToko>()
+    const map = new Map<string, RankingToko>();
 
     for (const item of filteredRekap) {
-      const key = item.tokoId || item.tokoNama || item.tanggalKey
+      const key = item.tokoId || item.tokoNama || item.tanggalKey;
       const current = map.get(key) || {
         tokoId: item.tokoId,
         tokoNama: item.tokoNama || "Tanpa Toko",
@@ -1312,56 +1695,133 @@ export default function LaporanKeuntunganHarianPage() {
         pengeluaran: 0,
         keuntunganBersih: 0,
         hariAktif: 0,
-      }
+      };
 
-      current.penghasilanKotor += item.penghasilanKotor
-      current.pengeluaran += item.pengeluaran
-      current.keuntunganBersih += item.keuntunganBersih
-      current.hariAktif += 1
-      map.set(key, current)
+      current.penghasilanKotor += item.penghasilanKotor;
+      current.pengeluaran += item.pengeluaran;
+      current.keuntunganBersih += item.keuntunganBersih;
+      current.hariAktif += 1;
+      map.set(key, current);
     }
 
-    return Array.from(map.values()).sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [filteredRekap])
+    return Array.from(map.values()).sort(
+      (a, b) => b.keuntunganBersih - a.keuntunganBersih,
+    );
+  }, [filteredRekap]);
 
   const chartData = useMemo(() => {
-    const map = new Map<
-      string,
-      { tanggalKey: string; penghasilanKotor: number; pengeluaran: number; keuntunganBersih: number }
-    >()
+    const q = search.toLowerCase().trim();
 
-    for (const item of filteredRekap) {
-      const current = map.get(item.tanggalKey) || {
-        tanggalKey: item.tanggalKey,
-        penghasilanKotor: 0,
-        pengeluaran: 0,
-        keuntunganBersih: 0,
-      }
+    const matchSearch = (item: RekapKeuntunganHarian) => {
+      return (
+        !q ||
+        item.tanggalKey.toLowerCase().includes(q) ||
+        item.tokoNama.toLowerCase().includes(q) ||
+        item.kategoriNama.toLowerCase().includes(q) ||
+        item.satuanNama.toLowerCase().includes(q)
+      );
+    };
 
-      current.penghasilanKotor += item.penghasilanKotor
-      current.pengeluaran += item.pengeluaran
-      current.keuntunganBersih += item.keuntunganBersih
-      map.set(item.tanggalKey, current)
+    const sourceRows = rekapList.filter((item) => {
+      const matchToko = !filterToko || item.tokoId === filterToko;
+      const matchEnd = !tanggalSelesai || item.tanggalKey <= tanggalSelesai;
+      return matchSearch(item) && matchToko && matchEnd;
+    });
+
+    const groupedByBulan = new Map<string, RekapKeuntunganHarian[]>();
+
+    for (const item of sourceRows) {
+      const bulanKey = String(item.tanggalKey || "").slice(0, 7);
+      if (!bulanKey) continue;
+
+      const current = groupedByBulan.get(bulanKey) || [];
+      current.push(item);
+      groupedByBulan.set(bulanKey, current);
     }
 
-    return Array.from(map.values()).sort((a, b) => b.tanggalKey.localeCompare(a.tanggalKey))
-  }, [filteredRekap])
+    const result: {
+      tanggalKey: string;
+      penghasilanKotor: number;
+      pengeluaran: number;
+      keuntunganBersih: number;
+    }[] = [];
+
+    for (const rows of groupedByBulan.values()) {
+      const dailyMap = new Map<
+        string,
+        {
+          tanggalKey: string;
+          penghasilanKotor: number;
+          pengeluaranAsli: number;
+        }
+      >();
+
+      for (const item of rows) {
+        const current = dailyMap.get(item.tanggalKey) || {
+          tanggalKey: item.tanggalKey,
+          penghasilanKotor: 0,
+          pengeluaranAsli: 0,
+        };
+
+        current.penghasilanKotor += Number(item.penghasilanKotor || 0);
+        current.pengeluaranAsli += Number(item.pengeluaran || 0);
+        dailyMap.set(item.tanggalKey, current);
+      }
+
+      let sisaPengeluaranBerjalan = 0;
+      const sortedRows = Array.from(dailyMap.values()).sort((a, b) =>
+        a.tanggalKey.localeCompare(b.tanggalKey),
+      );
+
+      for (const item of sortedRows) {
+        const penghasilanKotor = Number(item.penghasilanKotor || 0);
+        const pengeluaranBerjalan = Math.max(
+          0,
+          sisaPengeluaranBerjalan + Number(item.pengeluaranAsli || 0),
+        );
+        const keuntunganBersih = penghasilanKotor - pengeluaranBerjalan;
+
+        sisaPengeluaranBerjalan = Math.max(
+          0,
+          pengeluaranBerjalan - penghasilanKotor,
+        );
+
+        const matchStart = !tanggalMulai || item.tanggalKey >= tanggalMulai;
+        const matchEnd = !tanggalSelesai || item.tanggalKey <= tanggalSelesai;
+        if (!matchStart || !matchEnd) continue;
+
+        result.push({
+          tanggalKey: item.tanggalKey,
+          penghasilanKotor,
+          pengeluaran: pengeluaranBerjalan,
+          keuntunganBersih,
+        });
+      }
+    }
+
+    return result.sort((a, b) => b.tanggalKey.localeCompare(a.tanggalKey));
+  }, [rekapList, search, filterToko, tanggalMulai, tanggalSelesai]);
 
   const rankingKategoriBarang = useMemo(() => {
-    const map = new Map<string, RankingKategoriBarang>()
-    const q = search.toLowerCase().trim()
+    const map = new Map<string, RankingKategoriBarang>();
+    const q = search.toLowerCase().trim();
 
     for (const laporan of laporanHarianList) {
-      if (filterToko && laporan.tokoId !== filterToko) continue
-      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue
-      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue
+      if (filterToko && laporan.tokoId !== filterToko) continue;
+      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue;
+      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue;
 
       for (const item of laporan.kategoriBreakdown || []) {
-        const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
-        if (!kategoriKey) continue
-        if (filterKategori && kategoriKey !== filterKategori) continue
-        const satuanKeys = getSatuanEntries(item).map((entry) => entry.key)
-        if (filterSatuan && !satuanKeys.includes(normalizeSatuanKey(filterSatuan))) continue
+        const kategoriKey =
+          item.kategoriId || normalizeKategoriKey(item.kategoriNama);
+        if (!kategoriKey) continue;
+        if (filterKategori && kategoriKey !== filterKategori) continue;
+        const satuanKeys = getSatuanEntries(item).map((entry) => entry.key);
+        if (
+          filterSatuan &&
+          !satuanKeys.includes(normalizeSatuanKey(filterSatuan))
+        )
+          continue;
 
         const current = map.get(kategoriKey) || {
           kategoriId: kategoriKey,
@@ -1372,34 +1832,48 @@ export default function LaporanKeuntunganHarianPage() {
           omzet: 0,
           qtyTerjual: 0,
           jumlahTransaksi: 0,
-        }
+        };
 
-        current.penghasilanKotor += Number(item.labaBersih || item.labaKotor || 0)
-        current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0)
-        current.qtyTerjual += Number(item.qtyTerjual || 0)
-        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
-        map.set(kategoriKey, current)
+        current.penghasilanKotor += Number(
+          item.labaBersih || item.labaKotor || 0,
+        );
+        current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0);
+        current.qtyTerjual += Number(item.qtyTerjual || 0);
+        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0);
+        map.set(kategoriKey, current);
       }
     }
 
     return Array.from(map.values())
-      .map((item) => ({ ...item, keuntunganBersih: item.penghasilanKotor - item.pengeluaran }))
+      .map((item) => ({
+        ...item,
+        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
+      }))
       .filter((item) => !q || item.kategoriNama.toLowerCase().includes(q))
-      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, filterToko, filterKategori, filterSatuan, tanggalMulai, tanggalSelesai, search])
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih);
+  }, [
+    laporanHarianList,
+    filterToko,
+    filterKategori,
+    filterSatuan,
+    tanggalMulai,
+    tanggalSelesai,
+    search,
+  ]);
 
   const rankingGrupKategori = useMemo(() => {
-    const map = new Map<string, RankingGrupKategori>()
-    const q = search.toLowerCase().trim()
+    const map = new Map<string, RankingGrupKategori>();
+    const q = search.toLowerCase().trim();
 
     for (const laporan of laporanHarianList) {
-      if (filterToko && laporan.tokoId !== filterToko) continue
-      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue
-      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue
+      if (filterToko && laporan.tokoId !== filterToko) continue;
+      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue;
+      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue;
 
       for (const item of laporan.kelompokKategoriBreakdown || []) {
-        const kelompokKey = item.kelompokId || normalizeKategoriKey(item.namaKelompok)
-        if (!kelompokKey) continue
+        const kelompokKey =
+          item.kelompokId || normalizeKategoriKey(item.namaKelompok);
+        if (!kelompokKey) continue;
 
         const current = map.get(kelompokKey) || {
           kelompokId: kelompokKey,
@@ -1409,56 +1883,68 @@ export default function LaporanKeuntunganHarianPage() {
           omzet: 0,
           qtyTerjual: 0,
           jumlahTransaksi: 0,
-        }
+        };
 
-        const laba = getKelompokLabaKotor(item)
-        current.penghasilanKotor += laba
-        current.keuntunganBersih += laba
-        current.omzet += normalizeNumber(item.omzet || item.totalSetelahDiskon)
-        current.qtyTerjual += normalizeNumber(item.totalQty)
-        current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
-        map.set(kelompokKey, current)
+        const laba = getKelompokLabaKotor(item);
+        current.penghasilanKotor += laba;
+        current.keuntunganBersih += laba;
+        current.omzet += normalizeNumber(item.omzet || item.totalSetelahDiskon);
+        current.qtyTerjual += normalizeNumber(item.totalQty);
+        current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi);
+        map.set(kelompokKey, current);
       }
     }
 
     return Array.from(map.values())
       .filter((item) => !q || item.namaKelompok.toLowerCase().includes(q))
-      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai, search])
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih);
+  }, [laporanHarianList, filterToko, tanggalMulai, tanggalSelesai, search]);
 
   const rankingSatuanBarang = useMemo(() => {
-    const map = new Map<string, RankingSatuanBarang>()
-    const q = search.toLowerCase().trim()
+    const map = new Map<string, RankingSatuanBarang>();
+    const q = search.toLowerCase().trim();
 
     for (const laporan of laporanHarianList) {
-      if (filterToko && laporan.tokoId !== filterToko) continue
-      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue
-      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue
+      if (filterToko && laporan.tokoId !== filterToko) continue;
+      if (tanggalMulai && laporan.tanggalKey < tanggalMulai) continue;
+      if (tanggalSelesai && laporan.tanggalKey > tanggalSelesai) continue;
 
       for (const item of laporan.kategoriBreakdown || []) {
-        const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
-        if (filterKategori && kategoriKey !== filterKategori) continue
+        const kategoriKey =
+          item.kategoriId || normalizeKategoriKey(item.kategoriNama);
+        if (filterKategori && kategoriKey !== filterKategori) continue;
 
-        const namaBarangRefs = getNamaBarangRefs(item)
-        const satuanEntries = getSatuanEntries(item)
+        const namaBarangRefs = getNamaBarangRefs(item);
+        const satuanEntries = getSatuanEntries(item);
         const effectiveEntries =
           satuanEntries.length > 0
             ? satuanEntries
-            : [{ id: "tanpa-satuan", nama: "Tanpa Satuan", key: "tanpa-satuan" }]
+            : [
+                {
+                  id: "tanpa-satuan",
+                  nama: "Tanpa Satuan",
+                  key: "tanpa-satuan",
+                },
+              ];
 
         if (filterSatuan) {
-          const hasMatchSatuan = effectiveEntries.some((entry) => entry.key === normalizeSatuanKey(filterSatuan))
-          if (!hasMatchSatuan) continue
+          const hasMatchSatuan = effectiveEntries.some(
+            (entry) => entry.key === normalizeSatuanKey(filterSatuan),
+          );
+          if (!hasMatchSatuan) continue;
         }
 
-        const divisor = effectiveEntries.length || 1
-        const partialPenghasilan = Number(item.labaBersih || item.labaKotor || 0) / divisor
-        const partialOmzet = Number(item.omzet || item.totalSetelahDiskon || 0) / divisor
-        const partialQty = Number(item.qtyTerjual || 0) / divisor
-        const partialTransaksi = Number(item.jumlahTransaksi || 0) / divisor
+        const divisor = effectiveEntries.length || 1;
+        const partialPenghasilan =
+          Number(item.labaBersih || item.labaKotor || 0) / divisor;
+        const partialOmzet =
+          Number(item.omzet || item.totalSetelahDiskon || 0) / divisor;
+        const partialQty = Number(item.qtyTerjual || 0) / divisor;
+        const partialTransaksi = Number(item.jumlahTransaksi || 0) / divisor;
 
         for (const entry of effectiveEntries) {
-          if (filterSatuan && entry.key !== normalizeSatuanKey(filterSatuan)) continue
+          if (filterSatuan && entry.key !== normalizeSatuanKey(filterSatuan))
+            continue;
 
           const current = map.get(entry.key) || {
             satuanId: entry.key,
@@ -1469,252 +1955,29 @@ export default function LaporanKeuntunganHarianPage() {
             qtyTerjual: 0,
             jumlahTransaksi: 0,
             namaBarangList: [],
-          }
+          };
 
-          current.penghasilanKotor += partialPenghasilan
-          current.keuntunganBersih += partialPenghasilan
-          current.omzet += partialOmzet
-          current.qtyTerjual += partialQty
-          current.jumlahTransaksi += partialTransaksi
+          current.penghasilanKotor += partialPenghasilan;
+          current.keuntunganBersih += partialPenghasilan;
+          current.omzet += partialOmzet;
+          current.qtyTerjual += partialQty;
+          current.jumlahTransaksi += partialTransaksi;
 
-          const refsToAdd = namaBarangRefs.length > 0 ? namaBarangRefs : [item.kategoriNama || "Tanpa Kategori"]
+          const refsToAdd =
+            namaBarangRefs.length > 0
+              ? namaBarangRefs
+              : [item.kategoriNama || "Tanpa Kategori"];
           for (const nama of refsToAdd) {
-            if (!current.namaBarangList.some((saved) => saved.toLowerCase() === nama.toLowerCase())) {
-              current.namaBarangList.push(nama)
+            if (
+              !current.namaBarangList.some(
+                (saved) => saved.toLowerCase() === nama.toLowerCase(),
+              )
+            ) {
+              current.namaBarangList.push(nama);
             }
           }
 
-          map.set(entry.key, current)
-        }
-      }
-    }
-
-    return Array.from(map.values())
-      .map((item) => ({ ...item, namaBarangList: item.namaBarangList.sort((a, b) => a.localeCompare(b)) }))
-      .filter((item) => {
-        if (!q) return true
-        return (
-          item.satuanNama.toLowerCase().includes(q) ||
-          item.namaBarangList.some((nama) => nama.toLowerCase().includes(q))
-        )
-      })
-      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, filterToko, filterKategori, filterSatuan, tanggalMulai, tanggalSelesai, search])
-
-
-  const todayKey = toDateInputValue(new Date())
-
-  const todayRekapList = useMemo(() => {
-    const map = new Map<string, RekapKeuntunganHarian>()
-
-    for (const item of laporanHarianList) {
-      if (item.tanggalKey !== todayKey) continue
-
-      const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`
-      const current = map.get(key) || {
-        tanggalKey: item.tanggalKey,
-        tokoId: item.tokoId,
-        tokoNama: item.tokoNama || "Tanpa Toko",
-        kategoriId: "",
-        kategoriNama: "Semua Kategori",
-        satuanId: "",
-        satuanNama: "Semua Satuan",
-        penghasilanKotor: 0,
-        pengeluaran: 0,
-        keuntunganBersih: 0,
-        omzet: 0,
-        jumlahTransaksi: 0,
-        jumlahQtyTerjual: 0,
-        jumlahDataPengeluaran: 0,
-      }
-
-      current.penghasilanKotor += Number(item.totalKeuntunganBersih || item.totalLabaKotor || 0)
-      current.omzet += Number(item.omzet || 0)
-      current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
-      current.jumlahQtyTerjual += Number(
-        (item.kategoriBreakdown || []).reduce(
-          (sum, row) => sum + Number(row?.qtyTerjual || 0),
-          0
-        )
-      )
-
-      map.set(key, current)
-    }
-
-    for (const item of pengeluaranList) {
-      if (item.tanggalKey !== todayKey) continue
-
-      const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`
-      const current = map.get(key) || {
-        tanggalKey: item.tanggalKey,
-        tokoId: item.tokoId,
-        tokoNama: item.tokoNama || "Tanpa Toko",
-        kategoriId: "",
-        kategoriNama: "Semua Kategori",
-        satuanId: "",
-        satuanNama: "Semua Satuan",
-        penghasilanKotor: 0,
-        pengeluaran: 0,
-        keuntunganBersih: 0,
-        omzet: 0,
-        jumlahTransaksi: 0,
-        jumlahQtyTerjual: 0,
-        jumlahDataPengeluaran: 0,
-      }
-
-      current.pengeluaran += Number(item.nominal || 0)
-      current.jumlahDataPengeluaran += 1
-      map.set(key, current)
-    }
-
-    return Array.from(map.values())
-      .map((item) => ({
-        ...item,
-        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
-      }))
-      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, pengeluaranList, todayKey])
-
-  const todayRankingToko = useMemo(() => {
-    const map = new Map<string, RankingToko>()
-
-    for (const item of todayRekapList) {
-      const key = item.tokoId || item.tokoNama || item.tanggalKey
-      const current = map.get(key) || {
-        tokoId: item.tokoId,
-        tokoNama: item.tokoNama || "Tanpa Toko",
-        penghasilanKotor: 0,
-        pengeluaran: 0,
-        keuntunganBersih: 0,
-        hariAktif: 0,
-      }
-
-      current.penghasilanKotor += item.penghasilanKotor
-      current.pengeluaran += item.pengeluaran
-      current.keuntunganBersih += item.keuntunganBersih
-      current.hariAktif = 1
-      map.set(key, current)
-    }
-
-    return Array.from(map.values()).sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [todayRekapList])
-
-  const todayRankingGrupKategori = useMemo(() => {
-    const map = new Map<string, RankingGrupKategori>()
-
-    for (const laporan of laporanHarianList) {
-      if (laporan.tanggalKey !== todayKey) continue
-
-      for (const item of laporan.kelompokKategoriBreakdown || []) {
-        const kelompokKey = item.kelompokId || normalizeKategoriKey(item.namaKelompok)
-        if (!kelompokKey) continue
-
-        const current = map.get(kelompokKey) || {
-          kelompokId: kelompokKey,
-          namaKelompok: item.namaKelompok || "Tanpa Kelompok",
-          penghasilanKotor: 0,
-          keuntunganBersih: 0,
-          omzet: 0,
-          qtyTerjual: 0,
-          jumlahTransaksi: 0,
-        }
-
-        const laba = getKelompokLabaKotor(item)
-        current.penghasilanKotor += laba
-        current.keuntunganBersih += laba
-        current.omzet += normalizeNumber(item.omzet || item.totalSetelahDiskon)
-        current.qtyTerjual += normalizeNumber(item.totalQty)
-        current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi)
-        map.set(kelompokKey, current)
-      }
-    }
-
-    return Array.from(map.values()).sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, todayKey])
-
-  const todayRankingKategoriBarang = useMemo(() => {
-    const map = new Map<string, RankingKategoriBarang>()
-
-    for (const laporan of laporanHarianList) {
-      if (laporan.tanggalKey !== todayKey) continue
-
-      for (const item of laporan.kategoriBreakdown || []) {
-        const kategoriKey = item.kategoriId || normalizeKategoriKey(item.kategoriNama)
-        if (!kategoriKey) continue
-
-        const current = map.get(kategoriKey) || {
-          kategoriId: kategoriKey,
-          kategoriNama: item.kategoriNama || "Tanpa Kategori",
-          penghasilanKotor: 0,
-          pengeluaran: 0,
-          keuntunganBersih: 0,
-          omzet: 0,
-          qtyTerjual: 0,
-          jumlahTransaksi: 0,
-        }
-
-        current.penghasilanKotor += Number(item.labaBersih || item.labaKotor || 0)
-        current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0)
-        current.qtyTerjual += Number(item.qtyTerjual || 0)
-        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0)
-        map.set(kategoriKey, current)
-      }
-    }
-
-    return Array.from(map.values())
-      .map((item) => ({
-        ...item,
-        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
-      }))
-      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, todayKey])
-
-  const todayRankingSatuanBarang = useMemo(() => {
-    const map = new Map<string, RankingSatuanBarang>()
-
-    for (const laporan of laporanHarianList) {
-      if (laporan.tanggalKey !== todayKey) continue
-
-      for (const item of laporan.kategoriBreakdown || []) {
-        const namaBarangRefs = getNamaBarangRefs(item)
-        const satuanEntries = getSatuanEntries(item)
-        const effectiveEntries =
-          satuanEntries.length > 0
-            ? satuanEntries
-            : [{ id: "tanpa-satuan", nama: "Tanpa Satuan", key: "tanpa-satuan" }]
-
-        const divisor = effectiveEntries.length || 1
-        const partialPenghasilan = Number(item.labaBersih || item.labaKotor || 0) / divisor
-        const partialOmzet = Number(item.omzet || item.totalSetelahDiskon || 0) / divisor
-        const partialQty = Number(item.qtyTerjual || 0) / divisor
-        const partialTransaksi = Number(item.jumlahTransaksi || 0) / divisor
-
-        for (const entry of effectiveEntries) {
-          const current = map.get(entry.key) || {
-            satuanId: entry.key,
-            satuanNama: entry.nama,
-            penghasilanKotor: 0,
-            keuntunganBersih: 0,
-            omzet: 0,
-            qtyTerjual: 0,
-            jumlahTransaksi: 0,
-            namaBarangList: [],
-          }
-
-          current.penghasilanKotor += partialPenghasilan
-          current.keuntunganBersih += partialPenghasilan
-          current.omzet += partialOmzet
-          current.qtyTerjual += partialQty
-          current.jumlahTransaksi += partialTransaksi
-
-          const refsToAdd = namaBarangRefs.length > 0 ? namaBarangRefs : [item.kategoriNama || "Tanpa Kategori"]
-          for (const nama of refsToAdd) {
-            if (!current.namaBarangList.some((saved) => saved.toLowerCase() === nama.toLowerCase())) {
-              current.namaBarangList.push(nama)
-            }
-          }
-
-          map.set(entry.key, current)
+          map.set(entry.key, current);
         }
       }
     }
@@ -1724,38 +1987,309 @@ export default function LaporanKeuntunganHarianPage() {
         ...item,
         namaBarangList: item.namaBarangList.sort((a, b) => a.localeCompare(b)),
       }))
-      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih)
-  }, [laporanHarianList, todayKey])
+      .filter((item) => {
+        if (!q) return true;
+        return (
+          item.satuanNama.toLowerCase().includes(q) ||
+          item.namaBarangList.some((nama) => nama.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih);
+  }, [
+    laporanHarianList,
+    filterToko,
+    filterKategori,
+    filterSatuan,
+    tanggalMulai,
+    tanggalSelesai,
+    search,
+  ]);
 
-  const maxChartValue = Math.max(...chartData.map((item) => Math.abs(item.keuntunganBersih)), 0)
+  const todayKey = toDateInputValue(new Date());
+
+  const todayRekapList = useMemo(() => {
+    const map = new Map<string, RekapKeuntunganHarian>();
+
+    for (const item of laporanHarianList) {
+      if (item.tanggalKey !== todayKey) continue;
+
+      const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`;
+      const current = map.get(key) || {
+        tanggalKey: item.tanggalKey,
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        kategoriId: "",
+        kategoriNama: "Semua Kategori",
+        satuanId: "",
+        satuanNama: "Semua Satuan",
+        penghasilanKotor: 0,
+        pengeluaran: 0,
+        keuntunganBersih: 0,
+        omzet: 0,
+        jumlahTransaksi: 0,
+        jumlahQtyTerjual: 0,
+        jumlahDataPengeluaran: 0,
+      };
+
+      current.penghasilanKotor += Number(
+        item.totalKeuntunganBersih || item.totalLabaKotor || 0,
+      );
+      current.omzet += Number(item.omzet || 0);
+      current.jumlahTransaksi += Number(item.jumlahTransaksi || 0);
+      current.jumlahQtyTerjual += Number(
+        (item.kategoriBreakdown || []).reduce(
+          (sum, row) => sum + Number(row?.qtyTerjual || 0),
+          0,
+        ),
+      );
+
+      map.set(key, current);
+    }
+
+    for (const item of pengeluaranList) {
+      if (item.tanggalKey !== todayKey) continue;
+
+      const key = `${item.tanggalKey}__${item.tokoId || item.tokoNama || "tanpa-toko"}__all__all`;
+      const current = map.get(key) || {
+        tanggalKey: item.tanggalKey,
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        kategoriId: "",
+        kategoriNama: "Semua Kategori",
+        satuanId: "",
+        satuanNama: "Semua Satuan",
+        penghasilanKotor: 0,
+        pengeluaran: 0,
+        keuntunganBersih: 0,
+        omzet: 0,
+        jumlahTransaksi: 0,
+        jumlahQtyTerjual: 0,
+        jumlahDataPengeluaran: 0,
+      };
+
+      current.pengeluaran += Number(item.nominal || 0);
+      current.jumlahDataPengeluaran += 1;
+      map.set(key, current);
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
+      }))
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih);
+  }, [laporanHarianList, pengeluaranList, todayKey]);
+
+  const todayRankingToko = useMemo(() => {
+    const map = new Map<string, RankingToko>();
+
+    for (const item of todayRekapList) {
+      const key = item.tokoId || item.tokoNama || item.tanggalKey;
+      const current = map.get(key) || {
+        tokoId: item.tokoId,
+        tokoNama: item.tokoNama || "Tanpa Toko",
+        penghasilanKotor: 0,
+        pengeluaran: 0,
+        keuntunganBersih: 0,
+        hariAktif: 0,
+      };
+
+      current.penghasilanKotor += item.penghasilanKotor;
+      current.pengeluaran += item.pengeluaran;
+      current.keuntunganBersih += item.keuntunganBersih;
+      current.hariAktif = 1;
+      map.set(key, current);
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) => b.keuntunganBersih - a.keuntunganBersih,
+    );
+  }, [todayRekapList]);
+
+  const todayRankingGrupKategori = useMemo(() => {
+    const map = new Map<string, RankingGrupKategori>();
+
+    for (const laporan of laporanHarianList) {
+      if (laporan.tanggalKey !== todayKey) continue;
+
+      for (const item of laporan.kelompokKategoriBreakdown || []) {
+        const kelompokKey =
+          item.kelompokId || normalizeKategoriKey(item.namaKelompok);
+        if (!kelompokKey) continue;
+
+        const current = map.get(kelompokKey) || {
+          kelompokId: kelompokKey,
+          namaKelompok: item.namaKelompok || "Tanpa Kelompok",
+          penghasilanKotor: 0,
+          keuntunganBersih: 0,
+          omzet: 0,
+          qtyTerjual: 0,
+          jumlahTransaksi: 0,
+        };
+
+        const laba = getKelompokLabaKotor(item);
+        current.penghasilanKotor += laba;
+        current.keuntunganBersih += laba;
+        current.omzet += normalizeNumber(item.omzet || item.totalSetelahDiskon);
+        current.qtyTerjual += normalizeNumber(item.totalQty);
+        current.jumlahTransaksi += normalizeNumber(item.jumlahTransaksi);
+        map.set(kelompokKey, current);
+      }
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) => b.keuntunganBersih - a.keuntunganBersih,
+    );
+  }, [laporanHarianList, todayKey]);
+
+  const todayRankingKategoriBarang = useMemo(() => {
+    const map = new Map<string, RankingKategoriBarang>();
+
+    for (const laporan of laporanHarianList) {
+      if (laporan.tanggalKey !== todayKey) continue;
+
+      for (const item of laporan.kategoriBreakdown || []) {
+        const kategoriKey =
+          item.kategoriId || normalizeKategoriKey(item.kategoriNama);
+        if (!kategoriKey) continue;
+
+        const current = map.get(kategoriKey) || {
+          kategoriId: kategoriKey,
+          kategoriNama: item.kategoriNama || "Tanpa Kategori",
+          penghasilanKotor: 0,
+          pengeluaran: 0,
+          keuntunganBersih: 0,
+          omzet: 0,
+          qtyTerjual: 0,
+          jumlahTransaksi: 0,
+        };
+
+        current.penghasilanKotor += Number(
+          item.labaBersih || item.labaKotor || 0,
+        );
+        current.omzet += Number(item.omzet || item.totalSetelahDiskon || 0);
+        current.qtyTerjual += Number(item.qtyTerjual || 0);
+        current.jumlahTransaksi += Number(item.jumlahTransaksi || 0);
+        map.set(kategoriKey, current);
+      }
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        keuntunganBersih: item.penghasilanKotor - item.pengeluaran,
+      }))
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih);
+  }, [laporanHarianList, todayKey]);
+
+  const todayRankingSatuanBarang = useMemo(() => {
+    const map = new Map<string, RankingSatuanBarang>();
+
+    for (const laporan of laporanHarianList) {
+      if (laporan.tanggalKey !== todayKey) continue;
+
+      for (const item of laporan.kategoriBreakdown || []) {
+        const namaBarangRefs = getNamaBarangRefs(item);
+        const satuanEntries = getSatuanEntries(item);
+        const effectiveEntries =
+          satuanEntries.length > 0
+            ? satuanEntries
+            : [
+                {
+                  id: "tanpa-satuan",
+                  nama: "Tanpa Satuan",
+                  key: "tanpa-satuan",
+                },
+              ];
+
+        const divisor = effectiveEntries.length || 1;
+        const partialPenghasilan =
+          Number(item.labaBersih || item.labaKotor || 0) / divisor;
+        const partialOmzet =
+          Number(item.omzet || item.totalSetelahDiskon || 0) / divisor;
+        const partialQty = Number(item.qtyTerjual || 0) / divisor;
+        const partialTransaksi = Number(item.jumlahTransaksi || 0) / divisor;
+
+        for (const entry of effectiveEntries) {
+          const current = map.get(entry.key) || {
+            satuanId: entry.key,
+            satuanNama: entry.nama,
+            penghasilanKotor: 0,
+            keuntunganBersih: 0,
+            omzet: 0,
+            qtyTerjual: 0,
+            jumlahTransaksi: 0,
+            namaBarangList: [],
+          };
+
+          current.penghasilanKotor += partialPenghasilan;
+          current.keuntunganBersih += partialPenghasilan;
+          current.omzet += partialOmzet;
+          current.qtyTerjual += partialQty;
+          current.jumlahTransaksi += partialTransaksi;
+
+          const refsToAdd =
+            namaBarangRefs.length > 0
+              ? namaBarangRefs
+              : [item.kategoriNama || "Tanpa Kategori"];
+          for (const nama of refsToAdd) {
+            if (
+              !current.namaBarangList.some(
+                (saved) => saved.toLowerCase() === nama.toLowerCase(),
+              )
+            ) {
+              current.namaBarangList.push(nama);
+            }
+          }
+
+          map.set(entry.key, current);
+        }
+      }
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        namaBarangList: item.namaBarangList.sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => b.keuntunganBersih - a.keuntunganBersih);
+  }, [laporanHarianList, todayKey]);
+
+  const maxChartValue = Math.max(
+    ...chartData.map((item) => Math.abs(item.keuntunganBersih)),
+    0,
+  );
 
   const kategoriAktifLabel =
-    kategoriBarangList.find((item) => item.id === filterKategori)?.nama || "Semua Kategori"
+    kategoriBarangList.find((item) => item.id === filterKategori)?.nama ||
+    "Semua Kategori";
   const satuanAktifLabel =
-    satuanBarangList.find((item) => item.id === filterSatuan)?.nama || "Semua Satuan"
-  const tokoAktifLabel = tokoList.find((item) => item.id === filterToko)?.nama || "Semua Toko"
+    satuanBarangList.find((item) => item.id === filterSatuan)?.nama ||
+    "Semua Satuan";
+  const tokoAktifLabel =
+    tokoList.find((item) => item.id === filterToko)?.nama || "Semua Toko";
 
   const resetFilter = () => {
-    setSearch("")
-    setFilterToko("")
-    setFilterKategori("")
-    setFilterSatuan("")
-    setTanggalMulai(getStartOfMonthDateInput())
-    setTanggalSelesai(toDateInputValue(new Date()))
-  }
+    setSearch("");
+    setFilterToko("");
+    setFilterKategori("");
+    setFilterSatuan("");
+    setTanggalMulai(getStartOfMonthDateInput());
+    setTanggalSelesai(toDateInputValue(new Date()));
+  };
 
   const handleExportExcel = async () => {
     if (filteredRekap.length === 0) {
-      setError("Tidak ada data laporan untuk diexport")
-      return
+      setError("Tidak ada data laporan untuk diexport");
+      return;
     }
 
-    setError(null)
+    setError(null);
 
     try {
-      const XLSX = await import("xlsx-js-style")
-      const wb = XLSX.utils.book_new()
-      const periodeText = `${formatTanggalKey(tanggalMulai)} - ${formatTanggalKey(tanggalSelesai)}`
+      const XLSX = await import("xlsx-js-style");
+      const wb = XLSX.utils.book_new();
+      const periodeText = `${formatTanggalKey(tanggalMulai)} - ${formatTanggalKey(tanggalSelesai)}`;
 
       XLSX.utils.book_append_sheet(
         wb,
@@ -1774,10 +2308,10 @@ export default function LaporanKeuntunganHarianPage() {
             ["Omzet", totalOmzet],
             ["Transaksi", totalTransaksi],
             ["Qty Terjual", totalQtyTerjual],
-          ]
+          ],
         ),
-        "Ringkasan"
-      )
+        "Ringkasan",
+      );
 
       XLSX.utils.book_append_sheet(
         wb,
@@ -1809,34 +2343,47 @@ export default function LaporanKeuntunganHarianPage() {
             item.jumlahTransaksi,
             item.jumlahQtyTerjual,
             item.jumlahDataPengeluaran,
-          ])
+          ]),
         ),
-        "Rekap Harian"
-      )
+        "Rekap Harian",
+      );
 
       XLSX.utils.book_append_sheet(
         wb,
         makeSheet(
           XLSX,
           "RANKING TOKO",
-          ["Toko", "Penghasilan Kotor", "Pengeluaran", "Keuntungan Bersih", "Hari Aktif"],
+          [
+            "Toko",
+            "Penghasilan Kotor",
+            "Pengeluaran",
+            "Keuntungan Bersih",
+            "Hari Aktif",
+          ],
           rankingToko.map((item) => [
             item.tokoNama,
             item.penghasilanKotor,
             item.pengeluaran,
             item.keuntunganBersih,
             item.hariAktif,
-          ])
+          ]),
         ),
-        "Ranking Toko"
-      )
+        "Ranking Toko",
+      );
 
       XLSX.utils.book_append_sheet(
         wb,
         makeSheet(
           XLSX,
           "RANKING KATEGORI",
-          ["Kategori", "Penghasilan Kotor", "Keuntungan Bersih", "Omzet", "Qty", "Transaksi"],
+          [
+            "Kategori",
+            "Penghasilan Kotor",
+            "Keuntungan Bersih",
+            "Omzet",
+            "Qty",
+            "Transaksi",
+          ],
           rankingKategoriBarang.map((item) => [
             item.kategoriNama,
             item.penghasilanKotor,
@@ -1844,17 +2391,25 @@ export default function LaporanKeuntunganHarianPage() {
             item.omzet,
             item.qtyTerjual,
             item.jumlahTransaksi,
-          ])
+          ]),
         ),
-        "Ranking Kategori"
-      )
+        "Ranking Kategori",
+      );
 
       XLSX.utils.book_append_sheet(
         wb,
         makeSheet(
           XLSX,
           "RANKING SATUAN",
-          ["Satuan", "Referensi Barang", "Penghasilan Kotor", "Keuntungan Bersih", "Omzet", "Qty", "Transaksi"],
+          [
+            "Satuan",
+            "Referensi Barang",
+            "Penghasilan Kotor",
+            "Keuntungan Bersih",
+            "Omzet",
+            "Qty",
+            "Transaksi",
+          ],
           rankingSatuanBarang.map((item) => [
             item.satuanNama,
             item.namaBarangList.join(", "),
@@ -1863,22 +2418,25 @@ export default function LaporanKeuntunganHarianPage() {
             item.omzet,
             item.qtyTerjual,
             item.jumlahTransaksi,
-          ])
+          ]),
         ),
-        "Ranking Satuan"
-      )
+        "Ranking Satuan",
+      );
 
       await downloadWorkbookXlsx(
         wb,
-        `laporan_keuntungan_harian_${tanggalMulai}_${tanggalSelesai}_${safeSheetName(tokoAktifLabel, "semua_toko")
+        `laporan_keuntungan_harian_${tanggalMulai}_${tanggalSelesai}_${safeSheetName(
+          tokoAktifLabel,
+          "semua_toko",
+        )
           .replace(/\s+/g, "_")
-          .toLowerCase()}.xlsx`
-      )
+          .toLowerCase()}.xlsx`,
+      );
     } catch (err) {
-      console.error(err)
-      setError("Gagal membuat file Excel laporan")
+      console.error(err);
+      setError("Gagal membuat file Excel laporan");
     }
-  }
+  };
 
   return (
     <div className="relative min-h-full overflow-x-hidden bg-transparent text-slate-900">
@@ -1892,7 +2450,11 @@ export default function LaporanKeuntunganHarianPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 sm:h-12 sm:w-12">
-                <BarChart3 size={28} className="text-white sm:h-8 sm:w-8" strokeWidth={2.5} />
+                <BarChart3
+                  size={28}
+                  className="text-white sm:h-8 sm:w-8"
+                  strokeWidth={2.5}
+                />
               </div>
 
               <div className="min-w-0">
@@ -1900,7 +2462,8 @@ export default function LaporanKeuntunganHarianPage() {
                   Laporan Keuntungan Harian
                 </h1>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-sky-50/85 sm:text-sm">
-                  Rekap laba bersih harian setelah pengeluaran, kategori, toko, dan satuan.
+                  Rekap laba bersih harian setelah pengeluaran, kategori, toko,
+                  dan satuan.
                 </p>
               </div>
             </div>
@@ -1926,7 +2489,11 @@ export default function LaporanKeuntunganHarianPage() {
                 className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 text-[9px] font-black uppercase tracking-[0.06em] text-white transition-colors hover:bg-white/15 disabled:opacity-60"
                 type="button"
               >
-                <RefreshCw size={12} strokeWidth={2.8} className={loading ? "animate-spin" : ""} />
+                <RefreshCw
+                  size={12}
+                  strokeWidth={2.8}
+                  className={loading ? "animate-spin" : ""}
+                />
                 <span>Refresh</span>
               </motion.button>
             </div>
@@ -1945,9 +2512,19 @@ export default function LaporanKeuntunganHarianPage() {
               exit={{ opacity: 0 }}
               className="fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 shadow-lg"
             >
-              <AlertCircle size={16} className="text-red-600" strokeWidth={2.5} />
-              <p className="max-w-xs text-xs font-black text-red-700">{error}</p>
-              <button type="button" onClick={() => setError(null)} className="text-red-500">
+              <AlertCircle
+                size={16}
+                className="text-red-600"
+                strokeWidth={2.5}
+              />
+              <p className="max-w-xs text-xs font-black text-red-700">
+                {error}
+              </p>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-red-500"
+              >
                 <X size={14} strokeWidth={3} />
               </button>
             </motion.div>
@@ -1955,16 +2532,51 @@ export default function LaporanKeuntunganHarianPage() {
         </AnimatePresence>
 
         <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
-          <StatCard icon={CircleDollarSign} label="Penghasilan Kotor" value={formatRupiah(totalPenghasilanKotor)} subValue={`${formatCompactNumber(totalTransaksi)} transaksi`} />
-          <StatCard icon={Wallet} label="Pengeluaran" value={formatRupiah(totalPengeluaran)} subValue={`${filteredRekap.length} rekap`} />
-          <StatCard icon={TrendingUp} label="Keuntungan Bersih" value={formatRupiah(totalKeuntunganBersih)} subValue={`Omzet ${formatRupiah(totalOmzet)}`} />
-          <StatCard icon={ReceiptText} label="Qty Terjual" value={formatCompactNumber(totalQtyTerjual)} subValue={`Hari ini ${formatRupiah(keuntunganHariIni)}`} />
+          <StatCard
+            icon={CircleDollarSign}
+            label="Penghasilan Kotor"
+            value={formatRupiah(totalPenghasilanKotor)}
+            subValue={`${formatCompactNumber(totalTransaksi)} transaksi`}
+          />
+          <StatCard
+            icon={Wallet}
+            label="Pengeluaran"
+            value={formatRupiah(totalPengeluaran)}
+            subValue={`${filteredRekap.length} rekap`}
+          />
+          <StatCard
+            icon={TrendingUp}
+            label="Keuntungan Bersih"
+            value={formatRupiah(totalKeuntunganBersih)}
+            subValue={`Omzet ${formatRupiah(totalOmzet)}`}
+          />
+          <StatCard
+            icon={ReceiptText}
+            label="Qty Terjual"
+            value={formatCompactNumber(totalQtyTerjual)}
+            subValue={`Hari ini ${formatRupiah(keuntunganHariIni)}`}
+          />
         </div>
 
         <div className="grid grid-cols-3 gap-2 sm:hidden">
-          <MobileActionButton icon={Store} label="Toko" onClick={() => setRankingModal("toko")} />
-          <MobileActionButton icon={Layers3} label="Kategori" onClick={() => { setMobileKategoriTab("grup"); setRankingModal("kategori") }} />
-          <MobileActionButton icon={Ruler} label="Satuan" onClick={() => setRankingModal("satuan")} />
+          <MobileActionButton
+            icon={Store}
+            label="Toko"
+            onClick={() => setRankingModal("toko")}
+          />
+          <MobileActionButton
+            icon={Layers3}
+            label="Kategori"
+            onClick={() => {
+              setMobileKategoriTab("grup");
+              setRankingModal("kategori");
+            }}
+          />
+          <MobileActionButton
+            icon={Ruler}
+            label="Satuan"
+            onClick={() => setRankingModal("satuan")}
+          />
         </div>
 
         <motion.div
@@ -1997,7 +2609,9 @@ export default function LaporanKeuntunganHarianPage() {
         >
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-black text-slate-800 sm:text-base">Filter Laporan</h2>
+              <h2 className="text-sm font-black text-slate-800 sm:text-base">
+                Filter Laporan
+              </h2>
             </div>
 
             <button
@@ -2091,13 +2705,24 @@ export default function LaporanKeuntunganHarianPage() {
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="space-y-4 xl:col-span-7">
-            <div className={mobileReportTab === "chart" ? "block" : "hidden sm:block"}>
-              <ReportChart chartData={chartData} maxChartValue={maxChartValue} />
+            <div
+              className={
+                mobileReportTab === "chart" ? "block" : "hidden sm:block"
+              }
+            >
+              <ReportChart
+                chartData={chartData}
+                maxChartValue={maxChartValue}
+              />
             </div>
 
-            <div className={`${mobileReportTab === "rekap" ? "block" : "hidden sm:block"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}>
+            <div
+              className={`${mobileReportTab === "rekap" ? "block" : "hidden sm:block"} rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
+            >
               <div className="mb-4">
-                <h2 className="text-sm font-black text-slate-800 sm:text-base">Rekap Keuntungan Harian</h2>
+                <h2 className="text-sm font-black text-slate-800 sm:text-base">
+                  Rekap Keuntungan Harian
+                </h2>
               </div>
 
               {loading ? (
@@ -2118,14 +2743,24 @@ export default function LaporanKeuntunganHarianPage() {
           </div>
 
           <div className="hidden space-y-4 xl:col-span-5 xl:block">
-            <RankingPanel title="Toko Teratas" description="Ranking toko berdasarkan keuntungan bersih" type="toko" rows={rankingToko} />
+            <RankingPanel
+              title="Toko Teratas"
+              description="Ranking toko berdasarkan keuntungan bersih"
+              type="toko"
+              rows={rankingToko}
+            />
             <RankingKategoriTabbedPanel
               activeTab={desktopKategoriTab}
               setActiveTab={setDesktopKategoriTab}
               rankingGrupKategori={rankingGrupKategori}
               rankingKategoriBarang={rankingKategoriBarang}
             />
-            <RankingPanel title="Ranking Satuan" description="Satuan yang paling menguntungkan" type="satuan" rows={rankingSatuanBarang} />
+            <RankingPanel
+              title="Ranking Satuan"
+              description="Satuan yang paling menguntungkan"
+              type="satuan"
+              rows={rankingSatuanBarang}
+            />
           </div>
         </div>
 
@@ -2141,7 +2776,7 @@ export default function LaporanKeuntunganHarianPage() {
         />
       </main>
     </div>
-  )
+  );
 }
 
 function StatCard({
@@ -2150,32 +2785,48 @@ function StatCard({
   value,
   subValue,
 }: {
-  icon: any
-  label: string
-  value: string
-  subValue?: string
+  icon: any;
+  label: string;
+  value: string;
+  subValue?: string;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
       <div className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-3 sm:text-left">
         <div className="hidden h-9 w-9 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 sm:flex sm:h-11 sm:w-11">
-          <Icon size={18} strokeWidth={2.5} className="sm:h-[21px] sm:w-[21px]" />
+          <Icon
+            size={18}
+            strokeWidth={2.5}
+            className="sm:h-[21px] sm:w-[21px]"
+          />
         </div>
         <div className="min-w-0">
           <p className="truncate text-[8px] font-black uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-widest">
             {label}
           </p>
-          <p className="truncate text-sm font-black leading-tight text-slate-800 sm:text-xl">{value}</p>
+          <p className="truncate text-sm font-black leading-tight text-slate-800 sm:text-xl">
+            {value}
+          </p>
           {subValue ? (
-            <p className="mt-0.5 hidden truncate text-[10px] font-bold text-slate-400 sm:block">{subValue}</p>
+            <p className="mt-0.5 hidden truncate text-[10px] font-bold text-slate-400 sm:block">
+              {subValue}
+            </p>
           ) : null}
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-function MobileActionButton({ icon: Icon, label, onClick }: { icon: any; label: string; onClick: () => void }) {
+function MobileActionButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: any;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <motion.button
       whileTap={{ scale: 0.97 }}
@@ -2187,7 +2838,7 @@ function MobileActionButton({ icon: Icon, label, onClick }: { icon: any; label: 
       <Icon size={14} strokeWidth={2.5} />
       {label}
     </motion.button>
-  )
+  );
 }
 
 function MobileReportTabButton({
@@ -2196,10 +2847,10 @@ function MobileReportTabButton({
   label,
   onClick,
 }: {
-  active: boolean
-  icon: any
-  label: string
-  onClick: () => void
+  active: boolean;
+  icon: any;
+  label: string;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -2214,7 +2865,7 @@ function MobileReportTabButton({
       <Icon size={15} strokeWidth={2.5} />
       <span className="truncate">{label}</span>
     </button>
-  )
+  );
 }
 
 function FilterFields({
@@ -2234,28 +2885,34 @@ function FilterFields({
   tanggalSelesai,
   setTanggalSelesai,
 }: {
-  search: string
-  setSearch: (value: string) => void
-  filterToko: string
-  setFilterToko: (value: string) => void
-  tokoList: Toko[]
-  filterKategori: string
-  setFilterKategori: (value: string) => void
-  kategoriBarangList: { id: string; nama: string }[]
-  filterSatuan: string
-  setFilterSatuan: (value: string) => void
-  satuanBarangList: { id: string; nama: string }[]
-  tanggalMulai: string
-  setTanggalMulai: (value: string) => void
-  tanggalSelesai: string
-  setTanggalSelesai: (value: string) => void
+  search: string;
+  setSearch: (value: string) => void;
+  filterToko: string;
+  setFilterToko: (value: string) => void;
+  tokoList: Toko[];
+  filterKategori: string;
+  setFilterKategori: (value: string) => void;
+  kategoriBarangList: { id: string; nama: string }[];
+  filterSatuan: string;
+  setFilterSatuan: (value: string) => void;
+  satuanBarangList: { id: string; nama: string }[];
+  tanggalMulai: string;
+  setTanggalMulai: (value: string) => void;
+  tanggalSelesai: string;
+  setTanggalSelesai: (value: string) => void;
 }) {
   return (
     <>
       <div className="sm:col-span-2 lg:col-span-2">
-        <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">Cari</label>
+        <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+          Cari
+        </label>
         <div className="relative">
-          <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" strokeWidth={2} />
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            strokeWidth={2}
+          />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -2265,39 +2922,82 @@ function FilterFields({
         </div>
       </div>
 
-      <FilterSelect label="Toko" value={filterToko} onChange={setFilterToko} icon={Store}>
+      <FilterSelect
+        label="Toko"
+        value={filterToko}
+        onChange={setFilterToko}
+        icon={Store}
+      >
         <option value="">Semua Toko</option>
         {tokoList.map((item) => (
-          <option key={item.id} value={item.id}>{item.nama}</option>
+          <option key={item.id} value={item.id}>
+            {item.nama}
+          </option>
         ))}
       </FilterSelect>
 
-      <FilterSelect label="Kategori Barang" value={filterKategori} onChange={setFilterKategori} icon={Layers3}>
+      <FilterSelect
+        label="Kategori Barang"
+        value={filterKategori}
+        onChange={setFilterKategori}
+        icon={Layers3}
+      >
         <option value="">Semua Kategori</option>
         {kategoriBarangList.map((item) => (
-          <option key={item.id} value={item.id}>{item.nama}</option>
+          <option key={item.id} value={item.id}>
+            {item.nama}
+          </option>
         ))}
       </FilterSelect>
 
-      <FilterSelect label="Satuan" value={filterSatuan} onChange={setFilterSatuan} icon={Ruler}>
+      <FilterSelect
+        label="Satuan"
+        value={filterSatuan}
+        onChange={setFilterSatuan}
+        icon={Ruler}
+      >
         <option value="">Semua Satuan</option>
         {satuanBarangList.map((item) => (
-          <option key={item.id} value={item.id}>{item.nama}</option>
+          <option key={item.id} value={item.id}>
+            {item.nama}
+          </option>
         ))}
       </FilterSelect>
 
-      <DateInput label="Mulai" value={tanggalMulai} onChange={setTanggalMulai} />
-      <DateInput label="Selesai" value={tanggalSelesai} onChange={setTanggalSelesai} />
+      <DateInput
+        label="Mulai"
+        value={tanggalMulai}
+        onChange={setTanggalMulai}
+      />
+      <DateInput
+        label="Selesai"
+        value={tanggalSelesai}
+        onChange={setTanggalSelesai}
+      />
     </>
-  )
+  );
 }
 
-function DateInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function DateInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <div>
-      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</label>
+      <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </label>
       <div className="relative">
-        <CalendarDays size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" strokeWidth={2} />
+        <CalendarDays
+          size={13}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          strokeWidth={2}
+        />
         <input
           type="date"
           value={value}
@@ -2306,20 +3006,27 @@ function DateInput({ label, value, onChange }: { label: string; value: string; o
         />
       </div>
     </div>
-  )
+  );
 }
 
 function ReportChart({
   chartData,
   maxChartValue,
 }: {
-  chartData: Array<{ tanggalKey: string; penghasilanKotor: number; pengeluaran: number; keuntunganBersih: number }>
-  maxChartValue: number
+  chartData: Array<{
+    tanggalKey: string;
+    penghasilanKotor: number;
+    pengeluaran: number;
+    keuntunganBersih: number;
+  }>;
+  maxChartValue: number;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
-        <h2 className="text-sm font-black text-slate-800 sm:text-base">Chart Keuntungan Bersih Harian</h2>
+        <h2 className="text-sm font-black text-slate-800 sm:text-base">
+          Chart Keuntungan Bersih Harian
+        </h2>
       </div>
 
       {chartData.length === 0 ? (
@@ -2327,8 +3034,11 @@ function ReportChart({
       ) : (
         <div className="space-y-4">
           {chartData.map((item) => {
-            const percent = maxChartValue > 0 ? (Math.abs(item.keuntunganBersih) / maxChartValue) * 100 : 0
-            const isNegative = item.keuntunganBersih < 0
+            const percent =
+              maxChartValue > 0
+                ? (Math.abs(item.keuntunganBersih) / maxChartValue) * 100
+                : 0;
+            const isNegative = item.keuntunganBersih < 0;
 
             return (
               <div key={item.tanggalKey}>
@@ -2336,7 +3046,9 @@ function ReportChart({
                   <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                     {formatTanggalKey(item.tanggalKey)}
                   </p>
-                  <p className={`text-sm font-black ${isNegative ? "text-red-600" : "text-sky-700"}`}>
+                  <p
+                    className={`text-sm font-black ${isNegative ? "text-red-600" : "text-sky-700"}`}
+                  >
                     {formatRupiah(item.keuntunganBersih)}
                   </p>
                 </div>
@@ -2361,16 +3073,16 @@ function ReportChart({
                   </span>
                 </div>
               </div>
-            )
+            );
           })}
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function RekapCard({ item }: { item: RekapKeuntunganHarian }) {
-  const isNegative = item.keuntunganBersih < 0
+  const isNegative = item.keuntunganBersih < 0;
 
   return (
     <div className="overflow-hidden bg-transparent p-0 shadow-none ring-0 sm:rounded-2xl sm:border sm:border-slate-200 sm:bg-white sm:p-4 sm:shadow-sm sm:ring-1 sm:ring-slate-100/70">
@@ -2385,47 +3097,96 @@ function RekapCard({ item }: { item: RekapKeuntunganHarian }) {
 
       <div className="mt-3">
         <p className="text-base font-black text-slate-900 sm:text-sm">
-          {item.kategoriNama || "Semua Kategori"} · {item.satuanNama || "Semua Satuan"}
+          {item.kategoriNama || "Semua Kategori"} ·{" "}
+          {item.satuanNama || "Semua Satuan"}
         </p>
         <p className="mt-1 text-xs font-bold text-slate-500">
-          Omzet {formatRupiah(item.omzet)} · {formatCompactNumber(item.jumlahTransaksi)} transaksi · Qty {formatCompactNumber(item.jumlahQtyTerjual)}
+          Omzet {formatRupiah(item.omzet)} ·{" "}
+          {formatCompactNumber(item.jumlahTransaksi)} transaksi · Qty{" "}
+          {formatCompactNumber(item.jumlahQtyTerjual)}
         </p>
       </div>
 
       <div className="mt-4 space-y-2 rounded-none border-0 bg-transparent p-0 sm:rounded-2xl sm:border sm:border-slate-200 sm:bg-slate-50/70 sm:p-2">
         <MetricRow label="Kotor" value={formatRupiah(item.penghasilanKotor)} />
-        <MetricRow label="Pengeluaran" value={formatRupiah(item.pengeluaran)} tone="danger" />
-        <MetricRow label="Bersih" value={formatRupiah(item.keuntunganBersih)} tone={isNegative ? "danger" : "primary"} />
+        <MetricRow
+          label="Pengeluaran"
+          value={formatRupiah(item.pengeluaran)}
+          tone="danger"
+        />
+        <MetricRow
+          label="Bersih"
+          value={formatRupiah(item.keuntunganBersih)}
+          tone={isNegative ? "danger" : "primary"}
+        />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <MetricBox label="Omzet" value={formatRupiah(item.omzet)} className="col-span-2" />
-        <MetricBox label="Transaksi" value={formatCompactNumber(item.jumlahTransaksi)} />
-        <MetricBox label="Qty Terjual" value={formatCompactNumber(item.jumlahQtyTerjual)} />
-        <MetricBox label="Data Keluar" value={formatCompactNumber(item.jumlahDataPengeluaran)} className="col-span-2" />
+        <MetricBox
+          label="Omzet"
+          value={formatRupiah(item.omzet)}
+          className="col-span-2"
+        />
+        <MetricBox
+          label="Transaksi"
+          value={formatCompactNumber(item.jumlahTransaksi)}
+        />
+        <MetricBox
+          label="Qty Terjual"
+          value={formatCompactNumber(item.jumlahQtyTerjual)}
+        />
+        <MetricBox
+          label="Data Keluar"
+          value={formatCompactNumber(item.jumlahDataPengeluaran)}
+          className="col-span-2"
+        />
       </div>
     </div>
-  )
+  );
 }
 
-function MetricRow({ label, value, tone }: { label: string; value: string; tone?: "primary" | "danger" }) {
+function MetricRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "primary" | "danger";
+}) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-      <p className={`text-sm font-black ${tone === "danger" ? "text-red-600" : tone === "primary" ? "text-sky-700" : "text-slate-800"}`}>
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </p>
+      <p
+        className={`text-sm font-black ${tone === "danger" ? "text-red-600" : tone === "primary" ? "text-sky-700" : "text-slate-800"}`}
+      >
         {value}
       </p>
     </div>
-  )
+  );
 }
 
-function MetricBox({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+function MetricBox({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
   return (
-    <div className={`min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 ${className}`}>
-      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+    <div
+      className={`min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 ${className}`}
+    >
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {label}
+      </p>
       <p className="mt-1 truncate text-sm font-black text-slate-800">{value}</p>
     </div>
-  )
+  );
 }
 
 function RankingKategoriTabbedPanel({
@@ -2434,26 +3195,38 @@ function RankingKategoriTabbedPanel({
   rankingGrupKategori,
   rankingKategoriBarang,
 }: {
-  activeTab: KategoriRankingTab
-  setActiveTab: (value: KategoriRankingTab) => void
-  rankingGrupKategori: RankingGrupKategori[]
-  rankingKategoriBarang: RankingKategoriBarang[]
+  activeTab: KategoriRankingTab;
+  setActiveTab: (value: KategoriRankingTab) => void;
+  rankingGrupKategori: RankingGrupKategori[];
+  rankingKategoriBarang: RankingKategoriBarang[];
 }) {
-  const rows = activeTab === "grup" ? rankingGrupKategori : rankingKategoriBarang
-  const type: RankingItemType = activeTab === "grup" ? "grupKategori" : "kategori"
+  const rows =
+    activeTab === "grup" ? rankingGrupKategori : rankingKategoriBarang;
+  const type: RankingItemType =
+    activeTab === "grup" ? "grupKategori" : "kategori";
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
-        <h2 className="text-sm font-black text-slate-800 sm:text-base">Ranking Kategori Barang</h2>
+        <h2 className="text-sm font-black text-slate-800 sm:text-base">
+          Ranking Kategori Barang
+        </h2>
         <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
           Keuntungan berdasarkan grup kategori atau kategori barang
         </p>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5">
-        <RankingTabButton active={activeTab === "grup"} label="Grup Kategori" onClick={() => setActiveTab("grup")} />
-        <RankingTabButton active={activeTab === "kategori"} label="Kategori" onClick={() => setActiveTab("kategori")} />
+        <RankingTabButton
+          active={activeTab === "grup"}
+          label="Grup Kategori"
+          onClick={() => setActiveTab("grup")}
+        />
+        <RankingTabButton
+          active={activeTab === "kategori"}
+          label="Kategori"
+          onClick={() => setActiveTab("kategori")}
+        />
       </div>
 
       {rows.length === 0 ? (
@@ -2461,12 +3234,17 @@ function RankingKategoriTabbedPanel({
       ) : (
         <div className="space-y-3">
           {rows.slice(0, 8).map((item: any, idx) => (
-            <RankingItem key={`${type}-${idx}-${item.kelompokId || item.kategoriId || idx}`} type={type} item={item} index={idx} />
+            <RankingItem
+              key={`${type}-${idx}-${item.kelompokId || item.kategoriId || idx}`}
+              type={type}
+              item={item}
+              index={idx}
+            />
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function RankingTabButton({
@@ -2474,9 +3252,9 @@ function RankingTabButton({
   label,
   onClick,
 }: {
-  active: boolean
-  label: string
-  onClick: () => void
+  active: boolean;
+  label: string;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -2490,7 +3268,7 @@ function RankingTabButton({
     >
       {label}
     </button>
-  )
+  );
 }
 
 function RankingPanel({
@@ -2499,16 +3277,20 @@ function RankingPanel({
   type,
   rows,
 }: {
-  title: string
-  description: string
-  type: RankingItemType
-  rows: any[]
+  title: string;
+  description: string;
+  type: RankingItemType;
+  rows: any[];
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
-        <h2 className="text-sm font-black text-slate-800 sm:text-base">{title}</h2>
-        <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{description}</p>
+        <h2 className="text-sm font-black text-slate-800 sm:text-base">
+          {title}
+        </h2>
+        <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+          {description}
+        </p>
       </div>
 
       {rows.length === 0 ? (
@@ -2516,16 +3298,29 @@ function RankingPanel({
       ) : (
         <div className="space-y-3">
           {rows.slice(0, 8).map((item, idx) => (
-            <RankingItem key={`${type}-${idx}-${item.tokoId || item.kategoriId || item.satuanId || idx}`} type={type} item={item} index={idx} />
+            <RankingItem
+              key={`${type}-${idx}-${item.tokoId || item.kategoriId || item.satuanId || idx}`}
+              type={type}
+              item={item}
+              index={idx}
+            />
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }
 
-function RankingItem({ type, item, index }: { type: RankingItemType; item: any; index: number }) {
-  const isNegative = Number(item.keuntunganBersih || 0) < 0
+function RankingItem({
+  type,
+  item,
+  index,
+}: {
+  type: RankingItemType;
+  item: any;
+  index: number;
+}) {
+  const isNegative = Number(item.keuntunganBersih || 0) < 0;
   const title =
     type === "toko"
       ? item.tokoNama
@@ -2533,15 +3328,17 @@ function RankingItem({ type, item, index }: { type: RankingItemType; item: any; 
         ? item.namaKelompok
         : type === "kategori"
           ? item.kategoriNama
-          : item.satuanNama
+          : item.satuanNama;
   const subtitle =
     type === "toko"
       ? `${formatCompactNumber(item.hariAktif || 0)} hari aktif`
-      : `${formatCompactNumber(item.qtyTerjual || 0)} item • ${formatCompactNumber(item.jumlahTransaksi || 0)} transaksi`
+      : `${formatCompactNumber(item.qtyTerjual || 0)} item • ${formatCompactNumber(item.jumlahTransaksi || 0)} transaksi`;
   const detail =
-    type === "satuan" && Array.isArray(item.namaBarangList) && item.namaBarangList.length > 0
+    type === "satuan" &&
+    Array.isArray(item.namaBarangList) &&
+    item.namaBarangList.length > 0
       ? item.namaBarangList.join(", ")
-      : `Omzet ${formatRupiah(item.omzet || 0)}`
+      : `Omzet ${formatRupiah(item.omzet || 0)}`;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
@@ -2552,15 +3349,23 @@ function RankingItem({ type, item, index }: { type: RankingItemType; item: any; 
               {index + 1}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-black text-slate-800">{title || "-"}</p>
-              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{subtitle}</p>
-              <p className="mt-1 line-clamp-2 text-[11px] font-semibold text-slate-500">{detail}</p>
+              <p className="truncate text-sm font-black text-slate-800">
+                {title || "-"}
+              </p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                {subtitle}
+              </p>
+              <p className="mt-1 line-clamp-2 text-[11px] font-semibold text-slate-500">
+                {detail}
+              </p>
             </div>
           </div>
         </div>
 
         <div className="shrink-0 text-right">
-          <p className={`text-sm font-black ${isNegative ? "text-red-600" : "text-sky-700"}`}>
+          <p
+            className={`text-sm font-black ${isNegative ? "text-red-600" : "text-sky-700"}`}
+          >
             {formatRupiah(item.keuntunganBersih || 0)}
           </p>
           <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
@@ -2569,7 +3374,7 @@ function RankingItem({ type, item, index }: { type: RankingItemType; item: any; 
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function RankingModal({
@@ -2582,16 +3387,16 @@ function RankingModal({
   kategoriTab,
   setKategoriTab,
 }: {
-  type: RankingModalType
-  onClose: () => void
-  rankingToko: RankingToko[]
-  rankingGrupKategori: RankingGrupKategori[]
-  rankingKategoriBarang: RankingKategoriBarang[]
-  rankingSatuanBarang: RankingSatuanBarang[]
-  kategoriTab: KategoriRankingTab
-  setKategoriTab: (value: KategoriRankingTab) => void
+  type: RankingModalType;
+  onClose: () => void;
+  rankingToko: RankingToko[];
+  rankingGrupKategori: RankingGrupKategori[];
+  rankingKategoriBarang: RankingKategoriBarang[];
+  rankingSatuanBarang: RankingSatuanBarang[];
+  kategoriTab: KategoriRankingTab;
+  setKategoriTab: (value: KategoriRankingTab) => void;
 }) {
-  const isKategoriModal = type === "kategori"
+  const isKategoriModal = type === "kategori";
   const rows =
     type === "toko"
       ? rankingToko
@@ -2599,7 +3404,7 @@ function RankingModal({
         ? kategoriTab === "grup"
           ? rankingGrupKategori
           : rankingKategoriBarang
-        : rankingSatuanBarang
+        : rankingSatuanBarang;
   const itemType: RankingItemType =
     type === "toko"
       ? "toko"
@@ -2607,13 +3412,13 @@ function RankingModal({
         ? kategoriTab === "grup"
           ? "grupKategori"
           : "kategori"
-        : "satuan"
+        : "satuan";
   const title =
     type === "toko"
       ? "Ranking Toko"
       : type === "kategori"
         ? "Ranking Kategori"
-        : "Ranking Satuan"
+        : "Ranking Satuan";
 
   return (
     <AnimatePresence>
@@ -2649,8 +3454,16 @@ function RankingModal({
             <div className="max-h-[calc(82vh-78px)] overflow-y-auto p-4">
               {isKategoriModal ? (
                 <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5">
-                  <RankingTabButton active={kategoriTab === "grup"} label="Grup Kategori" onClick={() => setKategoriTab("grup")} />
-                  <RankingTabButton active={kategoriTab === "kategori"} label="Kategori" onClick={() => setKategoriTab("kategori")} />
+                  <RankingTabButton
+                    active={kategoriTab === "grup"}
+                    label="Grup Kategori"
+                    onClick={() => setKategoriTab("grup")}
+                  />
+                  <RankingTabButton
+                    active={kategoriTab === "kategori"}
+                    label="Kategori"
+                    onClick={() => setKategoriTab("kategori")}
+                  />
                 </div>
               ) : null}
 
@@ -2659,7 +3472,12 @@ function RankingModal({
               ) : (
                 <div className="space-y-3">
                   {rows.slice(0, 20).map((item: any, idx: number) => (
-                    <RankingItem key={`${itemType}-${idx}-${item.tokoId || item.kelompokId || item.kategoriId || item.satuanId || idx}`} type={itemType} item={item} index={idx} />
+                    <RankingItem
+                      key={`${itemType}-${idx}-${item.tokoId || item.kelompokId || item.kategoriId || item.satuanId || idx}`}
+                      type={itemType}
+                      item={item}
+                      index={idx}
+                    />
                   ))}
                 </div>
               )}
@@ -2668,7 +3486,7 @@ function RankingModal({
         </motion.div>
       ) : null}
     </AnimatePresence>
-  )
+  );
 }
 
 function LoadingState({ label }: { label: string }) {
@@ -2680,10 +3498,12 @@ function LoadingState({ label }: { label: string }) {
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-sky-500"
         />
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          {label}
+        </p>
       </div>
     </div>
-  )
+  );
 }
 
 function EmptyState({ label }: { label: string }) {
@@ -2691,5 +3511,5 @@ function EmptyState({ label }: { label: string }) {
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
       {label}
     </div>
-  )
+  );
 }
