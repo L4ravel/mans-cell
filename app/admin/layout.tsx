@@ -32,6 +32,8 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore"
 import {
@@ -319,6 +321,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const fetchRestockCount = async () => {
     try {
+      const counterRef = doc(db, "system_counters", "restock")
+      const counterSnap = await getDoc(counterRef)
+      const counterData = counterSnap.data() as any
+      const counterUpdatedAt =
+        typeof counterData?.updatedAt?.toMillis === "function"
+          ? counterData.updatedAt.toMillis()
+          : Number(counterData?.updatedAt || 0)
+      const counterIsFresh =
+        counterSnap.exists() &&
+        counterData?.ready === true &&
+        counterUpdatedAt > 0 &&
+        Date.now() - counterUpdatedAt < 60 * 60 * 1000
+
+      if (counterIsFresh) {
+        setRestockCount(Number(counterData?.totalRestock || 0))
+        return
+      }
+
       const [barangSnap, saldoSnap] = await Promise.all([
         getDocs(query(collection(db, "barang"))),
         getDocs(query(collection(db, "master_saldo_digital"))),
@@ -344,7 +364,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return sum
       }, 0)
 
-      setRestockCount(totalBarangRestock + totalSaldoRestock)
+      const totalRestock = totalBarangRestock + totalSaldoRestock
+      setRestockCount(totalRestock)
+
+      try {
+        await setDoc(
+          counterRef,
+          {
+            ready: true,
+            totalBarangRestock,
+            totalSaldoRestock,
+            totalRestock,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        )
+      } catch (counterError) {
+        console.error("Gagal menyimpan ringkasan restock:", counterError)
+      }
     } catch (error) {
       console.error("Gagal memuat notifikasi restock:", error)
       setRestockCount(0)
@@ -796,7 +833,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                   active ? "bg-white text-sky-600" : "bg-orange-500 text-white"
                                 }`}
                               >
-                                {restockCount}
+                                {restockCount > 99 ? "99+" : restockCount}
                               </span>
                             )}
 
@@ -937,7 +974,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
                   {restockCount > 0 && (
                     <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-black text-white shadow-sm">
-                      {restockCount}
+                      {restockCount > 99 ? "99+" : restockCount}
                     </span>
                   )}
                 </button>
@@ -1020,7 +1057,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <Bell size={17} strokeWidth={2.3} />
                   {restockCount > 0 && (
                     <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-black text-white shadow-sm">
-                      {restockCount}
+                      {restockCount > 99 ? "99+" : restockCount}
                     </span>
                   )}
                 </button>

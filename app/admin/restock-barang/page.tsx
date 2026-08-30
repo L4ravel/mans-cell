@@ -23,6 +23,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   writeBatch,
 } from "firebase/firestore"
@@ -31,11 +32,13 @@ import {
   AlertCircle,
   AlertTriangle,
   Boxes,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Coins,
   Cpu,
+  Download,
   ListFilter,
   Package,
   PencilLine,
@@ -133,15 +136,21 @@ type RiwayatPembelianRow = {
   id: string
   jenis: "barang" | "saldo"
   nama: string
+  kodeRef: string
   sumber: string
+  tokoNama: string
+  kategoriNama: string
   stokSebelum: number
   jumlahTambah: number
   stokSesudah: number
   catatan: string
   hargaModalBaru?: number
   hargaJualBaru?: number
+  totalPembelian?: number
   modeRestok?: "tambah_stok" | "buat_varian"
   createdAt?: number
+  createdBy?: string
+  createdByNama?: string
 }
 
 const ITEMS_OPTIONS = [
@@ -260,6 +269,22 @@ function formatDateTime(value?: number) {
   }).format(new Date(value))
 }
 
+function getDefaultAuditRange() {
+  const today = new Date()
+  const toInputDate = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+
+  const todayValue = toInputDate(today)
+  return { start: todayValue, end: todayValue }
+}
+
+function getAuditDateBounds(start: string, end: string) {
+  const startDate = new Date(`${start}T00:00:00`)
+  const endExclusive = new Date(`${end}T00:00:00`)
+  endExclusive.setDate(endExclusive.getDate() + 1)
+  return { startDate, endExclusive }
+}
+
 function formatNilai(item: PembelianItem, value: number) {
   return item.type === "saldo" ? formatRupiah(value) : String(value)
 }
@@ -352,6 +377,7 @@ async function updateLaporanPembelianAggregate(params: {
 
 export default function PembelianBarangPage() {
   const router = useRouter()
+  const defaultAuditRange = useMemo(() => getDefaultAuditRange(), [])
 
   const [barangList, setBarangList] = useState<Barang[]>([])
   const [saldoList, setSaldoList] = useState<MasterSaldoDigital[]>([])
@@ -359,9 +385,12 @@ export default function PembelianBarangPage() {
   const [tokoList, setTokoList] = useState<Toko[]>([])
   const [supplierList, setSupplierList] = useState<Supplier[]>([])
   const [riwayatList, setRiwayatList] = useState<RiwayatPembelianRow[]>([])
+  const [petugasNamaMap, setPetugasNamaMap] = useState<Record<string, string>>({})
 
   const [loading, setLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
 
   const [activeTab, setActiveTab] = useState<PembelianTab>("barang")
   const [search, setSearch] = useState("")
@@ -371,6 +400,10 @@ export default function PembelianBarangPage() {
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [dataLimit, setDataLimit] = useState(50)
   const [page, setPage] = useState(1)
+  const [tanggalMulai, setTanggalMulai] = useState(defaultAuditRange.start)
+  const [tanggalSelesai, setTanggalSelesai] = useState(defaultAuditRange.end)
+  const [auditRange, setAuditRange] = useState(defaultAuditRange)
+  const [auditFilterApplied, setAuditFilterApplied] = useState(false)
 
   const [showModal, setShowModal] = useState(false)
   const [selectedItem, setSelectedItem] = useState<PembelianItem | null>(null)
@@ -525,41 +558,72 @@ export default function PembelianBarangPage() {
     setSaldoList(list)
   }
 
-  const fetchRiwayat = async () => {
+  const fetchRiwayat = async (
+    range = auditRange,
+    throwOnError = false,
+    targetTab = activeTab,
+    batasiHasil = !auditFilterApplied
+  ) => {
     try {
-      const qBarang = query(collection(db, "riwayat_pembelian_barang"), orderBy("createdAt", "desc"), limit(dataLimit))
-      const qSaldo = query(collection(db, "riwayat_pembelian_saldo_digital"), orderBy("createdAt", "desc"), limit(dataLimit))
+      const { startDate, endExclusive } = getAuditDateBounds(range.start, range.end)
+      const collectionName =
+        targetTab === "barang" ? "riwayat_pembelian_barang" : "riwayat_pembelian_saldo_digital"
+      const constraints = [
+        where("createdAt", ">=", Timestamp.fromDate(startDate)),
+        where("createdAt", "<", Timestamp.fromDate(endExclusive)),
+        orderBy("createdAt", "desc"),
+      ]
+      const snap = await getDocs(
+        batasiHasil
+          ? query(collection(db, collectionName), ...constraints, limit(99))
+          : query(collection(db, collectionName), ...constraints)
+      )
 
-      const [snapBarang, snapSaldo] = await Promise.all([getDocs(qBarang), getDocs(qSaldo)])
-
-      const listBarang: RiwayatPembelianRow[] = snapBarang.docs.map((item) => {
+      if (targetTab === "barang") {
+        const listBarang: RiwayatPembelianRow[] = snap.docs.map((item) => {
         const x = item.data() as any
         return {
           id: item.id,
           jenis: "barang",
           nama: x?.namaBarang || "",
+          kodeRef: x?.kodeBarang || x?.kodeBarangAsal || "",
           sumber: x?.supplier || x?.tokoNama || "-",
+          tokoNama: x?.tokoNama || "-",
+          kategoriNama: x?.kategoriNama || "-",
           stokSebelum: Number(x?.stokSebelum || 0),
           jumlahTambah: Number(x?.jumlahBeli || x?.jumlahTambah || 0),
           stokSesudah: Number(x?.stokSesudah || 0),
           catatan: x?.catatan || "",
           hargaModalBaru: Number(x?.hargaModalBaru || 0),
           hargaJualBaru: Number(x?.hargaJualBaru || 0),
+          totalPembelian: Number(
+            x?.totalModalRestok ||
+              Number(x?.hargaModalBaru || 0) * Number(x?.jumlahBeli || x?.jumlahTambah || 0)
+          ),
           modeRestok: x?.modeRestok || "tambah_stok",
           createdAt:
             typeof x?.createdAt?.toMillis === "function"
               ? x.createdAt.toMillis()
               : Number(x?.createdAt || 0),
+          createdBy: x?.createdBy || "",
+          createdByNama: x?.createdByNama || x?.petugasNama || "",
         }
       })
 
-      const listSaldo: RiwayatPembelianRow[] = snapSaldo.docs.map((item) => {
+        setRiwayatList(listBarang)
+        return
+      }
+
+      const listSaldo: RiwayatPembelianRow[] = snap.docs.map((item) => {
         const x = item.data() as any
         return {
           id: item.id,
           jenis: "saldo",
           nama: x?.namaSaldo || "",
+          kodeRef: x?.saldoId || "",
           sumber: x?.keterangan || "Saldo Digital",
+          tokoNama: "Saldo Digital",
+          kategoriNama: "Saldo Digital",
           stokSebelum: Number(x?.saldoSebelum || 0),
           jumlahTambah: Number(x?.jumlahTopup || x?.jumlahTambah || 0),
           stokSesudah: Number(x?.saldoSesudah || 0),
@@ -568,15 +632,16 @@ export default function PembelianBarangPage() {
             typeof x?.createdAt?.toMillis === "function"
               ? x.createdAt.toMillis()
               : Number(x?.createdAt || 0),
+          createdBy: x?.createdBy || "",
+          createdByNama: x?.createdByNama || x?.petugasNama || "",
         }
       })
 
-      setRiwayatList(
-        [...listBarang, ...listSaldo].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
-      )
+      setRiwayatList(listSaldo)
     } catch (error) {
       console.error(error)
       setRiwayatList([])
+      if (throwOnError) throw error
     }
   }
 
@@ -585,7 +650,7 @@ export default function PembelianBarangPage() {
     setError(null)
 
     try {
-      await Promise.all([fetchKategori(), fetchToko(), fetchSupplier(), fetchBarang(), fetchSaldo(), fetchRiwayat()])
+      await Promise.all([fetchKategori(), fetchToko(), fetchSupplier(), fetchPetugas(), fetchBarang(), fetchSaldo(), fetchRiwayat()])
     } catch (error) {
       console.error(error)
       showError("Gagal memuat data pembelian")
@@ -607,7 +672,6 @@ export default function PembelianBarangPage() {
   useEffect(() => {
     if (!auth.currentUser) return
     fetchSaldo()
-    fetchRiwayat()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataLimit])
 
@@ -726,11 +790,195 @@ export default function PembelianBarangPage() {
     return riwayatList.filter((item) => item.jenis === activeTab)
   }, [activeTab, riwayatList])
 
+  const totalNominalPembelianBarang = useMemo(() => {
+    return filteredRiwayatList.reduce(
+      (sum, item) => sum + (item.jenis === "barang" ? Number(item.totalPembelian || 0) : 0),
+      0
+    )
+  }, [filteredRiwayatList])
+
   const totalSaldoNominal = useMemo(() => {
     return saldoList
       .filter((item) => item.aktif !== false)
       .reduce((sum, item) => sum + Number(item.jumlahSaldo || 0), 0)
   }, [saldoList])
+
+  const applyAuditRange = async () => {
+    if (!tanggalMulai || !tanggalSelesai) {
+      showError("Tanggal awal dan akhir wajib diisi")
+      return
+    }
+
+    if (tanggalMulai > tanggalSelesai) {
+      showError("Tanggal awal tidak boleh melewati tanggal akhir")
+      return
+    }
+
+    const nextRange = { start: tanggalMulai, end: tanggalSelesai }
+    setAuditLoading(true)
+    setError(null)
+    try {
+      await fetchRiwayat(nextRange, true, activeTab, false)
+      setAuditRange(nextRange)
+      setAuditFilterApplied(true)
+      showSuccess("Data audit pembelian berhasil dimuat")
+    } catch (error) {
+      console.error(error)
+      showError("Gagal memuat data audit pada rentang tanggal tersebut")
+    } finally {
+      setAuditLoading(false)
+    }
+  }
+
+  const fetchPetugas = async () => {
+    try {
+      const snap = await getDocs(collection(db, "users"))
+      const nextMap: Record<string, string> = {}
+
+      snap.docs.forEach((item) => {
+        const data = item.data() as any
+        const uid = String(data?.uid || item.id).trim()
+        const nama = String(data?.nama || data?.name || data?.displayName || "").trim()
+        if (uid && nama) nextMap[uid] = nama
+      })
+
+      setPetugasNamaMap(nextMap)
+    } catch (error) {
+      console.error("Gagal memuat nama petugas:", error)
+      setPetugasNamaMap({})
+    }
+  }
+
+  const downloadAuditExcel = async () => {
+    if (filteredRiwayatList.length === 0) {
+      showError("Tidak ada data audit pada periode ini untuk diunduh")
+      return
+    }
+
+    setExportLoading(true)
+    try {
+      const ExcelJS = await import("exceljs")
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = "Mans Cell"
+      workbook.created = new Date()
+
+      const sheet = workbook.addWorksheet(activeTab === "barang" ? "Audit Pembelian Barang" : "Audit Saldo Digital", {
+        views: [{ state: "frozen", ySplit: 7 }],
+      })
+      const isBarang = activeTab === "barang"
+      const title = isBarang ? "AUDIT PEMBELIAN BARANG" : "AUDIT PEMBELIAN SALDO DIGITAL"
+      const headers = isBarang
+        ? ["No", "Tanggal & Waktu", "Nama Barang", "Kode", "Toko", "Kategori", "Supplier", "Jumlah", "Harga Modal", "Total Pembelian", "Stok Sebelum", "Stok Sesudah", "Mode", "Catatan", "Nama Petugas"]
+        : ["No", "Tanggal & Waktu", "Sumber Saldo", "Referensi", "Jumlah Top Up", "Saldo Sebelum", "Saldo Sesudah", "Catatan", "Nama Petugas"]
+      const lastColumn = isBarang ? "O" : "I"
+
+      sheet.mergeCells(`A1:${lastColumn}1`)
+      sheet.getCell("A1").value = title
+      sheet.getCell("A1").font = { bold: true, size: 18, color: { argb: "FFFFFFFF" } }
+      sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0369A1" } }
+      sheet.getCell("A1").alignment = { vertical: "middle", horizontal: "center" }
+      sheet.getRow(1).height = 30
+
+      sheet.getCell("A3").value = "Periode"
+      sheet.getCell("B3").value = `${auditRange.start} s.d. ${auditRange.end}`
+      sheet.getCell("A4").value = "Jumlah Transaksi"
+      sheet.getCell("B4").value = filteredRiwayatList.length
+      sheet.getCell("A5").value = isBarang ? "Total Pembelian" : "Total Top Up"
+      sheet.getCell("B5").value = isBarang
+        ? totalNominalPembelianBarang
+        : filteredRiwayatList.reduce((sum, item) => sum + item.jumlahTambah, 0)
+      sheet.getCell("B5").numFmt = '"Rp" #,##0'
+
+      const headerRow = sheet.getRow(7)
+      headerRow.values = headers
+      headerRow.height = 24
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0EA5E9" } }
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true }
+        cell.border = { bottom: { style: "thin", color: { argb: "FFCBD5E1" } } }
+      })
+
+      filteredRiwayatList.forEach((item, index) => {
+        const rowNumber = index + 8
+        const createdAt = item.createdAt ? new Date(item.createdAt) : null
+        const row = sheet.addRow(
+          isBarang
+            ? [
+                index + 1,
+                createdAt,
+                item.nama,
+                item.kodeRef || "-",
+                item.tokoNama || "-",
+                item.kategoriNama || "-",
+                item.sumber || "-",
+                item.jumlahTambah,
+                Number(item.hargaModalBaru || 0),
+                { formula: `H${rowNumber}*I${rowNumber}`, result: Number(item.totalPembelian || 0) },
+                item.stokSebelum,
+                item.stokSesudah,
+                item.modeRestok === "buat_varian" ? "Buat varian/unit" : "Tambah stok",
+                item.catatan || "-",
+                item.createdByNama || petugasNamaMap[item.createdBy || ""] || "Petugas tidak ditemukan",
+              ]
+            : [
+                index + 1,
+                createdAt,
+                item.nama,
+                item.kodeRef || "-",
+                item.jumlahTambah,
+                item.stokSebelum,
+                item.stokSesudah,
+                item.catatan || "-",
+                item.createdByNama || petugasNamaMap[item.createdBy || ""] || "Petugas tidak ditemukan",
+              ]
+        )
+        row.eachCell((cell) => {
+          cell.alignment = { vertical: "top", wrapText: true }
+          cell.border = { bottom: { style: "hair", color: { argb: "FFE2E8F0" } } }
+          if (index % 2 === 1) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } }
+          }
+        })
+        row.getCell(2).numFmt = "dd mmm yyyy hh:mm"
+        if (isBarang) {
+          row.getCell(9).numFmt = '"Rp" #,##0'
+          row.getCell(10).numFmt = '"Rp" #,##0'
+        } else {
+          ;[5, 6, 7].forEach((column) => {
+            row.getCell(column).numFmt = '"Rp" #,##0'
+          })
+        }
+      })
+
+      sheet.autoFilter = { from: "A7", to: `${lastColumn}${filteredRiwayatList.length + 7}` }
+      const widths = isBarang
+        ? [6, 20, 28, 16, 20, 20, 22, 10, 16, 18, 13, 13, 18, 30, 30]
+        : [6, 20, 28, 20, 18, 18, 18, 30, 30]
+      widths.forEach((width, index) => {
+        sheet.getColumn(index + 1).width = width
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `audit-${isBarang ? "pembelian-barang" : "saldo-digital"}-${auditRange.start}-${auditRange.end}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      showSuccess("File Excel audit berhasil diunduh")
+    } catch (error) {
+      console.error(error)
+      showError("Gagal membuat file Excel audit")
+    } finally {
+      setExportLoading(false)
+    }
+  }
 
   const totalPages = itemsPerPage === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / itemsPerPage))
   const paged = itemsPerPage === 0 ? filtered : filtered.slice((page - 1) * itemsPerPage, page * itemsPerPage)
@@ -756,6 +1004,13 @@ export default function PembelianBarangPage() {
     })
     setError(null)
     setShowModal(true)
+  }
+
+  const changeActiveTab = (tab: PembelianTab) => {
+    setActiveTab(tab)
+    if (tab !== activeTab && auth.currentUser) {
+      void fetchRiwayat(auditRange, false, tab, !auditFilterApplied)
+    }
   }
 
   const closePembelianModal = () => {
@@ -996,6 +1251,7 @@ export default function PembelianBarangPage() {
           bulanKey,
           createdAt: serverTimestamp(),
           createdBy: user.uid,
+          createdByNama: petugasNamaMap[user.uid] || user.displayName || "",
         })
 
         await updateLaporanPembelianAggregate({
@@ -1031,6 +1287,7 @@ export default function PembelianBarangPage() {
           bulanKey,
           createdAt: serverTimestamp(),
           createdBy: user.uid,
+          createdByNama: petugasNamaMap[user.uid] || user.displayName || "",
         })
 
         await updateLaporanPembelianAggregate({
@@ -1137,7 +1394,7 @@ export default function PembelianBarangPage() {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setActiveTab("barang")}
+              onClick={() => changeActiveTab("barang")}
               className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
                 activeTab === "barang"
                   ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
@@ -1150,7 +1407,7 @@ export default function PembelianBarangPage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab("saldo")}
+              onClick={() => changeActiveTab("saldo")}
               className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-wide transition ${
                 activeTab === "saldo"
                   ? "bg-gradient-to-r from-sky-500 via-sky-600 to-blue-500 text-white shadow-lg shadow-sky-500/15"
@@ -1190,7 +1447,7 @@ export default function PembelianBarangPage() {
             </div>
 
             <div className="hidden sm:contents">
-              <FilterSelect label="Limit Riwayat" value={String(dataLimit)} onChange={(value) => setDataLimit(Number(value))} icon={Boxes}>
+              <FilterSelect label="Limit Data Saldo" value={String(dataLimit)} onChange={(value) => setDataLimit(Number(value))} icon={Boxes}>
                 {FETCH_LIMIT_OPTIONS.map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
@@ -1300,7 +1557,7 @@ export default function PembelianBarangPage() {
                   )}
 
                   <FilterSelect
-                    label="Limit Riwayat"
+                    label="Limit Data Saldo"
                     value={String(dataLimit)}
                     onChange={(value) => setDataLimit(Number(value))}
                     icon={Boxes}
@@ -1330,6 +1587,70 @@ export default function PembelianBarangPage() {
           </AnimatePresence>
         </motion.div>
 
+        {/* Audit rentang tanggal */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.06 }}
+          className="rounded-2xl border border-sky-200 bg-white p-4 shadow-sm"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                  <CalendarDays size={18} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-sky-600">Audit Pembelian</p>
+                  <p className="text-xs font-bold text-slate-500">
+                    Periode aktif: {auditRange.start} s.d. {auditRange.end}
+                    {!auditFilterApplied ? " · Hari ini, maks. 99 transaksi" : " · Tanpa batas transaksi"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
+              <FieldBox label="Tanggal Awal" className="min-w-0 sm:w-44">
+                <input
+                  type="date"
+                  value={tanggalMulai}
+                  max={tanggalSelesai || undefined}
+                  onChange={(event) => setTanggalMulai(event.target.value)}
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                />
+              </FieldBox>
+              <FieldBox label="Tanggal Akhir" className="min-w-0 sm:w-44">
+                <input
+                  type="date"
+                  value={tanggalSelesai}
+                  min={tanggalMulai || undefined}
+                  onChange={(event) => setTanggalSelesai(event.target.value)}
+                  className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/20"
+                />
+              </FieldBox>
+              <button
+                type="button"
+                onClick={applyAuditRange}
+                disabled={auditLoading}
+                className="inline-flex h-[42px] items-center justify-center gap-2 self-end rounded-xl bg-slate-800 px-4 text-[10px] font-black uppercase tracking-wide text-white disabled:opacity-60"
+              >
+                <RefreshCw size={14} className={auditLoading ? "animate-spin" : ""} strokeWidth={2.5} />
+                Terapkan
+              </button>
+              <button
+                type="button"
+                onClick={downloadAuditExcel}
+                disabled={exportLoading || auditLoading || filteredRiwayatList.length === 0}
+                className="inline-flex h-[42px] items-center justify-center gap-2 self-end rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 text-[10px] font-black uppercase tracking-wide text-white shadow-sm shadow-emerald-500/20 disabled:opacity-50"
+              >
+                {exportLoading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} strokeWidth={2.5} />}
+                Unduh Excel
+              </button>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Stats */}
         <div className="space-y-2 sm:space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
@@ -1337,15 +1658,15 @@ export default function PembelianBarangPage() {
               <>
                 <StatCard icon={Package} label="Barang" value={String(totalBarangPembelian)} subValue="Toko dipilih" tone="sky" />
                 <StatCard icon={Boxes} label="Kurang Barang" value={String(totalKekuranganBarang)} subValue="Di bawah minimum" tone="blue" />
-                <StatCard icon={Store} label="Toko" value={filterToko ? "1" : "0"} subValue="Filter aktif" tone="slate" />
-                <StatCard icon={Wallet} label="Riwayat Barang" value={String(filteredRiwayatList.length)} subValue="Jejak pembelian" tone="rose" />
+                <StatCard icon={Coins} label="Total Pembelian" value={formatRupiah(totalNominalPembelianBarang)} subValue={auditFilterApplied ? "Seluruh periode dipilih" : "Hari ini · maks. 99"} tone="slate" />
+                <StatCard icon={Wallet} label="Riwayat Barang" value={String(filteredRiwayatList.length)} subValue={auditFilterApplied ? "Tanpa batas transaksi" : "Hari ini · maks. 99"} tone="rose" />
               </>
             ) : (
               <>
                 <StatCard icon={Wallet} label="Sumber Saldo" value={String(totalSaldoPembelian)} subValue="Saldo aktif" tone="sky" />
                 <StatCard icon={Coins} label="Total Saldo" value={formatRupiah(totalSaldoNominal)} subValue="Saldo tersedia" tone="blue" />
                 <StatCard icon={ShieldAlert} label="Kurang Saldo" value={formatRupiah(totalKekuranganSaldo)} subValue="Di bawah minimum" tone="rose" />
-                <StatCard icon={Boxes} label="Riwayat Saldo" value={String(filteredRiwayatList.length)} subValue="Jejak top up" tone="slate" />
+                <StatCard icon={Boxes} label="Riwayat Saldo" value={String(filteredRiwayatList.length)} subValue={auditFilterApplied ? "Tanpa batas transaksi" : "Hari ini · maks. 99"} tone="slate" />
               </>
             )}
           </div>
@@ -1750,7 +2071,7 @@ function PembelianContent({
             <EmptyBox label="Belum ada riwayat pembelian" icon={Wallet} />
           ) : (
             <div className="space-y-3">
-              {riwayatList.slice(0, 8).map((item, idx) => (
+              {riwayatList.map((item, idx) => (
                 <div key={`${item.jenis}-${item.id}`} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -1771,6 +2092,11 @@ function PembelianContent({
                           ? `${formatRupiah(item.stokSebelum)} + ${formatRupiah(item.jumlahTambah)} = ${formatRupiah(item.stokSesudah)}`
                           : `${item.stokSebelum} + ${item.jumlahTambah} = ${item.stokSesudah}`}
                       </p>
+                      {item.jenis === "barang" && (
+                        <p className="mt-1 text-xs font-black text-sky-700">
+                          Total pembelian: {formatRupiah(Number(item.totalPembelian || 0))}
+                        </p>
+                      )}
                       {item.catatan && <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-600">{item.catatan}</p>}
                     </div>
 
@@ -1968,6 +2294,8 @@ function PembelianModal({
     Boolean(selectedItem.pakaiKodeUnik) &&
     (selectedItem.jenisKodeUnik || "imei") === "imei"
   const jumlahTambahFinal = isImeiRestok ? kodeUnikList.length : Number(form.jumlahTambah || 0)
+  const totalPembelianBarang =
+    selectedItem?.type === "barang" ? hargaModalBaru * jumlahTambahFinal : 0
   const hargaBerubah =
     !!selectedItem &&
     selectedItem.type === "barang" &&
@@ -2231,6 +2559,22 @@ function PembelianModal({
                           </span>
                         }
                       />
+
+                      <div className="sm:col-span-2 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-blue-50 px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">
+                              Total Pembelian Barang
+                            </p>
+                            <p className="mt-1 text-[10px] font-bold text-slate-500">
+                              {jumlahTambahFinal} × {formatRupiah(hargaModalBaru)}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-lg font-black text-sky-700">
+                            {formatRupiah(totalPembelianBarang)}
+                          </p>
+                        </div>
+                      </div>
 
                       <div className="sm:col-span-2">
                         <FormSelect
