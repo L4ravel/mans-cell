@@ -1,7 +1,7 @@
 "use client"
 
 /*
-  Halaman admin aturan toko.
+  Halaman admin aturan toko. oke
   - CRUD aturan/deskripsi toko ke Firestore collection aturan_toko
   - Aturan bisa dipilih per toko atau berlaku untuk semua toko
   - Data disiapkan agar nanti bisa dipanggil di halaman karyawan
