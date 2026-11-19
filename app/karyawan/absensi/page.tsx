@@ -812,8 +812,9 @@ export default function AbsensiKaryawanPage() {
             tanggalKerja: resolved.tanggalKerja,
             sumber,
             mode: resolved.mode,
-            configured: false,
-            message: "Jadwal untuk tanggal ini belum lengkap.",
+            isLibur: !schedule.enabled,
+            configured: !schedule.enabled,
+            message: schedule.enabled ? "Jadwal untuk tanggal ini belum lengkap." : undefined,
           })
           return
         }
@@ -2067,6 +2068,8 @@ export default function AbsensiKaryawanPage() {
             ) : (
               <div className="relative z-10 flex min-h-[70vh] items-center justify-center bg-white p-4">
                 <AnimasiWaktu
+                  configured={jadwalAbsensi.configured}
+                  message={jadwalAbsensi.message}
                   jamMasuk={jadwalAbsensi.jamMasuk}
                   jamPulang={jadwalAbsensi.jamPulang}
                   hariLibur={jadwalAbsensi.isLibur ? [new Date(`${tanggal}T00:00:00`).getDay()] : []}

@@ -13,6 +13,8 @@ type AnimasiWaktuProps = {
   jamMasuk?: string
   jamPulang?: string
   hariLibur?: Array<number | string>
+  configured?: boolean
+  message?: string
 }
 
 const NAMA_HARI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
@@ -21,6 +23,8 @@ export default function AbsensiProfessionalAlive({
   jamMasuk = "06:00",
   jamPulang = "14:00",
   hariLibur = [5],
+  configured = true,
+  message,
 }: AnimasiWaktuProps) {
   const [time, setTime] = useState(new Date())
   const controls = useAnimation()
@@ -50,11 +54,13 @@ export default function AbsensiProfessionalAlive({
   const formatUnit = (unit: number) => unit.toString().padStart(2, "0")
 
   const toMinutes = (value: string) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return Number.NaN
     const [h, m] = value.split(":").map(Number)
     return h * 60 + m
   }
 
   const toTimeString = (totalMinutes: number) => {
+    if (!Number.isFinite(totalMinutes) || isHariLibur || !configured) return "—"
     const normalized = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60)
     const h = Math.floor(normalized / 60)
     const m = normalized % 60
@@ -82,6 +88,13 @@ export default function AbsensiProfessionalAlive({
   const isSudahTutupPenuh = nowMinutes > tutupPenuhMinutes
 
   const statusInfo = useMemo(() => {
+    if (!configured) {
+      return {
+        label: "Jadwal Belum Tersedia",
+        icon: "waktu" as const,
+        pillClass: "bg-orange-100 text-orange-700",
+      }
+    }
     if (isHariLibur) {
       return {
         label: "Jadwal Libur",        
@@ -137,6 +150,7 @@ export default function AbsensiProfessionalAlive({
     }
   }, [
     currentDay,
+    configured,
     isHariLibur,
     isSebelumMulai,
     isDalamJamAbsensi,
@@ -369,6 +383,9 @@ export default function AbsensiProfessionalAlive({
                 </div>
               </motion.div>             
 
+              {!configured && message && (
+                <p className="px-4 pb-2 text-center text-sm text-slate-500">{message}</p>
+              )}
               <motion.div
                 className="mt-2 grid grid-cols-3 gap-2 text-center"
                 initial={{ opacity: 0 }}
