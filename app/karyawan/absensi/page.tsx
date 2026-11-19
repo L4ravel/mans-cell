@@ -751,8 +751,14 @@ export default function AbsensiKaryawanPage() {
     []
   )
 
+  const jadwalRequestRef = useRef(0)
+
   const loadPengaturanJamAbsensi = useCallback(
     async (currentKaryawanId: string, currentTokoId: string, currentTanggal: string) => {
+      const requestId = ++jadwalRequestRef.current
+      const updateJadwal = (jadwal: JadwalAbsensi) => {
+        if (requestId === jadwalRequestRef.current) setJadwalAbsensi(jadwal)
+      }
       setJadwalLoading(true)
 
       try {
@@ -790,7 +796,7 @@ export default function AbsensiKaryawanPage() {
         }
 
         if (!mergedData) {
-          setJadwalAbsensi({
+          updateJadwal({
             ...EMPTY_JADWAL,
             tanggalKerja: currentTanggal,
             message: "Jadwal absensi belum diatur. Hubungi admin.",
@@ -807,7 +813,7 @@ export default function AbsensiKaryawanPage() {
         const schedule = resolved.schedule
 
         if (!isValidSchedule(schedule)) {
-          setJadwalAbsensi({
+          updateJadwal({
             ...EMPTY_JADWAL,
             tanggalKerja: resolved.tanggalKerja,
             sumber,
@@ -819,7 +825,7 @@ export default function AbsensiKaryawanPage() {
           return
         }
 
-        setJadwalAbsensi({
+        updateJadwal({
           jamMasuk: schedule.jamMasuk,
           jamPulang: schedule.jamPulang,
           isLibur: !schedule.enabled,
@@ -831,13 +837,13 @@ export default function AbsensiKaryawanPage() {
         })
       } catch (error) {
         console.error("Error load pengaturan jam absensi:", error)
-        setJadwalAbsensi({
+        updateJadwal({
           ...EMPTY_JADWAL,
           tanggalKerja: currentTanggal,
           message: "Gagal memuat pengaturan jam absensi.",
         })
       } finally {
-        setJadwalLoading(false)
+        if (requestId === jadwalRequestRef.current) setJadwalLoading(false)
       }
     },
     [jam]
@@ -847,17 +853,24 @@ export default function AbsensiKaryawanPage() {
     if (!tanggal) return
 
     let disposed = false
+    let stopUser: (() => void) | undefined
+    let stopTidakWajib: (() => void) | undefined
     let stopKaryawan: (() => void) | undefined
     let stopToko: (() => void) | undefined
     const resetData = () => {
       lokasiRequestRef.current += 1
+      jadwalRequestRef.current += 1
       setLokasiAbsensi(null)
       setLokasiLoading(false)
       setJadwalLoading(false)
       setJadwalAbsensi({ ...EMPTY_JADWAL, tanggalKerja: tanggal, message: "Data penempatan karyawan tidak tersedia." })
     }
-    const unsubAuth = auth.onAuthStateChanged(async (user) => {
+    const unsubAuth = auth.onAuthStateChanged((user) => {
+      stopUser?.()
+      stopTidakWajib?.()
       stopKaryawan?.()
+      setKaryawanId(null)
+      resetData()
       stopToko?.()
       if (!user) {
         setSudahMasuk(false)
@@ -873,7 +886,18 @@ export default function AbsensiKaryawanPage() {
       }
 
       try {
-        const userSnap = await getDoc(doc(db, "users", user.uid))
+        stopUser = onSnapshot(doc(db, "users", user.uid), (userSnap) => {
+        if (disposed || auth.currentUser?.uid !== user.uid) return
+        stopKaryawan?.()
+        stopToko?.()
+        stopTidakWajib?.()
+        setKaryawanId(null)
+        setSudahMasuk(false)
+        setSudahPulang(false)
+        setSudahIzinAtauSakit(false)
+        setSudahAbsenHariIni(false)
+        setIsTidakWajib(false)
+        resetData()
 
         if (!userSnap.exists()) {
           setSudahMasuk(false)
@@ -897,11 +921,11 @@ export default function AbsensiKaryawanPage() {
 
         setKaryawanId(karyawanIdValue)
 
-        const tidakWajibSnap = await getDoc(
-          doc(db, "karyawan_tidak_wajib_absen", karyawanIdValue)
+        stopTidakWajib = onSnapshot(
+          doc(db, "karyawan_tidak_wajib_absen", karyawanIdValue),
+          (snap) => setIsTidakWajib(snap.exists()),
+          () => setIsTidakWajib(false)
         )
-
-        setIsTidakWajib(tidakWajibSnap.exists())
 
         if (disposed || auth.currentUser?.uid !== user.uid) return
 
@@ -923,6 +947,14 @@ export default function AbsensiKaryawanPage() {
             }, resetData)
           }
         }, resetData)
+        }, () => {
+          stopKaryawan?.()
+          stopToko?.()
+          stopTidakWajib?.()
+          setKaryawanId(null)
+          setIsTidakWajib(false)
+          resetData()
+        })
       } catch (error) {
         console.error("Error dalam auth listener:", error)
         setIsTidakWajib(false)
@@ -940,7 +972,10 @@ export default function AbsensiKaryawanPage() {
     return () => {
       disposed = true
       lokasiRequestRef.current += 1
+      jadwalRequestRef.current += 1
       unsubAuth()
+      stopUser?.()
+      stopTidakWajib?.()
       stopKaryawan?.()
       stopToko?.()
     }
