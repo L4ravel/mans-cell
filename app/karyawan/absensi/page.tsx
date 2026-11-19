@@ -488,19 +488,6 @@ function pickUserKaryawanId(raw: any, uid: string) {
   )
 }
 
-function pickUserTokoId(raw: any) {
-  return (
-    raw?.permissions?.tokoId ||
-    raw?.permissions?.tokoid ||
-    raw?.permissions?.toko_id ||
-    raw?.tokoId ||
-    raw?.tokoid ||
-    raw?.toko_id ||
-    raw?.toko?.id ||
-    ""
-  )
-}
-
 export default function AbsensiKaryawanPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -694,8 +681,14 @@ export default function AbsensiKaryawanPage() {
     )
   }
 
+  const lokasiRequestRef = useRef(0)
+
   const loadLokasiAbsensi = useCallback(
-    async (currentKaryawanId: string, userData: any, currentTokoId: string) => {
+    async (currentKaryawanId: string, currentTokoId: string) => {
+      const requestId = ++lokasiRequestRef.current
+      const updateLokasi = (lokasi: LokasiAbsensi | null) => {
+        if (requestId === lokasiRequestRef.current) setLokasiAbsensi(lokasi)
+      }
       setLokasiLoading(true)
 
       try {
@@ -708,7 +701,7 @@ export default function AbsensiKaryawanPage() {
             const lokasiIndividu = lokasiIndividuSnap.data()
 
             if (lokasiIndividu?.tipeLokasiAbsensi === "bebas") {
-              setLokasiAbsensi(createLokasiBebas())
+              updateLokasi(createLokasiBebas())
               return
             }
 
@@ -722,22 +715,11 @@ export default function AbsensiKaryawanPage() {
               })
 
               if (fromIndividu) {
-                setLokasiAbsensi(fromIndividu)
+                updateLokasi(fromIndividu)
                 return
               }
             }
           }
-        }
-
-        const fromUserToko = extractLokasiAbsensi(userData?.toko, {
-          label: userData?.toko?.nama || "Lokasi Toko",
-          sumber: "toko",
-          tokoId: currentTokoId,
-        })
-
-        if (fromUserToko) {
-          setLokasiAbsensi(fromUserToko)
-          return
         }
 
         if (currentTokoId) {
@@ -752,18 +734,18 @@ export default function AbsensiKaryawanPage() {
             })
 
             if (fromTokoDoc) {
-              setLokasiAbsensi(fromTokoDoc)
+              updateLokasi(fromTokoDoc)
               return
             }
           }
         }
 
-        setLokasiAbsensi(null)
+        updateLokasi(null)
       } catch (error) {
         console.error("Error load lokasi absensi karyawan:", error)
-        setLokasiAbsensi(null)
+        updateLokasi(null)
       } finally {
-        setLokasiLoading(false)
+        if (requestId === lokasiRequestRef.current) setLokasiLoading(false)
       }
     },
     []
@@ -863,7 +845,19 @@ export default function AbsensiKaryawanPage() {
   useEffect(() => {
     if (!tanggal) return
 
+    let disposed = false
+    let stopKaryawan: (() => void) | undefined
+    let stopToko: (() => void) | undefined
+    const resetData = () => {
+      lokasiRequestRef.current += 1
+      setLokasiAbsensi(null)
+      setLokasiLoading(false)
+      setJadwalLoading(false)
+      setJadwalAbsensi({ ...EMPTY_JADWAL, tanggalKerja: tanggal, message: "Data penempatan karyawan tidak tersedia." })
+    }
     const unsubAuth = auth.onAuthStateChanged(async (user) => {
+      stopKaryawan?.()
+      stopToko?.()
       if (!user) {
         setSudahMasuk(false)
         setSudahPulang(false)
@@ -899,7 +893,6 @@ export default function AbsensiKaryawanPage() {
 
         const userData = userSnap.data()
         const karyawanIdValue = pickUserKaryawanId(userData, user.uid)
-        const tokoIdValue = pickUserTokoId(userData)
 
         setKaryawanId(karyawanIdValue)
 
@@ -909,10 +902,26 @@ export default function AbsensiKaryawanPage() {
 
         setIsTidakWajib(tidakWajibSnap.exists())
 
-        await Promise.all([
-          loadLokasiAbsensi(karyawanIdValue, userData, tokoIdValue),
-          loadPengaturanJamAbsensi(karyawanIdValue, tokoIdValue, tanggal),
-        ])
+        if (disposed || auth.currentUser?.uid !== user.uid) return
+
+        // Penempatan resmi selalu berasal dari karyawan, bukan salinan akun users.
+        stopKaryawan = onSnapshot(doc(db, "karyawan", karyawanIdValue), (snap) => {
+          stopToko?.()
+          setLokasiAbsensi(null)
+          if (!snap.exists()) {
+            resetData()
+            return
+          }
+          const data = snap.data()
+          const tokoIdValue = String(data.tokoId || data.toko?.id || data.permissions?.tokoId || "").trim()
+          void loadPengaturanJamAbsensi(karyawanIdValue, tokoIdValue, tanggal)
+          void loadLokasiAbsensi(karyawanIdValue, tokoIdValue)
+          if (tokoIdValue) {
+            stopToko = onSnapshot(doc(db, "toko", tokoIdValue), () => {
+              void loadLokasiAbsensi(karyawanIdValue, tokoIdValue)
+            }, resetData)
+          }
+        }, resetData)
       } catch (error) {
         console.error("Error dalam auth listener:", error)
         setIsTidakWajib(false)
@@ -928,7 +937,11 @@ export default function AbsensiKaryawanPage() {
     })
 
     return () => {
+      disposed = true
+      lokasiRequestRef.current += 1
       unsubAuth()
+      stopKaryawan?.()
+      stopToko?.()
     }
   }, [tanggal, loadLokasiAbsensi, loadPengaturanJamAbsensi])
 

@@ -623,14 +623,6 @@ async function loadLokasiAbsensiForKaryawan(params: {
     }
   }
 
-  const fromKaryawanToko = extractLokasiAbsensi(karyawan?.toko, {
-    label: karyawan?.toko?.nama || "Lokasi Toko",
-    sumber: "toko",
-    tokoId,
-  })
-
-  if (fromKaryawanToko) return fromKaryawanToko
-
   if (tokoId) {
     const tokoSnap = await adminDb.collection("toko").doc(tokoId).get()
 
